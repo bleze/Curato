@@ -1,5 +1,5 @@
 import { useVirtualizer } from '@tanstack/react-virtual'
-import { useEffect, useMemo, useRef, useState } from 'react'
+import { useLayoutEffect, useMemo, useRef, useState } from 'react'
 import type { EventDto, LibraryDto, MediaItemDto, TripGroupDto } from '../api'
 import { thumbnailUrl } from '../api'
 import { Lightbox } from './Lightbox'
@@ -65,9 +65,14 @@ export function LibraryGrid({
   const [containerWidth, setContainerWidth] = useState(0)
   const [lightbox, setLightbox] = useState<{ items: MediaItemDto[]; index: number } | null>(null)
 
-  useEffect(() => {
+  useLayoutEffect(() => {
     const el = scrollRef.current
     if (!el) return
+    // Measure synchronously before paint so the very first render already
+    // uses the real column count instead of a placeholder guess — avoids a
+    // pointless blocks-array rebuild (and virtualizer cache churn) a moment
+    // after mount purely because ResizeObserver's first callback is async.
+    setContainerWidth(el.getBoundingClientRect().width)
     const observer = new ResizeObserver((entries) => setContainerWidth(entries[0].contentRect.width))
     observer.observe(el)
     return () => observer.disconnect()
@@ -82,6 +87,16 @@ export function LibraryGrid({
   const virtualizer = useVirtualizer({
     count: blocks.length,
     getScrollElement: () => scrollRef.current,
+    // Without this, TanStack Virtual's internal size-measurement cache is
+    // keyed by raw array index. `blocks` gets rebuilt (different length/
+    // shape) whenever `library` changes — e.g. after a delete, which shifts
+    // every later row's item-chunking by one — or when `columnCount` first
+    // settles from its initial guess to the real measured value. A stale
+    // index-keyed cache then gets misapplied to a structurally different
+    // block, corrupting both getTotalSize() (the "list ends early" bug) and
+    // individual row positioning (the overlapping/offset-labels bug).
+    // Keying by the block's own stable id fixes both.
+    getItemKey: (index) => blocks[index].key,
     estimateSize: (index) => {
       const block = blocks[index]
       if (block.type === 'trip-header') return TRIP_HEADER_HEIGHT
