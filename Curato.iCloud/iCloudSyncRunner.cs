@@ -1,5 +1,6 @@
 using System.Diagnostics;
 using Curato.Data;
+using Curato.Media;
 using Curato.Organizer;
 using Microsoft.Extensions.Logging;
 
@@ -47,23 +48,6 @@ public sealed class iCloudSyncRunner(
     /// <summary>The most recent line icloudpd printed, or null when no sync is currently running.</summary>
     public string? CurrentActivity { get; private set; }
 
-    // --until-found's early-stop turned out NOT to compose with
-    // --skip-created-before: confirmed live (checking icloudpd's own loop
-    // source) that its consecutive counter only increments on items it
-    // actually *downloads* — an item --skip-created-before skips never
-    // counts, so the loop never breaks early and still walks the entire
-    // remote listing regardless of how tight the date window is. --recent N
-    // works completely differently and actually does what's needed here:
-    // it slices the first N items off the listing (itertools.islice)
-    // *before* any filtering runs at all, so it's a genuine, unconditional
-    // cap on total work independent of the date filter's results. The
-    // trade-off: it caps by "most recently added to iCloud," not by
-    // creation date, so a bulk-imported batch of old photos added more
-    // recently than this many other items could in principle push
-    // genuinely-in-window content outside the slice — deliberately
-    // generous to make that edge case unlikely rather than tuned tight.
-    private const int RecentItemCap = 2000;
-
     /// <summary>
     /// The single entry point both the manual "Sync now" button
     /// (<c>iCloudSyncController</c>) and the periodic background service
@@ -97,7 +81,8 @@ public sealed class iCloudSyncRunner(
         }
 
         var result = await RunAsync(
-            libraryFolder, config.AppleUsername, config.CookieDirectory, config.LookbackDays, cancellationToken);
+            libraryFolder, config.AppleUsername, config.CookieDirectory,
+            config.SinceDate, config.LookbackDays, config.RecentItemCap, cancellationToken);
 
         repository.RecordSyncResult(
             DateTime.UtcNow,
@@ -109,9 +94,16 @@ public sealed class iCloudSyncRunner(
     }
 
     private async Task<iCloudSyncResult> RunAsync(
-        string libraryFolder, string appleUsername, string cookieDirectory, int lookbackDays,
+        string libraryFolder, string appleUsername, string cookieDirectory,
+        DateOnly? sinceDate, int lookbackDays, int recentItemCap,
         CancellationToken cancellationToken)
     {
+        // A fixed calendar date (e.g. "since my last manual sync 2.5 years
+        // ago") takes precedence over the rolling N-days-back window when
+        // both would otherwise apply — icloudpd's --skip-created-before
+        // accepts either form directly (a relative interval like "365d", or
+        // an absolute ISO date), so no client-side date math is needed here.
+        var skipCreatedBefore = sinceDate is { } date ? date.ToString("yyyy-MM-dd") : $"{lookbackDays}d";
         var startInfo = new ProcessStartInfo
         {
             FileName = options.IcloudpdExecutable,
@@ -137,11 +129,23 @@ public sealed class iCloudSyncRunner(
                      // Bounds every sync (not just the first) to items
                      // created within this window — without it, a
                      // never-yet-synced account with years of history would
-                     // try to pull all of it in one go. icloudpd accepts a
-                     // relative interval like "365d" here as well as an
-                     // absolute ISO date.
-                     "--skip-created-before", $"{lookbackDays}d",
-                     "--recent", RecentItemCap.ToString(),
+                     // try to pull all of it in one go.
+                     "--skip-created-before", skipCreatedBefore,
+                     // A separate performance ceiling, not a scope control:
+                     // confirmed live that --skip-created-before alone still
+                     // walks its entire slice checking each item's date one
+                     // by one (a "Skipping ..." line each) — --recent N
+                     // slices the *first* N items off the listing
+                     // (itertools.islice) before any filtering runs at all,
+                     // capping total work regardless of what the date filter
+                     // finds. Caps by "most recently added to iCloud," not by
+                     // creation date, so a bulk-imported batch of old photos
+                     // added more recently than N other items could in
+                     // principle push genuinely in-window content outside the
+                     // slice — user-configurable specifically so a wide
+                     // SinceDate/LookbackDays can be paired with a large
+                     // enough cap to actually cover it.
+                     "--recent", recentItemCap.ToString(),
                  })
         {
             startInfo.ArgumentList.Add(arg);
@@ -220,8 +224,67 @@ public sealed class iCloudSyncRunner(
         var database = new LibraryDatabase(libraryFolder);
         database.EnsureSchema();
         var query = new LibraryQueryService(database);
+
+        var redownloadsRemoved = RemoveExactRedownloads(libraryFolder, query);
+        if (redownloadsRemoved > 0)
+        {
+            logger.LogInformation(
+                "Discarded {Count} re-downloaded file(s) already indexed elsewhere in the library.", redownloadsRemoved);
+        }
+
         var scanResult = new ScanService(new LibraryRepository(database), query).Scan(libraryFolder);
 
         return new iCloudSyncResult(Success: true, ErrorMessage: null, itemsDownloaded, scanResult);
+    }
+
+    /// <summary>
+    /// Confirmed live this is needed: icloudpd's own dedup only checks
+    /// whether a file with the same name already exists in its designated
+    /// download folder (the library root here) — it has no idea Curato's
+    /// own Organize feature physically moves files out of that root into
+    /// dated folders afterward. Once that happens, the *next* sync finds
+    /// nothing at the root for that name and re-downloads the exact same
+    /// asset, forever, every sync. Rather than fighting icloudpd's
+    /// filename-based model (or giving synced content its own permanent,
+    /// never-organized folder — rejected earlier: that's what caused the
+    /// "why is this all lumped into one Adopted folder" problem in the
+    /// first place), this compares each newly-landed, not-yet-indexed loose
+    /// file's (size, QuickHash) against every already-indexed MediaItem in
+    /// the library — a match means this is a byte-identical re-download of
+    /// content already organized under some other path, so it's deleted
+    /// immediately rather than ever reaching ScanService, where it would
+    /// otherwise get indexed as a second, cluttering copy.
+    /// </summary>
+    private int RemoveExactRedownloads(string libraryFolder, LibraryQueryService query)
+    {
+        var existingByHash = new HashSet<(long Size, string Hash)>(
+            query.GetAllMediaItems().Select(m => (m.FileSizeBytes, m.QuickHash)));
+        if (existingByHash.Count == 0)
+        {
+            return 0;
+        }
+
+        var knownRelativePaths = new HashSet<string>(
+            query.GetAllMediaItems().Select(m => m.RelativePath), StringComparer.OrdinalIgnoreCase);
+
+        var removed = 0;
+        foreach (var filePath in Directory.EnumerateFiles(libraryFolder))
+        {
+            var fileName = Path.GetFileName(filePath);
+            if (knownRelativePaths.Contains(fileName) || !MediaFileScanner.IsSupportedExtension(Path.GetExtension(fileName)))
+            {
+                continue;
+            }
+
+            var info = new FileInfo(filePath);
+            var quickHash = QuickHasher.ComputeQuickHash(filePath, info.Length);
+            if (existingByHash.Contains((info.Length, quickHash)))
+            {
+                File.Delete(filePath);
+                removed++;
+            }
+        }
+
+        return removed;
     }
 }

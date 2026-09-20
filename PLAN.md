@@ -586,11 +586,32 @@ Photos, Immich):
   items off the listing (`itertools.islice`) *before* any filtering runs at all, making it a
   genuine, unconditional cap on total work independent of what the date filter does. Every
   sync now passes both: `--skip-created-before {N}d` for correctness (what actually gets
-  downloaded) and `--recent 2000` as a hard performance ceiling (deliberately generous,
-  since it caps by "most recently added to iCloud" rather than by creation date — a
-  bulk-imported batch of old photos added more recently than 2000 other items could in
-  principle push genuinely in-window content outside the slice, an accepted trade-off
-  rather than a tightly-tuned value).
+  downloaded) and `--recent N` as a hard performance ceiling (a separate control, not
+  auto-derived from the date scope, since it caps by "most recently added to iCloud"
+  rather than by creation date — a bulk-imported batch of old photos added more recently
+  than N other items could in principle push genuinely in-window content outside the
+  slice). Both are user-configurable in Settings (`iCloudSync.RecentItemCap`, default
+  2000) rather than fixed constants, specifically so a wide date range can be paired with
+  a large enough cap to actually cover it.
+
+  Also added `iCloudSync.SinceDate` (a fixed calendar date, e.g. "since my last manual
+  sync 2.5 years ago") as an alternative to `LookbackDays`' rolling window — takes
+  precedence when set. Maps directly onto `--skip-created-before`, which already accepts
+  either an absolute ISO date or a relative interval, so no client-side date math is
+  needed (`iCloudSyncRunner`: `sinceDate?.ToString("yyyy-MM-dd") ?? $"{lookbackDays}d"`).
+
+  One more real gap confirmed live, unrelated to scope: syncing, then Organizing (which
+  physically moves auto-clustered files out of the library root into dated folders), then
+  syncing again re-downloaded the exact same files every time. icloudpd's own dedup only
+  checks whether a file with that name still exists in its designated download folder (the
+  library root) — it has no idea Organize just moved it elsewhere. Giving synced content
+  its own permanent, never-organized folder was considered and rejected (that's exactly
+  what caused the earlier "why is this all lumped into one Adopted folder" problem).
+  Instead, `iCloudSyncRunner.RemoveExactRedownloads` runs after every sync, before
+  `ScanService.Scan`: any newly-landed, not-yet-indexed file whose (size, QuickHash)
+  matches an already-indexed `MediaItem` anywhere else in the library — i.e. a
+  byte-identical re-download of content already organized under some other path — is
+  deleted immediately rather than ever reaching the scan/cluster pipeline as a duplicate.
 
   Also confirmed live: a "Sync now" click (a single long-running synchronous request,
   per v1's deliberate no-polling-infra simplification) gave zero visibility into whether

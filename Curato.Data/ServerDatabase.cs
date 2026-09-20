@@ -74,6 +74,8 @@ public sealed class ServerDatabase
                 IntervalMinutes INTEGER NOT NULL,
                 Enabled INTEGER NOT NULL,
                 LookbackDays INTEGER NOT NULL DEFAULT 365,
+                SinceDate TEXT NULL,
+                RecentItemCap INTEGER NOT NULL DEFAULT 2000,
                 LastSyncAt TEXT NULL,
                 LastSyncStatus TEXT NULL,
                 LastSyncMessage TEXT NULL,
@@ -89,6 +91,16 @@ public sealed class ServerDatabase
         if (!ColumnExists(connection, "iCloudSync", "LookbackDays"))
         {
             connection.Execute("ALTER TABLE iCloudSync ADD COLUMN LookbackDays INTEGER NOT NULL DEFAULT 365");
+        }
+
+        if (!ColumnExists(connection, "iCloudSync", "SinceDate"))
+        {
+            connection.Execute("ALTER TABLE iCloudSync ADD COLUMN SinceDate TEXT NULL");
+        }
+
+        if (!ColumnExists(connection, "iCloudSync", "RecentItemCap"))
+        {
+            connection.Execute("ALTER TABLE iCloudSync ADD COLUMN RecentItemCap INTEGER NOT NULL DEFAULT 2000");
         }
     }
 

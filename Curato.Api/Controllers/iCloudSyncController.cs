@@ -30,11 +30,12 @@ public sealed class iCloudSyncController(
     // otherwise try to pull all of it on the very first run — bounded by
     // default, widenable in Settings.
     private const int DefaultLookbackDays = 365;
+    private const int DefaultRecentItemCap = 2000;
 
     public sealed record LoginRequest(string Username, string Password);
     public sealed record LoginResponse(bool RequiresTwoFactor, string? Error);
     public sealed record VerifyTwoFactorRequest(string Username, string Code);
-    public sealed record UpdateSettingsRequest(int IntervalMinutes, bool Enabled, int LookbackDays);
+    public sealed record UpdateSettingsRequest(int IntervalMinutes, bool Enabled, int LookbackDays, DateOnly? SinceDate, int RecentItemCap);
     public sealed record StatusResponse(
         bool LibraryFolderConfigured,
         bool Connected,
@@ -42,6 +43,8 @@ public sealed class iCloudSyncController(
         int? IntervalMinutes,
         bool? Enabled,
         int? LookbackDays,
+        DateOnly? SinceDate,
+        int? RecentItemCap,
         DateTime? LastSyncAt,
         string? LastSyncStatus,
         string? LastSyncMessage,
@@ -66,6 +69,8 @@ public sealed class iCloudSyncController(
             IntervalMinutes: config?.IntervalMinutes,
             Enabled: config?.Enabled,
             LookbackDays: config?.LookbackDays,
+            SinceDate: config?.SinceDate,
+            RecentItemCap: config?.RecentItemCap,
             LastSyncAt: config?.LastSyncAt,
             LastSyncStatus: config?.LastSyncStatus,
             LastSyncMessage: config?.LastSyncMessage,
@@ -92,7 +97,8 @@ public sealed class iCloudSyncController(
             // nothing more to wait on, so save now rather than only in
             // VerifyTwoFactor below, which never runs in this case.
             new iCloudSyncRepository(database).Save(
-                request.Username, cookieDirectory, intervalMinutes: 360, enabled: true, DefaultLookbackDays);
+                request.Username, cookieDirectory, intervalMinutes: 360, enabled: true,
+                DefaultLookbackDays, sinceDate: null, DefaultRecentItemCap);
             return Ok(new LoginResponse(RequiresTwoFactor: false, Error: null));
         }
 
@@ -121,7 +127,8 @@ public sealed class iCloudSyncController(
         var cookieDirectory = GetCookieDirectory();
 
         new iCloudSyncRepository(database).Save(
-            request.Username, cookieDirectory, intervalMinutes: 360, enabled: true, DefaultLookbackDays);
+            request.Username, cookieDirectory, intervalMinutes: 360, enabled: true,
+            DefaultLookbackDays, sinceDate: null, DefaultRecentItemCap);
         return Ok();
     }
 
@@ -155,7 +162,8 @@ public sealed class iCloudSyncController(
             return BadRequest("Not connected.");
         }
 
-        repository.UpdateSettings(request.IntervalMinutes, request.Enabled, request.LookbackDays);
+        repository.UpdateSettings(
+            request.IntervalMinutes, request.Enabled, request.LookbackDays, request.SinceDate, request.RecentItemCap);
         return Ok();
     }
 

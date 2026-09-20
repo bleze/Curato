@@ -32,6 +32,8 @@ export function SettingsPanel({
   const [awaitingCode, setAwaitingCode] = useState(false)
   const [code, setCode] = useState('')
   const [lookbackInput, setLookbackInput] = useState('')
+  const [sinceDateInput, setSinceDateInput] = useState('')
+  const [recentCapInput, setRecentCapInput] = useState('')
   const [syncing, setSyncing] = useState(false)
 
   function refresh() {
@@ -44,6 +46,12 @@ export function SettingsPanel({
         setStatus(s)
         if (s.lookbackDays !== null) {
           setLookbackInput((current) => current || String(s.lookbackDays))
+        }
+        if (s.sinceDate !== null) {
+          setSinceDateInput((current) => current || s.sinceDate!)
+        }
+        if (s.recentItemCap !== null) {
+          setRecentCapInput((current) => current || String(s.recentItemCap))
         }
       })
       .catch((err) => setError(err instanceof Error ? err.message : String(err)))
@@ -145,22 +153,46 @@ export function SettingsPanel({
   function handleToggleEnabled() {
     if (!status) return Promise.resolve()
     return runBusy(async () => {
-      await iCloudUpdateSettings(status.intervalMinutes ?? 360, !status.enabled, status.lookbackDays ?? 365)
+      await iCloudUpdateSettings(
+        status.intervalMinutes ?? 360,
+        !status.enabled,
+        status.lookbackDays ?? 365,
+        status.sinceDate,
+        status.recentItemCap ?? 2000,
+      )
       refresh()
     })
   }
 
-  function handleSaveLookback() {
+  function handleSaveScope() {
     if (!status) return Promise.resolve()
+
     const days = Number.parseInt(lookbackInput, 10)
-    if (!Number.isFinite(days) || days <= 0) {
-      setError('Enter a positive number of days.')
+    if (!sinceDateInput && (!Number.isFinite(days) || days <= 0)) {
+      setError('Enter a positive number of days, or pick a specific date.')
       return Promise.resolve()
     }
+
+    const cap = Number.parseInt(recentCapInput, 10)
+    if (!Number.isFinite(cap) || cap <= 0) {
+      setError('Enter a positive number for the max files per sync.')
+      return Promise.resolve()
+    }
+
     return runBusy(async () => {
-      await iCloudUpdateSettings(status.intervalMinutes ?? 360, status.enabled ?? true, days)
+      await iCloudUpdateSettings(
+        status.intervalMinutes ?? 360,
+        status.enabled ?? true,
+        days,
+        sinceDateInput || null,
+        cap,
+      )
       refresh()
     })
+  }
+
+  function handleClearSinceDate() {
+    setSinceDateInput('')
   }
 
   function handleDisconnect() {
@@ -255,17 +287,48 @@ export function SettingsPanel({
                   min={1}
                   value={lookbackInput}
                   onChange={(e) => setLookbackInput(e.target.value)}
+                  disabled={!!sinceDateInput}
                   style={{ width: '70px' }}
                 />{' '}
                 day(s)
               </label>
-              <button type="button" onClick={handleSaveLookback} disabled={busy}>
+            </div>
+            <div className="settings-row">
+              <label>
+                or since a specific date:{' '}
+                <input
+                  type="date"
+                  value={sinceDateInput}
+                  onChange={(e) => setSinceDateInput(e.target.value)}
+                />
+              </label>
+              {sinceDateInput && (
+                <button type="button" onClick={handleClearSinceDate} disabled={busy}>
+                  Clear (use days instead)
+                </button>
+              )}
+            </div>
+            <div className="settings-row">
+              <label>
+                Max files to check per sync:{' '}
+                <input
+                  type="number"
+                  min={1}
+                  value={recentCapInput}
+                  onChange={(e) => setRecentCapInput(e.target.value)}
+                  style={{ width: '90px' }}
+                />
+              </label>
+              <button type="button" onClick={handleSaveScope} disabled={busy}>
                 Save
               </button>
             </div>
             <p className="settings-meta">
-              Applies to every sync, not just the first — widen it if you want more history, but a never-yet-synced
-              account otherwise won't pull years of backlog by surprise.
+              The date setting applies to every sync, not just the first (the specific date wins over "last N days"
+              when both are set) — widen it if you want more history, but a never-yet-synced account otherwise won't
+              pull years of backlog by surprise. "Max files to check" is a separate performance ceiling: raise it if
+              your date range covers more than that many recently-added items, since anything beyond the cap won't
+              even be considered.
             </p>
           </>
         ) : awaitingCode ? (
