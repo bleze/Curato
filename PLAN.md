@@ -534,13 +534,23 @@ Photos, Immich):
   rather than building a new encryption-at-rest subsystem for arguably-not-more-sensitive
   data.
 
-  Downloaded files land in an `iCloud Sync/` staging subfolder inside the new shared
-  "library folder" setting (below) and are fed through the *existing* scan pipeline
-  exactly like a browser upload — zero new clustering/auto-titling logic, since loose new
-  files already get auto-clustered and auto-titled. A new `LibraryOperationGate`
-  (`Curato.Organizer`) serializes ScanService/OrganizeService calls per library root,
-  since a periodic background sync is the first thing that can genuinely race a
-  user-triggered scan/upload/organize — nothing defended against that before.
+  Downloaded files land directly in the new shared "library folder" setting's root
+  (below) and are fed through the *existing* scan pipeline exactly like a browser upload —
+  zero new clustering/auto-titling logic, since loose new files already get
+  auto-clustered and auto-titled. A new `LibraryOperationGate` (`Curato.Organizer`)
+  serializes ScanService/OrganizeService calls per library root, since a periodic
+  background sync is the first thing that can genuinely race a user-triggered
+  scan/upload/organize — nothing defended against that before.
+
+  Originally landed in an `iCloud Sync/` staging subfolder instead, for tidiness —
+  confirmed live that was wrong: `AdoptedFolderPlanner` (§3 Step 0) treats every named
+  subfolder as a deliberately user-organized folder and adopts it whole, since it has no
+  way to distinguish a folder Curato itself just created from a real one like "Family
+  Reunion 2019" the user actually organized — so the entire sync landed as one giant
+  "Adopted" event named "iCloud Sync" instead of being auto-clustered by date like
+  everything else. Also had to explicitly pass `--folder-structure none`: icloudpd's own
+  default (`{:%Y/%m/%d}`) creates nested date subfolders, which would have tripped the
+  exact same problem again, just fragmented into many small folders instead of one big one.
 
   Confirmed live why an unbounded scope matters: a real account's first sync reported
   9604 items with no cap at all (`RunFullBackfillAsync` originally passed no

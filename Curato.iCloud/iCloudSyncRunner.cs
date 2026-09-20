@@ -13,12 +13,22 @@ public sealed record iCloudSyncResult(bool Success, string? ErrorMessage, int It
 /// against the destination, Live Photos, RAW+JPEG, and the
 /// --set-exif-datetime flag that fixes the actual metadata-stripping
 /// problem this feature exists for, all already handled by it, none
-/// reimplemented here) into a staging subfolder inside the shared library
-/// folder, then feeds the result through the *existing* scan pipeline
-/// exactly like a browser upload does (Curato.Api/Controllers/
-/// UploadController.cs) — zero new clustering/auto-titling logic, since
-/// loose new files there already get auto-clustered into Events and
-/// auto-titled.
+/// reimplemented here) directly into the shared library folder's root
+/// (not a subfolder — see below), then feeds the result through the
+/// *existing* scan pipeline exactly like a browser upload does
+/// (Curato.Api/Controllers/UploadController.cs) — zero new
+/// clustering/auto-titling logic, since loose new files there already get
+/// auto-clustered into Events and auto-titled.
+///
+/// Confirmed live why it has to be the root and not a subfolder: an
+/// earlier version landed synced files in an "iCloud Sync/" staging
+/// subfolder for tidiness, which `AdoptedFolderPlanner` (PLAN.md §3 Step
+/// 0) then treated as a single deliberately user-organized folder and
+/// "adopted" whole — exactly the same way a real folder like "Family
+/// Reunion 2019" is meant to be adopted, since the planner has no way to
+/// distinguish a folder Curato itself created from one the user actually
+/// organized. Landing files at the root, same as UploadController already
+/// does, is what makes them "loose" and eligible for normal auto-clustering.
 ///
 /// A "Sync now" click is a synchronous request/response (PLAN.md §4's
 /// deliberate v1 simplification — no polling infra), which left the user
@@ -34,10 +44,6 @@ public sealed record iCloudSyncResult(bool Success, string? ErrorMessage, int It
 public sealed class iCloudSyncRunner(
     iCloudProcessOptions options, LibraryOperationGate gate, ServerDatabase database, ILogger<iCloudSyncRunner> logger)
 {
-    // Not dot-prefixed, so MediaFileScanner's recursive walk (which only
-    // excludes .curato/) picks this up as ordinary loose content.
-    public const string StagingFolderName = "iCloud Sync";
-
     /// <summary>The most recent line icloudpd printed, or null when no sync is currently running.</summary>
     public string? CurrentActivity { get; private set; }
 
@@ -106,9 +112,6 @@ public sealed class iCloudSyncRunner(
         string libraryFolder, string appleUsername, string cookieDirectory, int lookbackDays,
         CancellationToken cancellationToken)
     {
-        var stagingFolder = Path.Combine(libraryFolder, StagingFolderName);
-        Directory.CreateDirectory(stagingFolder);
-
         var startInfo = new ProcessStartInfo
         {
             FileName = options.IcloudpdExecutable,
@@ -120,7 +123,15 @@ public sealed class iCloudSyncRunner(
                  {
                      "--username", appleUsername,
                      "--cookie-directory", cookieDirectory,
-                     "--directory", stagingFolder,
+                     "--directory", libraryFolder,
+                     // icloudpd's own default (`{:%Y/%m/%d}`) creates nested
+                     // date subfolders — each one would trip the exact same
+                     // AdoptedFolderPlanner problem landing files at the
+                     // root fixes above, just fragmented into many small
+                     // folders instead of one big one. Flat only: files land
+                     // directly in libraryFolder, loose, for Curato's own
+                     // clustering to organize.
+                     "--folder-structure", "none",
                      "--set-exif-datetime",
                      "--no-progress-bar",
                      // Bounds every sync (not just the first) to items
