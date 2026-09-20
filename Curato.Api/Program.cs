@@ -5,6 +5,7 @@ using Curato.iCloud;
 using Curato.Organizer;
 using Microsoft.AspNetCore.Authentication.Cookies;
 using Microsoft.AspNetCore.Authorization;
+using Microsoft.AspNetCore.HttpOverrides;
 using Microsoft.AspNetCore.RateLimiting;
 
 var builder = WebApplication.CreateBuilder(args);
@@ -38,6 +39,26 @@ builder.Services.AddSingleton<iCloudAuthClient>();
 builder.Services.AddSingleton<iCloudSyncRunner>();
 builder.Services.AddHostedService<iCloudSyncBackgroundService>();
 
+// Reads X-Forwarded-Proto/X-Forwarded-For from the reverse proxy PLAN.md
+// §15 expects in front for any internet-facing deployment (Synology DSM's
+// built-in proxy + its Let's Encrypt integration, primarily), so
+// Request.IsHttps below reflects the client's real HTTPS connection even
+// though the proxy-to-container hop itself is plain HTTP — without this,
+// the auth cookie's SameAsRequest Secure policy would always evaluate
+// false behind a TLS-terminating proxy, silently sending the session
+// cookie over an unencrypted hop it doesn't actually need to travel over.
+// KnownNetworks/KnownProxies are cleared (trust the header from whatever
+// sent it) rather than pinned to a specific proxy IP, since that varies by
+// setup — safe only because Curato.Api's own port is never meant to be
+// reachable except through that trusted reverse proxy (never publish it
+// directly to the internet, or a client could forge these headers itself).
+builder.Services.Configure<ForwardedHeadersOptions>(options =>
+{
+    options.ForwardedHeaders = ForwardedHeaders.XForwardedFor | ForwardedHeaders.XForwardedProto;
+    options.KnownIPNetworks.Clear();
+    options.KnownProxies.Clear();
+});
+
 // Add services to the container.
 
 builder.Services.AddControllers();
@@ -53,11 +74,14 @@ builder.Services
         options.Cookie.HttpOnly = true;
         options.Cookie.SameSite = SameSiteMode.Strict;
         // SameAsRequest, not Always: behind the reverse proxy PLAN.md §15
-        // expects in production, TLS is terminated there and Curato.Api only
-        // ever sees plain HTTP — Always would silently break the cookie on
-        // every request unless Forwarded Headers middleware is also wired up
-        // (tracked for when reverse-proxy deployment is actually configured).
-        // SameAsRequest also means local http-only dev keeps working.
+        // expects in production, TLS is terminated there — Curato.Api itself
+        // only ever receives plain HTTP from that proxy hop. Request.IsHttps
+        // still correctly reflects the client's real HTTPS connection once
+        // the Forwarded Headers middleware above rewrites it from
+        // X-Forwarded-Proto, so this correctly marks the cookie Secure in
+        // that case while also still working for local http-only dev (no
+        // proxy in front, no forwarded header, Request.IsHttps genuinely
+        // false).
         options.Cookie.SecurePolicy = CookieSecurePolicy.SameAsRequest;
         options.ExpireTimeSpan = TimeSpan.FromDays(30);
         options.SlidingExpiration = true;
@@ -111,6 +135,12 @@ if (app.Environment.IsDevelopment())
 // just inconvenient: it broke the Vite dev proxy, which forwards plain HTTP
 // and has no reason to expect (or trust) a redirect to a self-signed
 // dev-cert HTTPS endpoint.
+
+// Must run before anything that reads Request.Scheme/IsHttps or the remote
+// IP (the cookie's SameAsRequest Secure policy below, any future IP-based
+// rate limiting/audit logging per §15) — otherwise those see the plain-HTTP
+// proxy-to-container hop instead of the client's real connection.
+app.UseForwardedHeaders();
 
 app.UseRateLimiter();
 app.UseAuthentication();

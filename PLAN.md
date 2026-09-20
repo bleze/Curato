@@ -1116,6 +1116,16 @@ a real deployment mode with its own requirements, not an afterthought:
   than Curato managing certificates itself — but this is a hard requirement for
   internet-facing setups, spelled out clearly in setup docs, not a "nice to have."
   Skipping HTTPS is only reasonable on a genuinely trusted, non-exposed home LAN.
+  [Phase 2: `Program.cs` now wires up ASP.NET Core's Forwarded Headers
+  middleware (`X-Forwarded-Proto`/`X-Forwarded-For`), a gap previously
+  flagged but left until an actual reverse-proxy deployment was being set
+  up — without it, `Request.IsHttps` would always read false behind a
+  TLS-terminating proxy (since Curato.Api itself only ever receives plain
+  HTTP from that hop), silently defeating the auth cookie's `SameAsRequest`
+  Secure policy below. `KnownIPNetworks`/`KnownProxies` are cleared to trust
+  the header from whatever sent it, rather than pinned to one proxy IP —
+  safe only because Curato.Api's own port must never be reachable except
+  through that trusted reverse proxy; never publish it directly.]
 - **Every API endpoint requires a valid session**, not just the web UI's shell — the
   only unauthenticated routes are login itself and a minimal health check. This matters
   more once the server is internet-reachable: there's no LAN perimeter doing any of the
