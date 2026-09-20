@@ -1,0 +1,2 @@
+pyicloud>=1.0.0
+icloudpd>=1.20.0

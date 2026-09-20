@@ -20,6 +20,10 @@ Curato.Web/.vite/
 .curato/
 Curato.Api/data/
 
+# Python (tools/icloud-sync)
+__pycache__/
+*.pyc
+
 # OS cruft
 .DS_Store
 Thumbs.db

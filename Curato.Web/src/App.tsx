@@ -16,6 +16,7 @@ import { AuthGate } from './components/AuthGate'
 import { DuplicateFinderPanel } from './components/DuplicateFinderPanel'
 import { LibraryGrid } from './components/LibraryGrid'
 import { RecycleBinPanel } from './components/RecycleBinPanel'
+import { SettingsPanel } from './components/SettingsPanel'
 
 const LAST_PATH_KEY = 'curato:lastLibraryPath'
 
@@ -67,6 +68,7 @@ function App() {
   const [showRecycleBin, setShowRecycleBin] = useState(false)
   const [showDuplicates, setShowDuplicates] = useState(false)
   const [showAlbums, setShowAlbums] = useState(false)
+  const [showSettings, setShowSettings] = useState(false)
 
   useEffect(() => {
     getAuthStatus()
@@ -241,6 +243,9 @@ function App() {
               Albums
             </button>
           )}
+          <button type="button" onClick={() => setShowSettings(true)}>
+            Settings
+          </button>
           <span>{authStatus.username}</span>
           <button type="button" onClick={handleLogout}>
             Sign out
@@ -288,6 +293,8 @@ function App() {
           onTakenAtChanged={handleTakenAtChanged}
         />
       )}
+
+      {showSettings && <SettingsPanel onClose={() => setShowSettings(false)} />}
 
       {library && loadedPath && (
         <div className="library">

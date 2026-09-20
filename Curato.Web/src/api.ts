@@ -92,6 +92,75 @@ export function logout(): Promise<void> {
   return fetch('/api/auth/logout', { method: 'POST' }).then(expectOk)
 }
 
+export function getLibraryFolder(): Promise<string | null> {
+  return fetch('/api/settings/library-folder')
+    .then(asJson<{ path: string | null }>)
+    .then((r) => r.path)
+}
+
+export function setLibraryFolder(path: string): Promise<void> {
+  return fetch('/api/settings/library-folder', {
+    method: 'PUT',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ path }),
+  }).then(expectOk)
+}
+
+export interface iCloudSyncStatus {
+  libraryFolderConfigured: boolean
+  connected: boolean
+  appleUsername: string | null
+  intervalMinutes: number | null
+  enabled: boolean | null
+  lastSyncAt: string | null
+  lastSyncStatus: string | null
+  lastSyncMessage: string | null
+  lastSyncItemCount: number | null
+}
+
+export interface iCloudSyncNowResult {
+  success: boolean
+  errorMessage: string | null
+  itemsDownloaded: number
+  newEventCount: number
+}
+
+export function getICloudSyncStatus(): Promise<iCloudSyncStatus> {
+  return fetch('/api/icloud-sync/status').then(asJson<iCloudSyncStatus>)
+}
+
+export function iCloudLogin(username: string, password: string): Promise<{ requiresTwoFactor: boolean; error: string | null }> {
+  return fetch('/api/icloud-sync/login', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ username, password }),
+  }).then(asJson<{ requiresTwoFactor: boolean; error: string | null }>)
+}
+
+export function iCloudVerifyTwoFactor(username: string, password: string, code: string): Promise<void> {
+  return fetch('/api/icloud-sync/verify-2fa', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ username, password, code }),
+  }).then(expectOk)
+}
+
+export function iCloudSyncNow(): Promise<iCloudSyncNowResult> {
+  return fetch('/api/icloud-sync/sync-now', { method: 'POST' }).then(asJson<iCloudSyncNowResult>)
+}
+
+export function iCloudUpdateSettings(intervalMinutes: number, enabled: boolean): Promise<void> {
+  return fetch('/api/icloud-sync/settings', {
+    method: 'PUT',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ intervalMinutes, enabled }),
+  }).then(expectOk)
+}
+
+export function iCloudDisconnect(): Promise<void> {
+  return fetch('/api/icloud-sync/disconnect', { method: 'POST' }).then(expectOk)
+}
+
 export interface ScanApiResponse {
   scan: ScanResult
   picasaImport: PicasaImportResult

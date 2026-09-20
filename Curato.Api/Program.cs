@@ -1,5 +1,8 @@
 using System.Threading.RateLimiting;
+using Curato.Api;
 using Curato.Data;
+using Curato.iCloud;
+using Curato.Organizer;
 using Microsoft.AspNetCore.Authentication.Cookies;
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.RateLimiting;
@@ -18,6 +21,22 @@ var dataDirectory = builder.Configuration["Curato:DataDirectory"]
 var serverDatabase = new ServerDatabase(dataDirectory);
 serverDatabase.EnsureSchema();
 builder.Services.AddSingleton(serverDatabase);
+
+// Serializes ScanService/OrganizeService calls against the same library
+// root (PLAN.md §4) — needed now that the iCloud background sync below can
+// genuinely run concurrently with a user-triggered scan/upload/organize,
+// which nothing defended against before. Shared singleton state, unlike the
+// per-request repositories controllers otherwise construct inline.
+builder.Services.AddSingleton<LibraryOperationGate>();
+
+// Direct iCloud integration (PLAN.md §4) — shells out to the MIT-licensed
+// icloudpd/pyicloud tools (Python) rather than porting their auth/sync
+// logic into C#. See Curato.iCloud for why, and tools/icloud-sync for the
+// Python side.
+builder.Services.AddSingleton<iCloudProcessOptions>();
+builder.Services.AddSingleton<iCloudAuthClient>();
+builder.Services.AddSingleton<iCloudSyncRunner>();
+builder.Services.AddHostedService<iCloudSyncBackgroundService>();
 
 // Add services to the container.
 

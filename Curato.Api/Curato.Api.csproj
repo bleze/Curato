@@ -18,9 +18,20 @@
   <ItemGroup>
     <ProjectReference Include="..\Curato.Core\Curato.Core.csproj" />
     <ProjectReference Include="..\Curato.Data\Curato.Data.csproj" />
+    <ProjectReference Include="..\Curato.iCloud\Curato.iCloud.csproj" />
     <ProjectReference Include="..\Curato.Media\Curato.Media.csproj" />
     <ProjectReference Include="..\Curato.Organizer\Curato.Organizer.csproj" />
     <ProjectReference Include="..\Curato.Vision\Curato.Vision.csproj" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <!-- Copied into the build output so ICloudProcessOptions's default
+         AuthHelperScriptPath (AppContext.BaseDirectory-relative) resolves
+         the same way for a local `dotnet run` as it does in the Docker
+         image, where the Dockerfile COPYs the same folder in. -->
+    <Content Include="..\tools\icloud-sync\**" LinkBase="tools\icloud-sync">
+      <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
+    </Content>
   </ItemGroup>
 
 </Project>

@@ -14,18 +14,19 @@ namespace Curato.Api.Controllers;
 /// </summary>
 [ApiController]
 [Route("api/[controller]")]
-public sealed class OrganizeController : ControllerBase
+public sealed class OrganizeController(LibraryOperationGate gate) : ControllerBase
 {
     public sealed record OrganizeRequest(string Path);
 
     [HttpPost]
-    public ActionResult<OrganizeResult> Organize([FromBody] OrganizeRequest request)
+    public async Task<ActionResult<OrganizeResult>> Organize([FromBody] OrganizeRequest request)
     {
         if (!Directory.Exists(request.Path))
         {
             return NotFound($"Folder not found: {request.Path}");
         }
 
+        using var release = await gate.AcquireAsync(request.Path);
         var database = new LibraryDatabase(request.Path);
         database.EnsureSchema();
 

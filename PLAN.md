@@ -464,21 +464,62 @@ Photos, Immich):
 - **A native Windows Importer Helper** (§17) is a later, optional convenience on top of
   plain browser upload — auto-detecting camera/SD-card insertion and uploading in the
   background — not required for the core flow to work.
-- **Cloud services (iCloud, Google Photos, etc.): via their own official sync client's
-  local folder, not a direct API integration.** Checked both of the obvious candidates
-  rather than assuming: Apple has never published a public API for third-party access
-  to iCloud Photos, and Google locked its Library API's broad read-your-library scope
-  down in April 2025 — apps can now only manage content *they* uploaded, or use a new
-  Picker API that's a one-time manual-selection flow, not a background auto-import
-  mechanism ([Google Photos API updates](https://developers.google.com/photos/support/updates),
-  [Photos API policy](https://developers.google.com/photos/support/api-policy)).
-  Unofficial/reverse-engineered clients exist for both, but that's the same
-  fragile-unversioned-API pattern already rejected for Synology (§6). The robust path
-  instead: **iCloud for Windows** and **Google Drive for Desktop** are the vendors' own
-  official sync clients, and both already materialize cloud photos into an ordinary
-  local folder — which the "designated local drop folder" mechanism above already
-  handles with zero new code. Same trick as the OneDrive Backup Destination (§6), just
-  pulling in instead of pushing out.
+- **Google Photos: via its official sync client's local folder, not a direct API
+  integration.** Google locked its Library API's broad read-your-library scope down in
+  April 2025 — apps can now only manage content *they* uploaded, or use a new Picker API
+  that's a one-time manual-selection flow, not a background auto-import mechanism
+  ([Google Photos API updates](https://developers.google.com/photos/support/updates),
+  [Photos API policy](https://developers.google.com/photos/support/api-policy)). An
+  unofficial/reverse-engineered client exists, but isn't worth the same trade-off iCloud
+  made below, since **Google Drive for Desktop** already materializes cloud photos into
+  an ordinary local folder the "designated local drop folder" mechanism above handles
+  with zero new code — same trick as the OneDrive Backup Destination (§6), just pulling
+  in instead of pushing out.
+- **iCloud: direct integration — reversing this plan's original "official client only"
+  decision.** Originally rejected for the same reason as Google above (Apple has never
+  published a public API for third-party access to iCloud Photos; an unofficial client
+  is "the same fragile-unversioned-API pattern already rejected for Synology," §6) in
+  favor of relying on **iCloud for Windows** materializing photos into a local drop
+  folder. That reasoning didn't survive contact with reality: iCloud's own web/Windows
+  download path was confirmed live stripping Exif (`DateTimeOriginal`/`DateTimeDigitized`/
+  GPS, down to a bare version tag) for a real fraction of files — the exact problem this
+  feature exists to solve — and **iCloud for Windows doesn't exist for the primary
+  Synology/Linux deployment target at all**, so the "official path" the original decision
+  leaned on isn't even available where this app is actually meant to run.
+  [Phase 2 built shape: direct integration via
+  [icloudpd](https://github.com/icloud-photos-downloader/icloud_photos_downloader) and
+  its underlying `pyicloud` library (both MIT-licensed) — invoked as external Python
+  processes (`Curato.iCloud`), not ported into C#, since that's a mature, maintained
+  reverse-engineering of Apple's own iCloud-web API surface rather than something worth
+  redoing from scratch. Crucially, `icloudpd`'s `--set-exif-datetime` flag writes iCloud's
+  own internal (correct) date back into the downloaded file's Exif — directly fixing the
+  metadata-stripping problem, something the official client apparently doesn't do
+  reliably. A small custom script (`tools/icloud-sync/auth_helper.py`) drives the
+  one-time Apple ID login/2FA handshake directly via `pyicloud`'s clean API
+  (`requires_2fa`/`validate_2fa_code`/`trust_session`) rather than screen-scraping
+  `icloudpd`'s interactive CLI prompts, speaking one-line JSON on stdout instead; the
+  Apple password is piped over stdin (never an argument, never logged, never persisted)
+  and only `pyicloud`'s own session/cookie files survive, sharing the same
+  `--cookie-directory` `icloudpd` itself later reads for the recurring sync — kept at the
+  same trust boundary as `server.db` and the library itself, both already unencrypted on
+  the same volume, rather than building a new encryption-at-rest subsystem for
+  arguably-not-more-sensitive data. Downloaded files land in a `iCloud Sync/` staging
+  subfolder inside the new shared "library folder" setting (below) and are fed through
+  the *existing* scan pipeline exactly like a browser upload — zero new
+  clustering/auto-titling logic, since loose new files already get auto-clustered and
+  auto-titled. A new `LibraryOperationGate` (`Curato.Organizer`) serializes
+  ScanService/OrganizeService calls per library root, since a periodic background sync is
+  the first thing that can genuinely race a user-triggered scan/upload/organize — nothing
+  defended against that before.]
+- **A new shared "library folder" setting** (`Curato.Data`'s `LibraryFolderRepository`,
+  surfaced in a new minimal Settings panel) — the destination iCloud sync (and any future
+  external-source puller) copies into, since there's nothing to "organize in place" for
+  content that doesn't exist locally yet. Deliberately additive, not a change to how
+  scanning/organizing a folder you point Curato at directly already works — that stays
+  exactly as described above. First real driver of the Settings surface this plan has
+  gestured at since §4a/§5 (Picasa auto-import opt-out, recycle-bin retention), kept
+  intentionally minimal rather than building a generic settings framework ahead of a
+  second concrete need.
 
 ## 5. Recycle Bin (every deletion in the app goes through here)
 
@@ -838,7 +879,12 @@ Tracked as a §14 follow-on, not a separate model/phase of its own.
   newly-scanned item is folded in (`LibraryRepository.ResortEventMembership`,
   shared by both paths now). Deliberately does not re-bucket the item into a
   different Event/day even if the correction crosses a day boundary — that
-  needs the full clustering pass, out of scope for a single-field fix.]
+  needs the full clustering pass, out of scope for a single-field fix. This
+  same stripped-Exif finding is also what drove §4a's direct iCloud
+  integration — `icloudpd`'s `--set-exif-datetime` fixes it at the source
+  for newly-synced files, so the manual editor here is the fallback for
+  whatever still slips through (e.g. files that already made it in another
+  way) rather than the primary fix.]
 - Grouping-aware navigation: browse by Event/Trip, or an "all photos" timeline view.
 - Fast-scroll date scrubber (like Photos/Picasa's right-edge date rail).
   [Phase 2 built shape: Trips and standalone Events are merged into one true

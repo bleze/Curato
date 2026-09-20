@@ -19,19 +19,20 @@ namespace Curato.Api.Controllers;
 /// </summary>
 [ApiController]
 [Route("api/[controller]")]
-public sealed class ScanController : ControllerBase
+public sealed class ScanController(LibraryOperationGate gate) : ControllerBase
 {
     public sealed record ScanRequest(string Path);
     public sealed record ScanResponse(ScanResult Scan, PicasaImportResult PicasaImport);
 
     [HttpPost]
-    public ActionResult<ScanResponse> Scan([FromBody] ScanRequest request)
+    public async Task<ActionResult<ScanResponse>> Scan([FromBody] ScanRequest request)
     {
         if (!Directory.Exists(request.Path))
         {
             return NotFound($"Folder not found: {request.Path}");
         }
 
+        using var release = await gate.AcquireAsync(request.Path);
         var database = new LibraryDatabase(request.Path);
         database.EnsureSchema();
         var query = new LibraryQueryService(database);

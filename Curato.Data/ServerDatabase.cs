@@ -14,9 +14,19 @@ public sealed class ServerDatabase
 {
     public string DatabasePath { get; }
 
+    /// <summary>
+    /// The server's persistent data directory itself (not just server.db) —
+    /// needed by anything that stores its own files alongside the database
+    /// rather than rows in it, e.g. the iCloud sync feature's pyicloud
+    /// session/cookie directory (PLAN.md §4), which pyicloud manages as
+    /// plain files, not something a SQLite row can hold.
+    /// </summary>
+    public string DataDirectory { get; }
+
     public ServerDatabase(string dataDirectory)
     {
         Directory.CreateDirectory(dataDirectory);
+        DataDirectory = dataDirectory;
         DatabasePath = Path.Combine(dataDirectory, "server.db");
     }
 
@@ -37,6 +47,35 @@ public sealed class ServerDatabase
                 Username TEXT NOT NULL UNIQUE,
                 PasswordHash TEXT NOT NULL,
                 CreatedAt TEXT NOT NULL
+            );
+
+            -- PLAN.md §4: the shared destination folder for content pulled in
+            -- from an external source (iCloud sync, and any future one) —
+            -- deliberately separate from the ad-hoc "path" a manual
+            -- scan/organize/upload request supplies, since those keep
+            -- working in place on whatever folder they're pointed at. A
+            -- single row, matching the single-admin-account philosophy
+            -- (§15: personal/family scale, not multi-tenant).
+            CREATE TABLE IF NOT EXISTS LibraryFolder (
+                Id INTEGER PRIMARY KEY CHECK (Id = 1),
+                Path TEXT NOT NULL
+            );
+
+            -- PLAN.md §4: one iCloud account synced into the LibraryFolder
+            -- above. The Apple password itself is never stored here (or
+            -- anywhere) — only pyicloud's own session/cookie files
+            -- (CookieDirectory, plain files on disk, same trust boundary as
+            -- this database) survive the login/2FA handshake.
+            CREATE TABLE IF NOT EXISTS iCloudSync (
+                Id INTEGER PRIMARY KEY CHECK (Id = 1),
+                AppleUsername TEXT NOT NULL,
+                CookieDirectory TEXT NOT NULL,
+                IntervalMinutes INTEGER NOT NULL,
+                Enabled INTEGER NOT NULL,
+                LastSyncAt TEXT NULL,
+                LastSyncStatus TEXT NULL,
+                LastSyncMessage TEXT NULL,
+                LastSyncItemCount INTEGER NULL
             );
             """;
         command.ExecuteNonQuery();
