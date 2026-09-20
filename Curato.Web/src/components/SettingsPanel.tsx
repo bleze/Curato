@@ -23,6 +23,7 @@ export function SettingsPanel({ onClose }: { onClose: () => void }) {
   const [password, setPassword] = useState('')
   const [awaitingCode, setAwaitingCode] = useState(false)
   const [code, setCode] = useState('')
+  const [lookbackInput, setLookbackInput] = useState('')
 
   function refresh() {
     getLibraryFolder().then((path) => {
@@ -30,7 +31,12 @@ export function SettingsPanel({ onClose }: { onClose: () => void }) {
       setLibraryFolderInput((current) => current || path || '')
     })
     getICloudSyncStatus()
-      .then(setStatus)
+      .then((s) => {
+        setStatus(s)
+        if (s.lookbackDays !== null) {
+          setLookbackInput((current) => current || String(s.lookbackDays))
+        }
+      })
       .catch((err) => setError(err instanceof Error ? err.message : String(err)))
   }
 
@@ -106,7 +112,20 @@ export function SettingsPanel({ onClose }: { onClose: () => void }) {
   function handleToggleEnabled() {
     if (!status) return Promise.resolve()
     return runBusy(async () => {
-      await iCloudUpdateSettings(status.intervalMinutes ?? 360, !status.enabled)
+      await iCloudUpdateSettings(status.intervalMinutes ?? 360, !status.enabled, status.lookbackDays ?? 365)
+      refresh()
+    })
+  }
+
+  function handleSaveLookback() {
+    if (!status) return Promise.resolve()
+    const days = Number.parseInt(lookbackInput, 10)
+    if (!Number.isFinite(days) || days <= 0) {
+      setError('Enter a positive number of days.')
+      return Promise.resolve()
+    }
+    return runBusy(async () => {
+      await iCloudUpdateSettings(status.intervalMinutes ?? 360, status.enabled ?? true, days)
       refresh()
     })
   }
@@ -183,6 +202,26 @@ export function SettingsPanel({ onClose }: { onClose: () => void }) {
                 Disconnect
               </button>
             </div>
+            <div className="settings-row">
+              <label>
+                Only sync photos from the last{' '}
+                <input
+                  type="number"
+                  min={1}
+                  value={lookbackInput}
+                  onChange={(e) => setLookbackInput(e.target.value)}
+                  style={{ width: '70px' }}
+                />{' '}
+                day(s)
+              </label>
+              <button type="button" onClick={handleSaveLookback} disabled={busy}>
+                Save
+              </button>
+            </div>
+            <p className="settings-meta">
+              Applies to every sync, not just the first — widen it if you want more history, but a never-yet-synced
+              account otherwise won't pull years of backlog by surprise.
+            </p>
           </>
         ) : awaitingCode ? (
           <div className="settings-row">

@@ -1,3 +1,4 @@
+using Dapper;
 using Microsoft.Data.Sqlite;
 
 namespace Curato.Data;
@@ -72,6 +73,7 @@ public sealed class ServerDatabase
                 CookieDirectory TEXT NOT NULL,
                 IntervalMinutes INTEGER NOT NULL,
                 Enabled INTEGER NOT NULL,
+                LookbackDays INTEGER NOT NULL DEFAULT 365,
                 LastSyncAt TEXT NULL,
                 LastSyncStatus TEXT NULL,
                 LastSyncMessage TEXT NULL,
@@ -79,5 +81,31 @@ public sealed class ServerDatabase
             );
             """;
         command.ExecuteNonQuery();
+
+        // SQLite has no `ALTER TABLE ... ADD COLUMN IF NOT EXISTS` — same
+        // idempotent-migration approach as LibraryDatabase (Schema.cs), just
+        // inline here since server.db's schema is small enough not to need
+        // its own separate migrations list.
+        if (!ColumnExists(connection, "iCloudSync", "LookbackDays"))
+        {
+            connection.Execute("ALTER TABLE iCloudSync ADD COLUMN LookbackDays INTEGER NOT NULL DEFAULT 365");
+        }
+    }
+
+    private static bool ColumnExists(SqliteConnection connection, string table, string column)
+    {
+        using var command = connection.CreateCommand();
+        command.CommandText = $"PRAGMA table_info({table})";
+        using var reader = command.ExecuteReader();
+        var nameOrdinal = reader.GetOrdinal("name");
+        while (reader.Read())
+        {
+            if (string.Equals(reader.GetString(nameOrdinal), column, StringComparison.OrdinalIgnoreCase))
+            {
+                return true;
+            }
+        }
+
+        return false;
     }
 }

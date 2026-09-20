@@ -26,16 +26,22 @@ public sealed class iCloudSyncController(
     // no need for more than one place pyicloud's session files can live.
     private const string CookieDirectoryName = "icloud-session";
 
+    // A never-yet-synced account with years of iCloud history would
+    // otherwise try to pull all of it on the very first run — bounded by
+    // default, widenable in Settings.
+    private const int DefaultLookbackDays = 365;
+
     public sealed record LoginRequest(string Username, string Password);
     public sealed record LoginResponse(bool RequiresTwoFactor, string? Error);
     public sealed record VerifyTwoFactorRequest(string Username, string Code);
-    public sealed record UpdateSettingsRequest(int IntervalMinutes, bool Enabled);
+    public sealed record UpdateSettingsRequest(int IntervalMinutes, bool Enabled, int LookbackDays);
     public sealed record StatusResponse(
         bool LibraryFolderConfigured,
         bool Connected,
         string? AppleUsername,
         int? IntervalMinutes,
         bool? Enabled,
+        int? LookbackDays,
         DateTime? LastSyncAt,
         string? LastSyncStatus,
         string? LastSyncMessage,
@@ -54,6 +60,7 @@ public sealed class iCloudSyncController(
             AppleUsername: config?.AppleUsername,
             IntervalMinutes: config?.IntervalMinutes,
             Enabled: config?.Enabled,
+            LookbackDays: config?.LookbackDays,
             LastSyncAt: config?.LastSyncAt,
             LastSyncStatus: config?.LastSyncStatus,
             LastSyncMessage: config?.LastSyncMessage,
@@ -78,7 +85,8 @@ public sealed class iCloudSyncController(
             // No 2FA needed (e.g. reconnecting an already-trusted account) —
             // nothing more to wait on, so save now rather than only in
             // VerifyTwoFactor below, which never runs in this case.
-            new iCloudSyncRepository(database).Save(request.Username, cookieDirectory, intervalMinutes: 360, enabled: true);
+            new iCloudSyncRepository(database).Save(
+                request.Username, cookieDirectory, intervalMinutes: 360, enabled: true, DefaultLookbackDays);
             return Ok(new LoginResponse(RequiresTwoFactor: false, Error: null));
         }
 
@@ -106,7 +114,8 @@ public sealed class iCloudSyncController(
 
         var cookieDirectory = GetCookieDirectory();
 
-        new iCloudSyncRepository(database).Save(request.Username, cookieDirectory, intervalMinutes: 360, enabled: true);
+        new iCloudSyncRepository(database).Save(
+            request.Username, cookieDirectory, intervalMinutes: 360, enabled: true, DefaultLookbackDays);
         return Ok();
     }
 
@@ -140,7 +149,7 @@ public sealed class iCloudSyncController(
             return BadRequest("Not connected.");
         }
 
-        repository.UpdateSettings(request.IntervalMinutes, request.Enabled);
+        repository.UpdateSettings(request.IntervalMinutes, request.Enabled, request.LookbackDays);
         return Ok();
     }
 

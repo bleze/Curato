@@ -65,8 +65,8 @@ public sealed class iCloudSyncRunner(iCloudProcessOptions options, LibraryOperat
         }
 
         var result = config.LastSyncAt is null
-            ? await RunFullBackfillAsync(libraryFolder, config.AppleUsername, config.CookieDirectory, cancellationToken)
-            : await RunIncrementalAsync(libraryFolder, config.AppleUsername, config.CookieDirectory, cancellationToken);
+            ? await RunFullBackfillAsync(libraryFolder, config.AppleUsername, config.CookieDirectory, config.LookbackDays, cancellationToken)
+            : await RunIncrementalAsync(libraryFolder, config.AppleUsername, config.CookieDirectory, config.LookbackDays, cancellationToken);
 
         repository.RecordSyncResult(
             DateTime.UtcNow,
@@ -78,15 +78,16 @@ public sealed class iCloudSyncRunner(iCloudProcessOptions options, LibraryOperat
     }
 
     private Task<iCloudSyncResult> RunIncrementalAsync(
-        string libraryFolder, string appleUsername, string cookieDirectory, CancellationToken cancellationToken) =>
-        RunAsync(libraryFolder, appleUsername, cookieDirectory, IncrementalUntilFoundCount, cancellationToken);
+        string libraryFolder, string appleUsername, string cookieDirectory, int lookbackDays, CancellationToken cancellationToken) =>
+        RunAsync(libraryFolder, appleUsername, cookieDirectory, lookbackDays, IncrementalUntilFoundCount, cancellationToken);
 
     private Task<iCloudSyncResult> RunFullBackfillAsync(
-        string libraryFolder, string appleUsername, string cookieDirectory, CancellationToken cancellationToken) =>
-        RunAsync(libraryFolder, appleUsername, cookieDirectory, untilFound: null, cancellationToken);
+        string libraryFolder, string appleUsername, string cookieDirectory, int lookbackDays, CancellationToken cancellationToken) =>
+        RunAsync(libraryFolder, appleUsername, cookieDirectory, lookbackDays, untilFound: null, cancellationToken);
 
     private async Task<iCloudSyncResult> RunAsync(
-        string libraryFolder, string appleUsername, string cookieDirectory, int? untilFound, CancellationToken cancellationToken)
+        string libraryFolder, string appleUsername, string cookieDirectory, int lookbackDays, int? untilFound,
+        CancellationToken cancellationToken)
     {
         var stagingFolder = Path.Combine(libraryFolder, StagingFolderName);
         Directory.CreateDirectory(stagingFolder);
@@ -105,6 +106,13 @@ public sealed class iCloudSyncRunner(iCloudProcessOptions options, LibraryOperat
                      "--directory", stagingFolder,
                      "--set-exif-datetime",
                      "--no-progress-bar",
+                     // Bounds every sync (not just the first) to items
+                     // created within this window — without it, a
+                     // never-yet-synced account with years of history would
+                     // try to pull all of it in one go. icloudpd accepts a
+                     // relative interval like "365d" here as well as an
+                     // absolute ISO date.
+                     "--skip-created-before", $"{lookbackDays}d",
                  })
         {
             startInfo.ArgumentList.Add(arg);

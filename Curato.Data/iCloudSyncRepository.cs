@@ -7,6 +7,7 @@ public sealed record iCloudSyncConfig(
     string CookieDirectory,
     int IntervalMinutes,
     bool Enabled,
+    int LookbackDays,
     DateTime? LastSyncAt,
     string? LastSyncStatus,
     string? LastSyncMessage,
@@ -33,32 +34,35 @@ public sealed class iCloudSyncRepository(ServerDatabase database)
         return null;
     }
 
-    public void Save(string appleUsername, string cookieDirectory, int intervalMinutes, bool enabled)
+    public void Save(string appleUsername, string cookieDirectory, int intervalMinutes, bool enabled, int lookbackDays)
     {
         using var connection = database.OpenConnection();
         connection.Execute("""
-            INSERT INTO iCloudSync (Id, AppleUsername, CookieDirectory, IntervalMinutes, Enabled)
-            VALUES (1, @AppleUsername, @CookieDirectory, @IntervalMinutes, @Enabled)
+            INSERT INTO iCloudSync (Id, AppleUsername, CookieDirectory, IntervalMinutes, Enabled, LookbackDays)
+            VALUES (1, @AppleUsername, @CookieDirectory, @IntervalMinutes, @Enabled, @LookbackDays)
             ON CONFLICT (Id) DO UPDATE SET
                 AppleUsername = @AppleUsername,
                 CookieDirectory = @CookieDirectory,
                 IntervalMinutes = @IntervalMinutes,
-                Enabled = @Enabled
+                Enabled = @Enabled,
+                LookbackDays = @LookbackDays
             """, new
         {
             AppleUsername = appleUsername,
             CookieDirectory = cookieDirectory,
             IntervalMinutes = intervalMinutes,
-            Enabled = enabled
+            Enabled = enabled,
+            LookbackDays = lookbackDays
         });
     }
 
-    public void UpdateSettings(int intervalMinutes, bool enabled)
+    public void UpdateSettings(int intervalMinutes, bool enabled, int lookbackDays)
     {
         using var connection = database.OpenConnection();
         connection.Execute("""
-            UPDATE iCloudSync SET IntervalMinutes = @IntervalMinutes, Enabled = @Enabled WHERE Id = 1
-            """, new { IntervalMinutes = intervalMinutes, Enabled = enabled });
+            UPDATE iCloudSync SET IntervalMinutes = @IntervalMinutes, Enabled = @Enabled, LookbackDays = @LookbackDays
+            WHERE Id = 1
+            """, new { IntervalMinutes = intervalMinutes, Enabled = enabled, LookbackDays = lookbackDays });
     }
 
     public void RecordSyncResult(DateTime syncedAt, string status, string? message, int itemCount)
@@ -88,6 +92,7 @@ public sealed class iCloudSyncRepository(ServerDatabase database)
         CookieDirectory: (string)row.CookieDirectory,
         IntervalMinutes: (int)(long)row.IntervalMinutes,
         Enabled: (long)row.Enabled != 0,
+        LookbackDays: (int)(long)row.LookbackDays,
         LastSyncAt: row.LastSyncAt is null ? null : DateTime.Parse((string)row.LastSyncAt).ToUniversalTime(),
         LastSyncStatus: (string?)row.LastSyncStatus,
         LastSyncMessage: (string?)row.LastSyncMessage,

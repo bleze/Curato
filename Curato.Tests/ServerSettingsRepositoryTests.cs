@@ -28,13 +28,14 @@ public class ServerSettingsRepositoryTests
             var repository = new iCloudSyncRepository(database);
             Assert.Null(repository.Get());
 
-            repository.Save("me@example.com", "/data/icloud-session", intervalMinutes: 360, enabled: true);
+            repository.Save("me@example.com", "/data/icloud-session", intervalMinutes: 360, enabled: true, lookbackDays: 365);
             var saved = repository.Get();
             Assert.NotNull(saved);
             Assert.Equal("me@example.com", saved!.AppleUsername);
             Assert.Equal("/data/icloud-session", saved.CookieDirectory);
             Assert.Equal(360, saved.IntervalMinutes);
             Assert.True(saved.Enabled);
+            Assert.Equal(365, saved.LookbackDays);
             Assert.Null(saved.LastSyncAt);
 
             var syncedAt = new DateTime(2026, 1, 2, 3, 4, 5, DateTimeKind.Utc);
@@ -44,9 +45,10 @@ public class ServerSettingsRepositoryTests
             Assert.Equal("Success", afterSync.LastSyncStatus);
             Assert.Equal(7, afterSync.LastSyncItemCount);
 
-            repository.UpdateSettings(intervalMinutes: 60, enabled: false);
+            repository.UpdateSettings(intervalMinutes: 60, enabled: false, lookbackDays: 30);
             Assert.Equal(60, repository.Get()!.IntervalMinutes);
             Assert.False(repository.Get()!.Enabled);
+            Assert.Equal(30, repository.Get()!.LookbackDays);
 
             repository.Delete();
             Assert.Null(repository.Get());

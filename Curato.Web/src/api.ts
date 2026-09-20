@@ -112,6 +112,7 @@ export interface iCloudSyncStatus {
   appleUsername: string | null
   intervalMinutes: number | null
   enabled: boolean | null
+  lookbackDays: number | null
   lastSyncAt: string | null
   lastSyncStatus: string | null
   lastSyncMessage: string | null
@@ -154,11 +155,11 @@ export function iCloudSyncNow(): Promise<iCloudSyncNowResult> {
   return fetch('/api/icloud-sync/sync-now', { method: 'POST' }).then(asJson<iCloudSyncNowResult>)
 }
 
-export function iCloudUpdateSettings(intervalMinutes: number, enabled: boolean): Promise<void> {
+export function iCloudUpdateSettings(intervalMinutes: number, enabled: boolean, lookbackDays: number): Promise<void> {
   return fetch('/api/icloud-sync/settings', {
     method: 'PUT',
     headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ intervalMinutes, enabled }),
+    body: JSON.stringify({ intervalMinutes, enabled, lookbackDays }),
   }).then(expectOk)
 }
 

@@ -540,7 +540,14 @@ Photos, Immich):
   files already get auto-clustered and auto-titled. A new `LibraryOperationGate`
   (`Curato.Organizer`) serializes ScanService/OrganizeService calls per library root,
   since a periodic background sync is the first thing that can genuinely race a
-  user-triggered scan/upload/organize — nothing defended against that before.]
+  user-triggered scan/upload/organize — nothing defended against that before.
+
+  Confirmed live why an unbounded scope matters: a real account's first sync reported
+  9604 items with no cap at all (`RunFullBackfillAsync` originally passed no
+  `--until-found` limit). `iCloudSync.LookbackDays` (default 365, editable in Settings,
+  applies to every sync, not just the first) bounds this via icloudpd's own
+  `--skip-created-before {N}d` flag rather than a Curato-side date filter, so the
+  same year's worth of history downloads either way — first sync or incremental.]
 - **A new shared "library folder" setting** (`Curato.Data`'s `LibraryFolderRepository`,
   surfaced in a new minimal Settings panel) — the destination iCloud sync (and any future
   external-source puller) copies into, since there's nothing to "organize in place" for
