@@ -552,11 +552,22 @@ Photos, Immich):
   a 9604-item library still took just as long as an unbounded sync — `--skip-created-before`
   still enumerates and date-checks every single remote item one by one (logging a
   "Skipping ..." line for each), it just skips the *download* for old ones. It bounds what
-  gets pulled, not how long the walk takes. The original design deliberately omitted
-  `--until-found` on a never-yet-synced account for a genuine unbounded first backfill —
-  that no longer makes sense now that `LookbackDays` already expresses "how much history"
-  directly; every sync (first included) now always passes `--until-found 50` too, so it can
-  short-circuit the remote listing early instead of always walking the whole library.
+  gets pulled, not how long the walk takes.
+
+  A third round tried pairing it with `--until-found` (icloudpd's early-stop-once-caught-up
+  flag) on the theory that it'd short-circuit the walk — checked icloudpd's own loop source
+  directly rather than guessing again this time: `--until-found`'s consecutive counter only
+  increments on items it actually *downloads*, and an item `--skip-created-before` skips
+  never counts, so the loop never breaks early regardless of how tight the date window is.
+  `--recent N` works completely differently and is the actual fix: it slices the first N
+  items off the listing (`itertools.islice`) *before* any filtering runs at all, making it a
+  genuine, unconditional cap on total work independent of what the date filter does. Every
+  sync now passes both: `--skip-created-before {N}d` for correctness (what actually gets
+  downloaded) and `--recent 2000` as a hard performance ceiling (deliberately generous,
+  since it caps by "most recently added to iCloud" rather than by creation date — a
+  bulk-imported batch of old photos added more recently than 2000 other items could in
+  principle push genuinely in-window content outside the slice, an accepted trade-off
+  rather than a tightly-tuned value).
 
   Also confirmed live: a "Sync now" click (a single long-running synchronous request,
   per v1's deliberate no-polling-infra simplification) gave zero visibility into whether

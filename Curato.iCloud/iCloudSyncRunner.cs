@@ -41,21 +41,22 @@ public sealed class iCloudSyncRunner(
     /// <summary>The most recent line icloudpd printed, or null when no sync is currently running.</summary>
     public string? CurrentActivity { get; private set; }
 
-    // icloudpd stops paginating once it finds this many consecutive
-    // already-processed items — the cheap way to avoid walking the whole
-    // remote library every run. Applied on every sync, including the
-    // first, now that --skip-created-before (below) is the real scope
-    // control: confirmed live that --skip-created-before alone still
-    // enumerates and date-checks every single remote item one by one
-    // (just skipping the download for old ones), so a 9604-item library
-    // took just as long with a 1-day lookback as an unbounded one — the
-    // lookback bounds what gets *downloaded*, not how long the walk takes.
-    // Originally the very first sync deliberately omitted --until-found
-    // entirely for a true unbounded backfill; that's no longer the right
-    // default now that LookbackDays exists to express "how much history"
-    // directly and predictably, rather than via this consecutive-count
-    // heuristic.
-    private const int UntilFoundCount = 50;
+    // --until-found's early-stop turned out NOT to compose with
+    // --skip-created-before: confirmed live (checking icloudpd's own loop
+    // source) that its consecutive counter only increments on items it
+    // actually *downloads* — an item --skip-created-before skips never
+    // counts, so the loop never breaks early and still walks the entire
+    // remote listing regardless of how tight the date window is. --recent N
+    // works completely differently and actually does what's needed here:
+    // it slices the first N items off the listing (itertools.islice)
+    // *before* any filtering runs at all, so it's a genuine, unconditional
+    // cap on total work independent of the date filter's results. The
+    // trade-off: it caps by "most recently added to iCloud," not by
+    // creation date, so a bulk-imported batch of old photos added more
+    // recently than this many other items could in principle push
+    // genuinely-in-window content outside the slice — deliberately
+    // generous to make that edge case unlikely rather than tuned tight.
+    private const int RecentItemCap = 2000;
 
     /// <summary>
     /// The single entry point both the manual "Sync now" button
@@ -129,7 +130,7 @@ public sealed class iCloudSyncRunner(
                      // relative interval like "365d" here as well as an
                      // absolute ISO date.
                      "--skip-created-before", $"{lookbackDays}d",
-                     "--until-found", UntilFoundCount.ToString(),
+                     "--recent", RecentItemCap.ToString(),
                  })
         {
             startInfo.ArgumentList.Add(arg);
