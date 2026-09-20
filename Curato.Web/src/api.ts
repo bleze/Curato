@@ -157,3 +157,18 @@ export function recycleBinThumbnailUrl(libraryPath: string, deletedItemId: numbe
   const params = new URLSearchParams({ path: libraryPath, deletedItemId: String(deletedItemId) })
   return `/api/recyclebin/thumbnail?${params.toString()}`
 }
+
+export interface UploadResult {
+  filesSaved: number
+  filesSkipped: number
+  scan: ScanResult
+}
+
+export function uploadFiles(path: string, files: FileList | File[]): Promise<UploadResult> {
+  const form = new FormData()
+  form.set('path', path)
+  for (const file of files) {
+    form.append('files', file)
+  }
+  return fetch('/api/upload', { method: 'POST', body: form }).then(asJson<UploadResult>)
+}

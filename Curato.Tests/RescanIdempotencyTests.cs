@@ -76,47 +76,9 @@ public class RescanIdempotencyTests
         });
     }
 
-    /// <summary>Mirrors ScanController's orchestration exactly, so a test failure here means the real endpoint is broken too.</summary>
-    private static void RunScanPass(LibraryRepository repository, MediaItem[] rawItems)
-    {
-        var savedItems = repository.UpsertMediaItems(rawItems);
-        var byFolder = FolderGrouper.GroupByContainingFolder(savedItems);
-
-        var alreadyClustered = repository.GetMediaItemIdsAlreadyInAnyEvent();
-        var newLooseItems = byFolder[FolderGrouper.LooseItemsKey]
-            .Where(item => !alreadyClustered.Contains(item.Id))
-            .ToList();
-
-        var existingAdoptedByFolder = repository.GetAdoptedEventsByFolderPath();
-        var newFolderGroups = new List<IGrouping<string, MediaItem>>();
-
-        foreach (var group in byFolder)
-        {
-            if (group.Key == FolderGrouper.LooseItemsKey)
-            {
-                continue;
-            }
-
-            if (existingAdoptedByFolder.TryGetValue(group.Key, out var existing))
-            {
-                var newItemsInFolder = group.Where(item => !existing.MediaItemIds.Contains(item.Id)).ToList();
-                repository.AddMediaItemsToEvent(existing.Id, newItemsInFolder);
-            }
-            else
-            {
-                newFolderGroups.Add(group);
-            }
-        }
-
-        var newAutoEvents = new EventClusterer().Cluster(newLooseItems);
-        var newAdoptedEvents = AdoptedFolderPlanner.PlanEvents(newFolderGroups);
-        var allNewEvents = newAutoEvents.Concat(newAdoptedEvents).ToList();
-        repository.SaveEvents(allNewEvents);
-
-        var newAutoTrips = new TripClusterer().Cluster(newAutoEvents);
-        var newAdoptedTrips = AdoptedFolderPlanner.PlanTrips(newAdoptedEvents);
-        repository.SaveTripGroups(newAutoTrips.Concat(newAdoptedTrips).ToList());
-    }
+    /// <summary>Delegates to the real ScanService, so a test failure here means the real endpoint is broken too.</summary>
+    private static void RunScanPass(LibraryRepository repository, MediaItem[] rawItems) =>
+        new ScanService(repository).ScanItems(rawItems);
 
     private static void WithTempLibrary(Action<LibraryRepository, LibraryQueryService> test)
     {

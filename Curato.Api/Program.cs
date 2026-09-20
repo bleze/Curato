@@ -101,7 +101,7 @@ app.MapControllers();
 
 // Minimal health check — deliberately unauthenticated (PLAN.md §15: login + a
 // health check are the only routes that don't require a session).
-app.MapGet("/health", () => Results.Ok(new { status = "ok" }));
+app.MapGet("/health", () => Results.Ok(new { status = "ok" })).AllowAnonymous();
 
 // Serves Curato.Web's built static output once it's produced (one deployable
 // artifact per PLAN.md §1 — no separate frontend server/CORS setup).

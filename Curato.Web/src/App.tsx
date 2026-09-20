@@ -1,7 +1,15 @@
 import { useEffect, useState } from 'react'
 import './App.css'
 import type { AuthStatus, LibraryDto } from './api'
-import { deleteMediaItem, getAuthStatus, getLibrary, logout, organizeLibrary, scanLibrary } from './api'
+import {
+  deleteMediaItem,
+  getAuthStatus,
+  getLibrary,
+  logout,
+  organizeLibrary,
+  scanLibrary,
+  uploadFiles,
+} from './api'
 import { AuthGate } from './components/AuthGate'
 import { EventSection } from './components/EventSection'
 import { RecycleBinPanel } from './components/RecycleBinPanel'
@@ -115,6 +123,28 @@ function App() {
     }
   }
 
+  async function handleUpload(fileList: FileList | null) {
+    if (!fileList || fileList.length === 0 || !loadedPath) return
+    setBusy(true)
+    setError(null)
+    setStatus('Uploading…')
+    try {
+      const result = await uploadFiles(loadedPath, fileList)
+      setStatus(
+        `Uploaded ${result.filesSaved} file(s)` +
+          (result.filesSkipped > 0 ? ` (${result.filesSkipped} skipped — unsupported type or too large)` : '') +
+          `. ${result.scan.newAutoOrganizedEventCount} new event(s), ` +
+          `${result.scan.itemsAddedToExistingEvents} item(s) added to existing events.`,
+      )
+      const lib = await getLibrary(loadedPath)
+      setLibrary(lib)
+    } catch (err) {
+      setError(err instanceof Error ? err.message : String(err))
+    } finally {
+      setBusy(false)
+    }
+  }
+
   async function handleDelete(mediaItemId: number) {
     if (!loadedPath) return
     setError(null)
@@ -200,6 +230,19 @@ function App() {
               Moves newly auto-organized items into their dated folders. Adopted folders are
               never touched.
             </span>
+            <label className="upload-button">
+              {busy ? 'Working…' : 'Add photos'}
+              <input
+                type="file"
+                accept="image/*,video/*"
+                multiple
+                disabled={busy}
+                onChange={(e) => {
+                  handleUpload(e.target.files)
+                  e.target.value = ''
+                }}
+              />
+            </label>
           </div>
           {library.trips.map((trip) => (
             <section className="trip" key={trip.id}>

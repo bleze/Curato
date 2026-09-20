@@ -23,6 +23,10 @@ public sealed class MediaFileScanner
         ".mp4", ".mov", ".avi", ".mkv", ".m4v", ".3gp"
     };
 
+    /// <summary>Whether <paramref name="extension"/> (with leading dot) is a recognized photo/video type.</summary>
+    public static bool IsSupportedExtension(string extension) =>
+        PhotoExtensions.Contains(extension) || VideoExtensions.Contains(extension);
+
     /// <summary>
     /// Recursively scans <paramref name="rootPath"/>. Every path stored on the
     /// resulting items is relative to it, per PLAN.md §2's portability rule.
