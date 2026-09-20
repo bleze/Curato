@@ -121,10 +121,12 @@ export function LibraryGrid({
   library,
   libraryPath,
   onDelete,
+  onTakenAtChanged,
 }: {
   library: LibraryDto
   libraryPath: string
   onDelete: (mediaItemId: number) => void
+  onTakenAtChanged: (mediaItemId: number, takenAt: string) => void
 }) {
   const scrollRef = useRef<HTMLDivElement>(null)
   // null = not yet measured. Deliberately never guess a fallback column
@@ -284,6 +286,7 @@ export function LibraryGrid({
           libraryPath={libraryPath}
           onClose={() => setLightbox(null)}
           onNavigate={(index) => setLightbox((current) => (current ? { ...current, index } : current))}
+          onTakenAtChanged={onTakenAtChanged}
         />
       )}
     </div>

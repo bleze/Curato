@@ -15,10 +15,12 @@ export function TagGrid({
   items,
   libraryPath,
   onDelete,
+  onTakenAtChanged,
 }: {
   items: MediaItemDto[]
   libraryPath: string
   onDelete: (mediaItemId: number) => void
+  onTakenAtChanged: (mediaItemId: number, takenAt: string) => void
 }) {
   const scrollRef = useRef<HTMLDivElement>(null)
   // null = not yet measured — see LibraryGrid's identical fix for why this
@@ -136,6 +138,7 @@ export function TagGrid({
           libraryPath={libraryPath}
           onClose={() => setLightbox(null)}
           onNavigate={setLightbox}
+          onTakenAtChanged={onTakenAtChanged}
         />
       )}
     </div>

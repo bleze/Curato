@@ -1,3 +1,4 @@
+using System.Data;
 using Curato.Core;
 using Dapper;
 
@@ -122,10 +123,69 @@ public sealed class LibraryRepository(LibraryDatabase database)
         // TakenAt rather than just appending the new ones — otherwise
         // newly-added items always land at the end of the thumb-grid
         // regardless of when they were actually taken, breaking
-        // chronological order within the event. TakenAt strings are all
-        // stored via DateTime.ToString("O") (LibraryRepository.ToRow), so
-        // ordinal string ordering matches chronological ordering exactly,
-        // without needing to parse each one back into a DateTime.
+        // chronological order within the event.
+        ResortEventMembership(connection, transaction, eventId);
+
+        transaction.Commit();
+    }
+
+    /// <summary>
+    /// Manually corrects one MediaItem's TakenAt (PLAN.md §1's
+    /// TakenAtSource.Manual — for files whose Exif was stripped by the time
+    /// they reached the library, e.g. reported live for an iPhone photo
+    /// shared through a path that kept only a bare Exif version tag) and
+    /// re-sorts its Event's membership + StartAt/EndAt to match, the same
+    /// way a newly-scanned item is folded in above. Deliberately does *not*
+    /// move the item into a different Event even if the correction lands it
+    /// on a different day — that needs the full clustering pass, out of
+    /// scope for a single-field fix. Returns false if the item doesn't
+    /// exist.
+    /// </summary>
+    public bool SetTakenAt(long mediaItemId, DateTime takenAt)
+    {
+        using var connection = database.OpenConnection();
+        using var transaction = connection.BeginTransaction();
+
+        var updated = connection.Execute("""
+            UPDATE MediaItem SET TakenAt = @TakenAt, TakenAtSource = @TakenAtSource
+            WHERE Id = @Id
+            """, new
+        {
+            Id = mediaItemId,
+            TakenAt = takenAt.ToString("O"),
+            TakenAtSource = nameof(Curato.Core.TakenAtSource.Manual)
+        }, transaction);
+
+        if (updated == 0)
+        {
+            transaction.Rollback();
+            return false;
+        }
+
+        var eventId = connection.ExecuteScalar<long?>(
+            "SELECT EventId FROM EventMediaItem WHERE MediaItemId = @MediaItemId",
+            new { MediaItemId = mediaItemId }, transaction);
+
+        if (eventId is { } id)
+        {
+            ResortEventMembership(connection, transaction, id);
+        }
+
+        transaction.Commit();
+        return true;
+    }
+
+    /// <summary>
+    /// Re-sorts an Event's SortOrder to match its members' actual TakenAt
+    /// and recomputes StartAt/EndAt from them, so both the thumb-grid order
+    /// and the Event's own date range stay correct after any change to a
+    /// member's TakenAt. TakenAt strings are all stored via
+    /// DateTime.ToString("O") (see ToRow below), so ordinal string ordering
+    /// matches chronological ordering exactly, without parsing each one
+    /// back into a DateTime.
+    /// </summary>
+    private static void ResortEventMembership(IDbConnection connection, IDbTransaction transaction, long eventId)
+    {
         var members = new List<(long MediaItemId, string TakenAt)>();
         foreach (var row in connection.Query("""
             SELECT MediaItem.Id AS MediaItemId, MediaItem.TakenAt FROM EventMediaItem
@@ -134,6 +194,11 @@ public sealed class LibraryRepository(LibraryDatabase database)
             """, new { EventId = eventId }, transaction))
         {
             members.Add(((long)row.MediaItemId, (string)row.TakenAt));
+        }
+
+        if (members.Count == 0)
+        {
+            return;
         }
 
         var sortOrder = 0;
@@ -145,20 +210,14 @@ public sealed class LibraryRepository(LibraryDatabase database)
                 """, new { SortOrder = sortOrder++, EventId = eventId, MediaItemId = member.MediaItemId }, transaction);
         }
 
-        var newStartAt = newItems.Min(i => i.TakenAt);
-        var newEndAt = newItems.Max(i => i.TakenAt);
         connection.Execute("""
-            UPDATE Event
-            SET StartAt = MIN(StartAt, @NewStartAt), EndAt = MAX(EndAt, @NewEndAt)
-            WHERE Id = @EventId
+            UPDATE Event SET StartAt = @StartAt, EndAt = @EndAt WHERE Id = @EventId
             """, new
         {
-            EventId = eventId,
-            NewStartAt = newStartAt.ToString("O"),
-            NewEndAt = newEndAt.ToString("O")
+            StartAt = members.Min(m => m.TakenAt),
+            EndAt = members.Max(m => m.TakenAt),
+            EventId = eventId
         }, transaction);
-
-        transaction.Commit();
     }
 
     /// <summary>

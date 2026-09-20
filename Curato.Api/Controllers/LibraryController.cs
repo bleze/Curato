@@ -107,4 +107,30 @@ public sealed class LibraryController : ControllerBase
 
         return Ok(new LibraryDto(tripDtos, standaloneEvents));
     }
+
+    public sealed record SetTakenAtRequest(string Path, long MediaItemId, DateTime TakenAt);
+
+    /// <summary>
+    /// Manual last-resort fix for a MediaItem whose Exif is missing/wrong
+    /// (§1's TakenAtSource.Manual) — e.g. photos whose sharing/transfer path
+    /// stripped DateTimeOriginal entirely, which no automatic fallback can
+    /// recover. Never moves the item into a different Event even if the
+    /// correction lands it on another day; see LibraryRepository.SetTakenAt.
+    /// </summary>
+    [HttpPost("media-items/taken-at")]
+    public IActionResult SetTakenAt([FromBody] SetTakenAtRequest request)
+    {
+        if (!Directory.Exists(request.Path))
+        {
+            return NotFound($"Folder not found: {request.Path}");
+        }
+
+        var database = new LibraryDatabase(request.Path);
+        database.EnsureSchema();
+        var repository = new LibraryRepository(database);
+
+        return repository.SetTakenAt(request.MediaItemId, request.TakenAt)
+            ? NoContent()
+            : NotFound($"No MediaItem with id {request.MediaItemId}");
+    }
 }

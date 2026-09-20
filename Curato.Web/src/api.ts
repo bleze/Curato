@@ -4,7 +4,7 @@ export interface MediaItemDto {
   kind: 'Photo' | 'Video'
   takenAt: string
   /** Where takenAt actually came from — lets the UI flag a date that's just the file's filesystem timestamp rather than a real Exif/video tag. */
-  takenAtSource: 'ExifDateTaken' | 'ExifModifyDate' | 'VideoMetadata' | 'FileSystem'
+  takenAtSource: 'ExifDateTaken' | 'ExifModifyDate' | 'VideoMetadata' | 'FileSystem' | 'Manual'
   /** Set when this is the still frame of an Apple Live Photo — the paired .MOV's relative path. */
   liveVideoRelativePath: string | null
 }
@@ -156,6 +156,15 @@ export function deleteMediaItem(path: string, mediaItemId: number): Promise<Dele
 
 export function getRecycleBin(path: string): Promise<DeletedItemDto[]> {
   return fetch(`/api/recyclebin?path=${encodeURIComponent(path)}`).then(asJson<DeletedItemDto[]>)
+}
+
+/** Manual last-resort date fix (TakenAtSource.Manual) for a MediaItem whose Exif is missing or wrong. */
+export function setTakenAt(path: string, mediaItemId: number, takenAt: string): Promise<void> {
+  return fetch('/api/media-items/taken-at', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ path, mediaItemId, takenAt }),
+  }).then(expectOk)
 }
 
 export function restoreDeletedItem(path: string, deletedItemId: number): Promise<void> {

@@ -666,3 +666,33 @@
   color: #e0a030;
   cursor: help;
 }
+
+.lightbox-caption-edit-btn {
+  background: none;
+  border: none;
+  color: inherit;
+  cursor: pointer;
+  padding: 0 2px;
+  font-size: 13px;
+  opacity: 0.75;
+}
+
+.lightbox-caption-edit-btn:hover {
+  opacity: 1;
+}
+
+.lightbox-caption-edit {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.lightbox-caption-edit input[type='datetime-local'] {
+  font-size: 13px;
+  padding: 2px 4px;
+}
+
+.lightbox-caption-edit button {
+  font-size: 12px;
+  padding: 2px 8px;
+}

@@ -16,30 +16,45 @@ function formatTakenAt(takenAt: string): string {
   })
 }
 
+// <input type="datetime-local">'s value format ("YYYY-MM-DDTHH:mm", no
+// timezone) — built from the Date object's LOCAL getters (not toISOString,
+// which would convert to UTC) so the input shows the same wall-clock time
+// formatTakenAt already displays, and round-trips back out the same way.
+function toDatetimeLocalValue(takenAt: string): string {
+  const d = new Date(takenAt)
+  const pad = (n: number) => String(n).padStart(2, '0')
+  return `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}T${pad(d.getHours())}:${pad(d.getMinutes())}`
+}
+
 export function Lightbox({
   items,
   index,
   libraryPath,
   onClose,
   onNavigate,
+  onTakenAtChanged,
 }: {
   items: MediaItemDto[]
   index: number
   libraryPath: string
   onClose: () => void
   onNavigate: (index: number) => void
+  onTakenAtChanged: (mediaItemId: number, takenAt: string) => void
 }) {
   const item = items[index]
   const [playingLive, setPlayingLive] = useState(false)
   const [zoom, setZoom] = useState(1)
   const [pan, setPan] = useState({ x: 0, y: 0 })
   const [dragging, setDragging] = useState(false)
+  const [editingDate, setEditingDate] = useState(false)
+  const [draftDate, setDraftDate] = useState('')
   const dragStart = useRef<{ x: number; y: number; panX: number; panY: number; moved: boolean } | null>(null)
 
   useEffect(() => {
     setPlayingLive(false)
     setZoom(1)
     setPan({ x: 0, y: 0 })
+    setEditingDate(false)
   }, [index])
 
   useEffect(() => {
@@ -173,19 +188,61 @@ export function Lightbox({
           {playingLive ? '◼ Stop' : '▶ Live'}
         </button>
       )}
-      <div className="lightbox-caption">
-        {formatTakenAt(item.takenAt)}
-        {item.takenAtSource === 'FileSystem' && (
-          <span className="lightbox-caption-hint" title="No Exif or video creation date was found — this is just the file's last-modified timestamp, which can be wrong (e.g. after a copy or download).">
-            {' '}(file date, not confirmed)
+      <div className="lightbox-caption" onClick={(e) => e.stopPropagation()}>
+        {editingDate ? (
+          <span className="lightbox-caption-edit">
+            <input
+              type="datetime-local"
+              value={draftDate}
+              onChange={(e) => setDraftDate(e.target.value)}
+              autoFocus
+            />
+            <button
+              type="button"
+              onClick={() => {
+                if (!draftDate) return
+                onTakenAtChanged(item.id, draftDate)
+                setEditingDate(false)
+              }}
+            >
+              Save
+            </button>
+            <button type="button" onClick={() => setEditingDate(false)}>
+              Cancel
+            </button>
           </span>
+        ) : (
+          <>
+            {formatTakenAt(item.takenAt)}
+            {item.takenAtSource === 'FileSystem' && (
+              <span className="lightbox-caption-hint" title="No Exif or video creation date was found — this is just the file's last-modified timestamp, which can be wrong (e.g. after a copy or download).">
+                {' '}(file date, not confirmed)
+              </span>
+            )}
+            {item.takenAtSource === 'ExifModifyDate' && (
+              <span className="lightbox-caption-hint" title="The camera's original date tag was missing (common after sharing through iMessage/WhatsApp/some cloud re-encodes) — this is a less-authoritative Exif fallback, not necessarily wrong.">
+                {' '}(exif fallback)
+              </span>
+            )}
+            {item.takenAtSource === 'Manual' && (
+              <span className="lightbox-caption-hint" title="Set by hand — automatic date detection found nothing usable for this file.">
+                {' '}(manual)
+              </span>
+            )}{' '}
+            <button
+              type="button"
+              className="lightbox-caption-edit-btn"
+              title="Correct this date/time"
+              onClick={() => {
+                setDraftDate(toDatetimeLocalValue(item.takenAt))
+                setEditingDate(true)
+              }}
+            >
+              &#9998;
+            </button>{' '}
+            &middot; {item.relativePath} &middot; {index + 1} / {items.length}
+          </>
         )}
-        {item.takenAtSource === 'ExifModifyDate' && (
-          <span className="lightbox-caption-hint" title="The camera's original date tag was missing (common after sharing through iMessage/WhatsApp/some cloud re-encodes) — this is a less-authoritative Exif fallback, not necessarily wrong.">
-            {' '}(exif fallback)
-          </span>
-        )}{' '}
-        &middot; {item.relativePath} &middot; {index + 1} / {items.length}
       </div>
     </div>
   )

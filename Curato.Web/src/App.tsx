@@ -8,6 +8,7 @@ import {
   logout,
   organizeLibrary,
   scanLibrary,
+  setTakenAt,
   uploadFiles,
 } from './api'
 import { AlbumsPanel } from './components/AlbumsPanel'
@@ -184,6 +185,18 @@ function App() {
     }
   }
 
+  async function handleTakenAtChanged(mediaItemId: number, takenAt: string) {
+    if (!loadedPath) return
+    setError(null)
+    try {
+      await setTakenAt(loadedPath, mediaItemId, takenAt)
+      const lib = await getLibrary(loadedPath)
+      setLibrary(lib)
+    } catch (err) {
+      setError(err instanceof Error ? err.message : String(err))
+    }
+  }
+
   async function handleLogout() {
     await logout()
     setLibrary(null)
@@ -272,6 +285,7 @@ function App() {
           libraryPath={loadedPath}
           onClose={() => setShowAlbums(false)}
           onDelete={handleDelete}
+          onTakenAtChanged={handleTakenAtChanged}
         />
       )}
 
@@ -299,7 +313,12 @@ function App() {
               />
             </label>
           </div>
-          <LibraryGrid library={library} libraryPath={loadedPath} onDelete={handleDelete} />
+          <LibraryGrid
+            library={library}
+            libraryPath={loadedPath}
+            onDelete={handleDelete}
+            onTakenAtChanged={handleTakenAtChanged}
+          />
         </div>
       )}
     </main>

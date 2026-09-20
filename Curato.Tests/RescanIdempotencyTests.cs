@@ -108,6 +108,44 @@ public class RescanIdempotencyTests
         });
     }
 
+    [Fact]
+    public void Manually_correcting_TakenAt_re_sorts_its_event_and_updates_the_date_range()
+    {
+        WithTempLibrary((repository, query) =>
+        {
+            var rawItems = new[]
+            {
+                Item("Trip/noon.jpg", new DateTime(2019, 6, 1, 12, 0, 0)),
+                Item("Trip/unknown.jpg", new DateTime(2019, 6, 1, 12, 0, 0)), // no real date yet — filesystem fallback
+            };
+            RunScanPass(repository, query, rawItems);
+
+            var unknownId = query.GetAllMediaItems().Single(m => m.RelativePath == "Trip/unknown.jpg").Id;
+            var corrected = new DateTime(2019, 6, 1, 7, 0, 0); // actually taken before noon.jpg
+            Assert.True(repository.SetTakenAt(unknownId, corrected));
+
+            var @event = Assert.Single(query.GetAllEvents());
+            var orderedRelativePaths = @event.MediaItemIds
+                .Select(id => query.GetAllMediaItems().Single(m => m.Id == id).RelativePath)
+                .ToList();
+            Assert.Equal(["Trip/unknown.jpg", "Trip/noon.jpg"], orderedRelativePaths);
+            Assert.Equal(corrected, @event.StartAt);
+
+            var updatedItem = query.GetAllMediaItems().Single(m => m.Id == unknownId);
+            Assert.Equal(corrected, updatedItem.TakenAt);
+            Assert.Equal(TakenAtSource.Manual, updatedItem.TakenAtSource);
+        });
+    }
+
+    [Fact]
+    public void Setting_TakenAt_for_an_unknown_MediaItemId_returns_false()
+    {
+        WithTempLibrary((repository, _) =>
+        {
+            Assert.False(repository.SetTakenAt(mediaItemId: 999, DateTime.UtcNow));
+        });
+    }
+
     /// <summary>Delegates to the real ScanService, so a test failure here means the real endpoint is broken too.</summary>
     private static void RunScanPass(LibraryRepository repository, LibraryQueryService query, MediaItem[] rawItems) =>
         new ScanService(repository, query).ScanItems(rawItems);

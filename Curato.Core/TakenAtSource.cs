@@ -11,5 +11,7 @@ public enum TakenAtSource
     /// <summary>EXIF IFD0's plain "last modified" tag — used only when DateTimeOriginal/DateTimeDigitized are both missing (some sharing/transfer paths strip them). Less authoritative than ExifDateTaken but still beats a filesystem timestamp.</summary>
     ExifModifyDate,
     VideoMetadata,
-    FileSystem
+    FileSystem,
+    /// <summary>Explicitly set by the user in the viewer — trusted the same as an Exif-confirmed date, used when every automatic source (Exif, video metadata) came up empty or wrong.</summary>
+    Manual
 }

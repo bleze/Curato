@@ -821,9 +821,24 @@ Tracked as a §14 follow-on, not a separate model/phase of its own.
   toggle zoom off on release. The caption shows TakenAt alongside the
   relative path and position, formatted in the viewer's own locale, and
   flags a `TakenAtSource.FileSystem` date (no Exif/video metadata date was
-  found, so it's just the file's last-modified time) with a hover-hint —
-  added so "N items land on today" reports can be self-diagnosed as a real
-  missing-metadata case versus a scanner bug, rather than guessed at.]
+  found, so it's just the file's last-modified time) and a
+  `TakenAtSource.ExifModifyDate` one (Exif's DateTimeOriginal/Digitized were
+  both missing but IFD0's plain "last modified" tag survived — a weaker but
+  still device-sourced signal) with a hover-hint each — added so "N items
+  land on today" reports can be self-diagnosed as a real missing-metadata
+  case versus a scanner bug, rather than guessed at. Confirmed live: an
+  iPhone photo downloaded from iCloud whose Exif block had nothing but a
+  bare version tag (0221) — DateTimeOriginal/Digitized/GPS all stripped by
+  whatever sharing/transfer path it went through, which no automatic
+  fallback can recover since the data is simply gone from the file. For
+  that class of file, a manual override is the only remaining option: a
+  pencil button next to the caption opens a `datetime-local` input, saving
+  via `POST /api/media-items/taken-at` (`TakenAtSource.Manual`) and
+  re-sorting the item's Event membership + StartAt/EndAt the same way a
+  newly-scanned item is folded in (`LibraryRepository.ResortEventMembership`,
+  shared by both paths now). Deliberately does not re-bucket the item into a
+  different Event/day even if the correction crosses a day boundary — that
+  needs the full clustering pass, out of scope for a single-field fix.]
 - Grouping-aware navigation: browse by Event/Trip, or an "all photos" timeline view.
 - Fast-scroll date scrubber (like Photos/Picasa's right-edge date rail).
   [Phase 2 built shape: Trips and standalone Events are merged into one true

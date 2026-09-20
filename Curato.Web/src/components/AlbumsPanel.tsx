@@ -7,10 +7,12 @@ export function AlbumsPanel({
   libraryPath,
   onClose,
   onDelete,
+  onTakenAtChanged,
 }: {
   libraryPath: string
   onClose: () => void
   onDelete: (mediaItemId: number) => void
+  onTakenAtChanged: (mediaItemId: number, takenAt: string) => void
 }) {
   const [tags, setTags] = useState<TagDto[] | null>(null)
   const [error, setError] = useState<string | null>(null)
@@ -38,6 +40,15 @@ export function AlbumsPanel({
     setTagItems((items) => (items ? items.filter((i) => i.id !== mediaItemId) : items))
   }
 
+  function handleTakenAtChanged(mediaItemId: number, takenAt: string) {
+    onTakenAtChanged(mediaItemId, takenAt)
+    setTagItems((items) =>
+      items
+        ? items.map((i) => (i.id === mediaItemId ? { ...i, takenAt, takenAtSource: 'Manual' } : i))
+        : items,
+    )
+  }
+
   if (selectedTag) {
     return (
       <div className="recyclebin-panel albums-panel">
@@ -61,7 +72,12 @@ export function AlbumsPanel({
         {tagItems === null ? (
           <p>Loading…</p>
         ) : (
-          <TagGrid items={tagItems} libraryPath={libraryPath} onDelete={handleDelete} />
+          <TagGrid
+            items={tagItems}
+            libraryPath={libraryPath}
+            onDelete={handleDelete}
+            onTakenAtChanged={handleTakenAtChanged}
+          />
         )}
       </div>
     )
