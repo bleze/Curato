@@ -15,7 +15,7 @@ namespace Curato.Api.Controllers;
 [Route("api/tags")]
 public sealed class TagController : ControllerBase
 {
-    public sealed record MediaItemDto(long Id, string RelativePath, string Kind, DateTime TakenAt, string? LiveVideoRelativePath);
+    public sealed record MediaItemDto(long Id, string RelativePath, string Kind, DateTime TakenAt, string TakenAtSource, string? LiveVideoRelativePath);
     public sealed record TagDto(long Id, string Name, bool IsFavoriteShortcut, int ItemCount, string? CoverRelativePath);
 
     [HttpGet]
@@ -75,7 +75,7 @@ public sealed class TagController : ControllerBase
             .Select(id => mediaById[id])
             .OrderByDescending(m => m.TakenAt)
             .Select(m => new MediaItemDto(
-                m.Id, m.RelativePath, m.Kind.ToString(), m.TakenAt,
+                m.Id, m.RelativePath, m.Kind.ToString(), m.TakenAt, m.TakenAtSource.ToString(),
                 m.LivePhotoVideoItemId is { } videoId && mediaById.TryGetValue(videoId, out var video)
                     ? video.RelativePath
                     : null))

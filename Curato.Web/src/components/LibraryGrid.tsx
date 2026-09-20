@@ -11,16 +11,16 @@ import { Lightbox } from './Lightbox'
 // letting the browser lay out an unbounded number of rows at once.
 const THUMB_MIN_WIDTH = 120
 const GAP = 6
-const EVENT_HEADER_HEIGHT = 54
-const TRIP_HEADER_HEIGHT = 60
-// Added to a header's estimate when it also renders a "Will move to" hint
-// line (§4's dry-run preview) — without this, that one extra line's worth
-// of height was the single biggest source of estimate-vs-actual drift,
-// which is what made the scrollbar's drag handle and jump-to-end both
-// unreliable: the browser's native scrollbar assumes a stable scrollHeight
-// for the duration of a drag, and every header that got measured as taller
-// than estimated shifted it out from under the cursor mid-drag.
-const PROPOSED_PATH_HEIGHT = 34
+// These are deliberately generous, worst-case estimates rather than
+// tightly-measured ones — see the getItemKey/estimateSize comment below for
+// why headers are no longer remeasured against reality at all. Title text
+// (h3, arbitrary length) and the "Will move to" hint (a folder path,
+// arbitrary length) can each wrap to a second line at narrower column
+// counts, so the estimate has to comfortably cover a 2-line wrap for both,
+// not just the common single-line case.
+const EVENT_HEADER_HEIGHT = 78
+const TRIP_HEADER_HEIGHT = 84
+const PROPOSED_PATH_HEIGHT = 54
 
 type Block =
   | { type: 'trip-header'; key: string; trip: TripGroupDto }
@@ -214,22 +214,11 @@ export function LibraryGrid({
             <div
               key={block.key}
               data-index={virtualRow.index}
-              // Deliberately NOT measured for thumb-row blocks. We already
-              // compute their height exactly from the container's real
-              // measured width (verified mathematically — rendered thumb
-              // width equals height to the pixel), so there's nothing for
-              // measureElement to correct; letting it "correct" anyway just
-              // introduces sub-pixel rounding noise every time a new row
-              // scrolls into view. That noise is exactly what kept making
-              // the native scrollbar's drag handle drift out from under the
-              // cursor: the browser recomputes the thumb's mouse-to-scrollTop
-              // mapping from the CURRENT scrollHeight on every tick of an
-              // active drag, so even a 1px correction mid-drag is visible.
-              // Headers keep dynamic measurement since their content
-              // (a "Will move to" hint line or not) is genuinely variable,
-              // and there are far too few of them for residual drift there
-              // to matter the way it did across hundreds of thumb rows.
-              ref={block.type === 'thumb-row' ? undefined : virtualizer.measureElement}
+              // No measureElement for ANY block type now, including headers
+              // (previously still remeasured — see EVENT_HEADER_HEIGHT etc.
+              // above for why that was the scrollbar drag-handle bug's real
+              // remaining cause). getTotalSize() is now fixed the moment
+              // blocks are built and never changes during a scroll session.
               style={{
                 position: 'absolute',
                 top: 0,

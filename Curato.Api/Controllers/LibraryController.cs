@@ -18,7 +18,7 @@ namespace Curato.Api.Controllers;
 [Route("api")]
 public sealed class LibraryController : ControllerBase
 {
-    public sealed record MediaItemDto(long Id, string RelativePath, string Kind, DateTime TakenAt, string? LiveVideoRelativePath);
+    public sealed record MediaItemDto(long Id, string RelativePath, string Kind, DateTime TakenAt, string TakenAtSource, string? LiveVideoRelativePath);
 
     public sealed record EventDto(
         long Id, string Title, string NamingMode, string? FolderPath, string? ProposedFolderPath,
@@ -74,7 +74,7 @@ public sealed class LibraryController : ControllerBase
                 : FolderNameTemplate.RenderTripPath(t);
 
         MediaItemDto ToMediaItemDto(MediaItem m) => new(
-            m.Id, m.RelativePath, m.Kind.ToString(), m.TakenAt,
+            m.Id, m.RelativePath, m.Kind.ToString(), m.TakenAt, m.TakenAtSource.ToString(),
             m.LivePhotoVideoItemId is { } videoId && mediaById.TryGetValue(videoId, out var video)
                 ? video.RelativePath
                 : null);

@@ -34,7 +34,7 @@ export function Lightbox({
   const [zoom, setZoom] = useState(1)
   const [pan, setPan] = useState({ x: 0, y: 0 })
   const [dragging, setDragging] = useState(false)
-  const dragStart = useRef<{ x: number; y: number; panX: number; panY: number } | null>(null)
+  const dragStart = useRef<{ x: number; y: number; panX: number; panY: number; moved: boolean } | null>(null)
 
   useEffect(() => {
     setPlayingLive(false)
@@ -68,8 +68,7 @@ export function Lightbox({
     })
   }
 
-  function toggleZoom(e: React.MouseEvent) {
-    e.stopPropagation()
+  function toggleZoom() {
     if (zoom > MIN_ZOOM) {
       setZoom(MIN_ZOOM)
       setPan({ x: 0, y: 0 })
@@ -79,23 +78,30 @@ export function Lightbox({
   }
 
   function handleMouseDown(e: React.MouseEvent) {
-    if (zoom <= MIN_ZOOM) return
     e.stopPropagation()
-    setDragging(true)
-    dragStart.current = { x: e.clientX, y: e.clientY, panX: pan.x, panY: pan.y }
+    dragStart.current = { x: e.clientX, y: e.clientY, panX: pan.x, panY: pan.y, moved: false }
+    if (zoom > MIN_ZOOM) setDragging(true)
   }
 
   function handleMouseMove(e: React.MouseEvent) {
     if (!dragStart.current) return
-    setPan({
-      x: dragStart.current.panX + (e.clientX - dragStart.current.x),
-      y: dragStart.current.panY + (e.clientY - dragStart.current.y),
-    })
+    const dx = e.clientX - dragStart.current.x
+    const dy = e.clientY - dragStart.current.y
+    if (Math.abs(dx) > 3 || Math.abs(dy) > 3) dragStart.current.moved = true
+    if (zoom > MIN_ZOOM) {
+      setPan({ x: dragStart.current.panX + dx, y: dragStart.current.panY + dy })
+    }
   }
 
   function endDrag() {
+    // A plain click (mousedown+mouseup with no real movement) toggles zoom —
+    // matches the zoom-in cursor shown on hover instead of requiring a
+    // separate double-click gesture. A real drag (used to pan while already
+    // zoomed in) must NOT also toggle zoom when the mouse is released.
+    const wasClick = dragStart.current !== null && !dragStart.current.moved
     setDragging(false)
     dragStart.current = null
+    if (wasClick) toggleZoom()
   }
 
   return (
@@ -145,7 +151,6 @@ export function Lightbox({
           <img
             src={fullImageUrl(libraryPath, item.relativePath)}
             alt=""
-            onDoubleClick={toggleZoom}
             onMouseDown={handleMouseDown}
             draggable={false}
             style={{
@@ -169,7 +174,13 @@ export function Lightbox({
         </button>
       )}
       <div className="lightbox-caption">
-        {formatTakenAt(item.takenAt)} &middot; {item.relativePath} &middot; {index + 1} / {items.length}
+        {formatTakenAt(item.takenAt)}
+        {item.takenAtSource === 'FileSystem' && (
+          <span className="lightbox-caption-hint" title="No Exif or video creation date was found — this is just the file's last-modified timestamp, which can be wrong (e.g. after a copy or download).">
+            {' '}(file date, not confirmed)
+          </span>
+        )}{' '}
+        &middot; {item.relativePath} &middot; {index + 1} / {items.length}
       </div>
     </div>
   )

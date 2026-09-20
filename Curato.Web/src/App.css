@@ -661,3 +661,8 @@
   text-overflow: ellipsis;
   white-space: nowrap;
 }
+
+.lightbox-caption-hint {
+  color: #e0a030;
+  cursor: help;
+}

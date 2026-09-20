@@ -759,10 +759,20 @@ Tracked as a §14 follow-on, not a separate model/phase of its own.
   fix was to stop measuring at all wherever an estimate can be exact: since
   thumbnail-row height is already computed deterministically from the
   container's real measured width, `measureElement` isn't attached to
-  those rows (only to header rows, whose "Will move to" hint line or not
-  makes their height genuinely variable, and which are far too few in a
-  large library for residual drift there to matter the way it did across
-  every thumbnail row). A third, unrelated bug that looked similar from the
+  those rows. Header rows were originally left on dynamic `measureElement`
+  too, on the theory that a large library has "far too few of them for
+  residual drift there to matter" — that held for a small/organized
+  library but not for a ~2000-item unorganized one, which can have several
+  hundred Event headers whose title text and "Will move to" hint line both
+  wrap unpredictably at narrower column counts. Confirmed still reproducing
+  after three separate fix attempts aimed at the thumbnail rows, which is
+  what pointed at headers as the real remaining source: `measureElement`
+  was removed from headers too, and their height estimates were made
+  deliberately generous (safely cover a 2-line wrap of both the title and
+  the hint) instead of tight, so `getTotalSize()` never needs correcting
+  and is stable for the whole scroll session — at the cost of a bit of
+  unused whitespace under a header whose real content is shorter than the
+  now-generous estimate. A third, unrelated bug that looked similar from the
   outside (intermittently huge, pixelated thumbnails, "fixed" by a full
   page reload): the container-width measurement used to combine a
   synchronous `getBoundingClientRect` read with a `columnCount = 4`
@@ -801,10 +811,19 @@ Tracked as a §14 follow-on, not a separate model/phase of its own.
 - Fullscreen/lightbox viewer: swipe/arrow-key/remote-control navigation, pinch-zoom or
   scroll-to-zoom for photos, native `<video>` playback for video with a generated
   poster frame as the grid thumbnail.
-  [Phase 2 built shape: scroll-wheel and double-click-to-toggle zoom
-  (1x-4x), with drag-to-pan once zoomed — pinch-zoom (touch) and a poster
-  frame for videos aren't built yet. The caption shows TakenAt alongside
-  the relative path and position, formatted in the viewer's own locale.]
+  [Phase 2 built shape: scroll-wheel and click-to-toggle zoom (1x-4x), with
+  drag-to-pan once zoomed — pinch-zoom (touch) and a poster frame for
+  videos aren't built yet. Zoom-toggle was first bound to double-click,
+  which didn't match the `cursor: zoom-in` hint shown on hover (implying a
+  single click); switched to a plain click, distinguished from a real pan
+  drag by tracking whether the pointer moved more than a few pixels between
+  mousedown and mouseup, so panning while already zoomed in doesn't also
+  toggle zoom off on release. The caption shows TakenAt alongside the
+  relative path and position, formatted in the viewer's own locale, and
+  flags a `TakenAtSource.FileSystem` date (no Exif/video metadata date was
+  found, so it's just the file's last-modified time) with a hover-hint —
+  added so "N items land on today" reports can be self-diagnosed as a real
+  missing-metadata case versus a scanner bug, rather than guessed at.]
 - Grouping-aware navigation: browse by Event/Trip, or an "all photos" timeline view.
 - Fast-scroll date scrubber (like Photos/Picasa's right-edge date rail).
   [Phase 2 built shape: Trips and standalone Events are merged into one true
