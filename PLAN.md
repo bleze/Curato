@@ -255,7 +255,14 @@ applied automatically, folder by folder, as the scanner walks the tree:
 
 - **A folder that already contains files is treated as a single, atomic unit.** Its
   contents map 1:1 to an `Event` (or `TripGroup` → `Event` for an obvious two-level
-  nesting), keeping the current name, files, and location. Curato's gap-based
+  nesting — [Phase 2 built shape: except when the shared parent folder is a *bare year*
+  (e.g. `2019/`, `2020/`), confirmed live as a real library's actual top-level layout —
+  every unrelated event that happened to be adopted under that year got swept into one
+  fictitious "2019" Trip, reported once a title-rename control existed as "these are not
+  trips, they are [just] folders." `AdoptedFolderPlanner.PlanTrips` now excludes a
+  bare-year parent; its subfolders stay standalone Adopted Events instead, same as any
+  other two-level nesting that isn't actually a trip]), keeping the current name, files,
+  and location. Curato's gap-based
   clustering (Steps 1–2 below) **never runs across a folder boundary and never splits
   a folder's contents apart** — it can't merge two folders together no matter how close
   in time their photos are, and it can't decide a folder should really be two Events.

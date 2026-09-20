@@ -291,6 +291,46 @@ public sealed class LibraryRepository(LibraryDatabase database)
         return updated > 0;
     }
 
+    /// <summary>
+    /// Un-does bare-year Adopted TripGroups (e.g. a "2019" trip wrapping
+    /// every unrelated event that happened to live under a top-level
+    /// `2019/` folder) written before <c>AdoptedFolderPlanner.PlanTrips</c>
+    /// started excluding bare-year parent folders — confirmed live as a
+    /// "why does this year have a Rename button, it's not a trip" report.
+    /// Their member Events are ungrouped back to standalone (no file or
+    /// MediaItem is touched) and the TripGroup row is deleted. Only ever
+    /// matches a Title that's *exactly* a 4-digit year — a real Adopted trip
+    /// like "2019 Summer Vacation" is untouched. Idempotent, self-healing on
+    /// every scan exactly like <see cref="RemoveAutoFormedTripGroups"/>.
+    /// </summary>
+    public int RemoveBareYearAdoptedTripGroups()
+    {
+        using var connection = database.OpenConnection();
+        using var transaction = connection.BeginTransaction();
+
+        var tripIds = new List<long>();
+        foreach (var row in connection.Query(
+            "SELECT Id, Title FROM TripGroup WHERE NamingMode = 'Adopted'", transaction: transaction))
+        {
+            long id = row.Id;
+            string title = row.Title;
+            if (FolderTitleParser.IsBareYear(title))
+            {
+                tripIds.Add(id);
+            }
+        }
+
+        foreach (var tripId in tripIds)
+        {
+            connection.Execute(
+                "UPDATE Event SET TripGroupId = NULL WHERE TripGroupId = @TripId", new { TripId = tripId }, transaction);
+            connection.Execute("DELETE FROM TripGroup WHERE Id = @TripId", new { TripId = tripId }, transaction);
+        }
+
+        transaction.Commit();
+        return tripIds.Count;
+    }
+
     /// <summary>Links a Live Photo's still frame to its motion clip (idempotent — a no-op once already set).</summary>
     public void SetLivePhotoPair(long photoMediaItemId, long videoMediaItemId)
     {

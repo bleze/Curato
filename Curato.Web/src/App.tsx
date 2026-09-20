@@ -59,6 +59,11 @@ function formatRemovedTripsNote(removedAutoTripGroupCount: number): string {
   return ` Removed ${removedAutoTripGroupCount} old auto-generated trip grouping(s) that were never based on real location data.`
 }
 
+function formatRemovedBareYearTripsNote(removedBareYearTripGroupCount: number): string {
+  if (removedBareYearTripGroupCount === 0) return ''
+  return ` Ungrouped ${removedBareYearTripGroupCount} fictitious year-folder "trip(s)" back into standalone events.`
+}
+
 function formatRemovedMissingFilesNote(removedMissingFileCount: number): string {
   if (removedMissingFileCount === 0) return ''
   return ` Removed ${removedMissingFileCount} item(s) whose file was deleted on disk.`
@@ -178,6 +183,7 @@ function App() {
           `${result.scan.newTripGroupCount} trip(s), ` +
           `${result.scan.itemsAddedToExistingEvents} item(s) added to existing events.` +
           formatRemovedTripsNote(result.scan.removedAutoTripGroupCount) +
+          formatRemovedBareYearTripsNote(result.scan.removedBareYearTripGroupCount) +
           formatRemovedMissingFilesNote(result.scan.removedMissingFileCount) +
           formatPicasaSummary(result.picasaImport),
       )
@@ -224,6 +230,7 @@ function App() {
           `. ${result.scan.newAutoOrganizedEventCount} new event(s), ` +
           `${result.scan.itemsAddedToExistingEvents} item(s) added to existing events.` +
           formatRemovedTripsNote(result.scan.removedAutoTripGroupCount) +
+          formatRemovedBareYearTripsNote(result.scan.removedBareYearTripGroupCount) +
           formatPicasaSummary(result.picasaImport),
       )
       const lib = await getLibrary(loadedPath)

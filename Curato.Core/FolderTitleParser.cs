@@ -18,6 +18,21 @@ public static partial class FolderTitleParser
     [GeneratedRegex(@"^(.+?)\s*\((\d{4}-\d{2}-\d{2})\)$")]
     private static partial Regex DateSuffixPattern();
 
+    // "2019" — a bare 4-digit year, used only as a top-level date bucket
+    // (e.g. sorting an entire legacy library into 2019/, 2020/, ... folders)
+    // rather than a deliberately named trip or event.
+    [GeneratedRegex(@"^\d{4}$")]
+    private static partial Regex BareYearPattern();
+
+    /// <summary>
+    /// True for a folder name that's nothing but a 4-digit year — see
+    /// <see cref="Curato.Organizer.AdoptedFolderPlanner.PlanTrips"/> for why
+    /// this matters: such a folder is almost always just a top-level
+    /// organizational bucket, not a real trip whose sibling subfolders are
+    /// "days of that trip".
+    /// </summary>
+    public static bool IsBareYear(string folderName) => BareYearPattern().IsMatch(folderName.Trim());
+
     public static (DateOnly? Date, string Title) Parse(string folderName)
     {
         var prefixMatch = DatePrefixPattern().Match(folderName);

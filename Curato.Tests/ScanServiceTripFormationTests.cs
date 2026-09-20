@@ -90,6 +90,75 @@ public class ScanServiceTripFormationTests
         });
     }
 
+    [Fact]
+    public void A_bare_year_parent_folder_never_forms_a_fictitious_trip()
+    {
+        // Regression: confirmed live against a real library sorted into
+        // top-level 2019/, 2020/, ... buckets — every unrelated event that
+        // happened to be adopted under a given year got swept into one
+        // fictitious "2019" Trip by PlanTrips' "sibling folders under a
+        // shared parent" heuristic, reported as "these are not trips, they
+        // are [just] folders" once a Rename control made the bogus Trip's
+        // title visible.
+        WithTempLibrary((repository, query, service) =>
+        {
+            var items = new[]
+            {
+                Item("2019/Family Reunion/pic1.jpg", new DateTime(2019, 6, 1, 10, 0, 0)),
+                Item("2019/Summer Trip/pic2.jpg", new DateTime(2019, 8, 1, 10, 0, 0)),
+            };
+
+            service.ScanItems(items);
+
+            Assert.Empty(query.GetAllTripGroups());
+            var events = query.GetAllEvents();
+            Assert.Equal(2, events.Count);
+            Assert.All(events, e => Assert.Null(e.TripGroupId));
+        });
+    }
+
+    [Fact]
+    public void A_leftover_bare_year_adopted_trip_from_before_the_fix_is_removed_on_the_next_scan()
+    {
+        WithTempLibrary((repository, query, service) =>
+        {
+            // Simulate what a pre-fix scan already wrote to this library's
+            // database: two unrelated Adopted Events swept into one bogus
+            // "2019" Trip.
+            var events = new List<Event>
+            {
+                new()
+                {
+                    StartAt = new DateTime(2019, 6, 1), EndAt = new DateTime(2019, 6, 1), Title = "Family Reunion",
+                    TitleIsAuto = false, FolderPath = "2019/Family Reunion", NamingMode = NamingMode.Adopted
+                },
+                new()
+                {
+                    StartAt = new DateTime(2019, 8, 1), EndAt = new DateTime(2019, 8, 1), Title = "Summer Trip",
+                    TitleIsAuto = false, FolderPath = "2019/Summer Trip", NamingMode = NamingMode.Adopted
+                },
+            };
+            repository.SaveEvents(events);
+            repository.SaveTripGroups(
+            [
+                new TripGroup
+                {
+                    StartDate = new DateOnly(2019, 6, 1), EndDate = new DateOnly(2019, 8, 1),
+                    Title = "2019", TitleIsAuto = false, FolderPath = "2019", NamingMode = NamingMode.Adopted,
+                    EventIds = [events[0].Id, events[1].Id]
+                }
+            ]);
+            Assert.Single(query.GetAllTripGroups());
+
+            service.ScanItems([]); // any scan pass triggers the self-heal
+
+            Assert.Empty(query.GetAllTripGroups());
+            var survivingEvents = query.GetAllEvents();
+            Assert.Equal(2, survivingEvents.Count);
+            Assert.All(survivingEvents, e => Assert.Null(e.TripGroupId));
+        });
+    }
+
     private static void WithTempLibrary(Action<LibraryRepository, LibraryQueryService, ScanService> test)
     {
         var tempDir = Directory.CreateTempSubdirectory("curato-triptest-");

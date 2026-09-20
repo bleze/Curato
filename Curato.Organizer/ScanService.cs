@@ -15,6 +15,7 @@ public sealed record ScanResult(
     int NewTripGroupCount,
     int ItemsAddedToExistingEvents,
     int RemovedAutoTripGroupCount,
+    int RemovedBareYearTripGroupCount,
     int RemovedMissingFileCount,
     IReadOnlyList<EventSummary> NewEvents);
 
@@ -166,6 +167,14 @@ public sealed class ScanService(LibraryRepository repository, LibraryQueryServic
         // time-gap heuristic is ungrouped back into standalone Events.
         var removedAutoTripGroupCount = repository.RemoveAutoFormedTripGroups();
 
+        // Self-heals a library scanned before PlanTrips started excluding
+        // bare-year parent folders: a "2019" Trip wrapping every unrelated
+        // event that happened to live under a top-level `2019/` folder isn't
+        // a real trip, just how the library's filed — ungrouped back to
+        // standalone Adopted Events, same as the CuratoManaged self-heal
+        // above.
+        var removedBareYearTripGroupCount = repository.RemoveBareYearAdoptedTripGroups();
+
         DetectAndPersistLivePhotoPairs();
 
         return new ScanResult(
@@ -175,6 +184,7 @@ public sealed class ScanService(LibraryRepository repository, LibraryQueryServic
             NewTripGroupCount: allNewTrips.Count,
             ItemsAddedToExistingEvents: itemsAddedToExisting,
             RemovedAutoTripGroupCount: removedAutoTripGroupCount,
+            RemovedBareYearTripGroupCount: removedBareYearTripGroupCount,
             RemovedMissingFileCount: 0, // only Scan(libraryRoot) can know this; merged in there via `with`
             NewEvents: allNewEvents
                 .OrderBy(e => e.StartAt)

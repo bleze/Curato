@@ -35,6 +35,15 @@ public static class AdoptedFolderPlanner
     /// `2019 Summer/Day 2` become two Events under one `2019 Summer` trip.
     /// Deeper or shallower nesting is left as standalone Events; not every
     /// folder shape needs a trip guessed for it.
+    ///
+    /// Confirmed live this heuristic misfires when the shared parent is a
+    /// *bare year* (e.g. a whole library sorted into top-level `2019/`,
+    /// `2020/` buckets, each containing unrelated event subfolders) — every
+    /// event anyone happened to adopt in that year got swept into one
+    /// fictitious "2019" Trip, which isn't a trip at all, just how the
+    /// library happens to be filed. A bare-year parent is excluded here, so
+    /// its subfolders stay standalone Adopted Events instead.
+    ///
     /// <paramref name="adoptedEvents"/> must already have real ids (saved).
     /// </summary>
     public static IReadOnlyList<TripGroup> PlanTrips(IReadOnlyList<Event> adoptedEvents)
@@ -42,7 +51,7 @@ public static class AdoptedFolderPlanner
         return adoptedEvents
             .Where(e => e.FolderPath is { Length: > 0 })
             .Select(e => (Event: e, Parent: FolderGrouper.GetParentFolder(e.FolderPath!)))
-            .Where(x => x.Parent.Length > 0)
+            .Where(x => x.Parent.Length > 0 && !FolderTitleParser.IsBareYear(FolderGrouper.GetLeafName(x.Parent)))
             .GroupBy(x => x.Parent)
             .Where(g => g.Count() > 1) // a single Event under a folder isn't "a trip"
             .Select(g => BuildTripGroup(g.Key, g.Select(x => x.Event).ToList()))
