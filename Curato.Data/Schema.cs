@@ -54,5 +54,22 @@ internal static class Schema
             SortOrder INTEGER NOT NULL,
             PRIMARY KEY (EventId, MediaItemId)
         );
+
+        -- The undo log for Organize (PLAN.md §4): every file move it ever
+        -- performs is recorded here before/after paths, per batch, so a
+        -- run can be reverted. Restoring "undo" as a user-facing action is
+        -- not built yet - this only persists the data for it.
+        CREATE TABLE IF NOT EXISTS OrganizeBatch (
+            Id INTEGER PRIMARY KEY AUTOINCREMENT,
+            StartedAt TEXT NOT NULL
+        );
+
+        CREATE TABLE IF NOT EXISTS OrganizeMove (
+            Id INTEGER PRIMARY KEY AUTOINCREMENT,
+            BatchId INTEGER NOT NULL REFERENCES OrganizeBatch (Id),
+            MediaItemId INTEGER NOT NULL REFERENCES MediaItem (Id),
+            OldRelativePath TEXT NOT NULL,
+            NewRelativePath TEXT NOT NULL
+        );
         """;
 }
