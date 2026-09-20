@@ -101,10 +101,35 @@ public sealed class MediaFileScanner
         {
             var directories = ImageMetadataReader.ReadMetadata(filePath);
             var exifSubIfd = directories.OfType<ExifSubIfdDirectory>().FirstOrDefault();
+
+            // DateTimeOriginal is the real "when this was taken" tag, but
+            // some sharing/transfer paths (iMessage, WhatsApp, some cloud
+            // re-encodes) strip it while leaving other EXIF fields intact —
+            // reported live as an iPhone photo with no usable EXIF at all
+            // once that happens. DateTimeDigitized is effectively the same
+            // moment for a camera/phone (the shot is digitized as it's
+            // taken) so it's treated as equally trustworthy; IFD0's plain
+            // DateTime tag is technically "last modified" rather than
+            // "taken" but still comes from the device/software that wrote
+            // the file, which beats a filesystem timestamp that only
+            // reflects whenever the file was last copied.
             if (exifSubIfd is not null &&
                 exifSubIfd.TryGetDateTime(ExifDirectoryBase.TagDateTimeOriginal, out var dateTaken))
             {
                 return (dateTaken, TakenAtSource.ExifDateTaken);
+            }
+
+            if (exifSubIfd is not null &&
+                exifSubIfd.TryGetDateTime(ExifDirectoryBase.TagDateTimeDigitized, out var digitized))
+            {
+                return (digitized, TakenAtSource.ExifDateTaken);
+            }
+
+            var exifIfd0 = directories.OfType<ExifIfd0Directory>().FirstOrDefault();
+            if (exifIfd0 is not null &&
+                exifIfd0.TryGetDateTime(ExifDirectoryBase.TagDateTime, out var modified))
+            {
+                return (modified, TakenAtSource.ExifModifyDate);
             }
         }
         catch (ImageProcessingException)

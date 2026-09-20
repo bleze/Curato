@@ -8,6 +8,8 @@ namespace Curato.Core;
 public enum TakenAtSource
 {
     ExifDateTaken,
+    /// <summary>EXIF IFD0's plain "last modified" tag — used only when DateTimeOriginal/DateTimeDigitized are both missing (some sharing/transfer paths strip them). Less authoritative than ExifDateTaken but still beats a filesystem timestamp.</summary>
+    ExifModifyDate,
     VideoMetadata,
     FileSystem
 }

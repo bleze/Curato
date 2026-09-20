@@ -179,6 +179,11 @@ export function Lightbox({
           <span className="lightbox-caption-hint" title="No Exif or video creation date was found — this is just the file's last-modified timestamp, which can be wrong (e.g. after a copy or download).">
             {' '}(file date, not confirmed)
           </span>
+        )}
+        {item.takenAtSource === 'ExifModifyDate' && (
+          <span className="lightbox-caption-hint" title="The camera's original date tag was missing (common after sharing through iMessage/WhatsApp/some cloud re-encodes) — this is a less-authoritative Exif fallback, not necessarily wrong.">
+            {' '}(exif fallback)
+          </span>
         )}{' '}
         &middot; {item.relativePath} &middot; {index + 1} / {items.length}
       </div>

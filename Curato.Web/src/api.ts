@@ -4,7 +4,7 @@ export interface MediaItemDto {
   kind: 'Photo' | 'Video'
   takenAt: string
   /** Where takenAt actually came from — lets the UI flag a date that's just the file's filesystem timestamp rather than a real Exif/video tag. */
-  takenAtSource: 'ExifDateTaken' | 'VideoMetadata' | 'FileSystem'
+  takenAtSource: 'ExifDateTaken' | 'ExifModifyDate' | 'VideoMetadata' | 'FileSystem'
   /** Set when this is the still frame of an Apple Live Photo — the paired .MOV's relative path. */
   liveVideoRelativePath: string | null
 }
