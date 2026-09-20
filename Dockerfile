@@ -11,7 +11,7 @@ RUN npm run build
 # --- Build the .NET server ---------------------------------------------------
 FROM mcr.microsoft.com/dotnet/sdk:10.0 AS api-build
 WORKDIR /src
-COPY Curato.slnx ./
+COPY Curato.slnx Directory.Build.props ./
 COPY Curato.Core/Curato.Core.csproj Curato.Core/
 COPY Curato.Data/Curato.Data.csproj Curato.Data/
 COPY Curato.Media/Curato.Media.csproj Curato.Media/
