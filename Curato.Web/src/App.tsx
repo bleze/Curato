@@ -13,7 +13,7 @@ import {
 } from './api'
 import { AuthGate } from './components/AuthGate'
 import { DuplicateFinderPanel } from './components/DuplicateFinderPanel'
-import { EventSection } from './components/EventSection'
+import { LibraryGrid } from './components/LibraryGrid'
 import { RecycleBinPanel } from './components/RecycleBinPanel'
 
 const LAST_PATH_KEY = 'curato:lastLibraryPath'
@@ -290,38 +290,7 @@ function App() {
               Import Picasa data
             </button>
           </div>
-          {library.trips.map((trip) => (
-            <section className="trip" key={trip.id}>
-              <h2>
-                {trip.title}
-                {trip.namingMode === 'Adopted' && <span className="badge">Adopted</span>}
-              </h2>
-              {trip.proposedFolderPath && (
-                <p className="proposed-path">Will move to: {trip.proposedFolderPath}</p>
-              )}
-              {trip.events.map((event) => (
-                <EventSection
-                  key={event.id}
-                  event={event}
-                  libraryPath={loadedPath}
-                  onDelete={handleDelete}
-                />
-              ))}
-            </section>
-          ))}
-
-          {library.standaloneEvents.map((event) => (
-            <EventSection
-              key={event.id}
-              event={event}
-              libraryPath={loadedPath}
-              onDelete={handleDelete}
-            />
-          ))}
-
-          {library.trips.length === 0 && library.standaloneEvents.length === 0 && (
-            <p>No media found in this folder.</p>
-          )}
+          <LibraryGrid library={library} libraryPath={loadedPath} onDelete={handleDelete} />
         </div>
       )}
     </main>
