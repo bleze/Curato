@@ -52,7 +52,7 @@ public sealed class ScanService(LibraryRepository repository, LibraryQueryServic
             .Where(item => !alreadyClustered.Contains(item.Id))
             .ToList();
 
-        var existingAdoptedByFolder = repository.GetAdoptedEventsByFolderPath();
+        var existingEventsByFolder = repository.GetEventsByFolderPath();
         var itemsAddedToExisting = 0;
         var newFolderGroups = new List<IGrouping<string, MediaItem>>();
 
@@ -63,7 +63,7 @@ public sealed class ScanService(LibraryRepository repository, LibraryQueryServic
                 continue;
             }
 
-            if (existingAdoptedByFolder.TryGetValue(group.Key, out var existing))
+            if (existingEventsByFolder.TryGetValue(group.Key, out var existing))
             {
                 var newItemsInFolder = group.Where(item => !existing.MediaItemIds.Contains(item.Id)).ToList();
                 repository.AddMediaItemsToEvent(existing.Id, newItemsInFolder);

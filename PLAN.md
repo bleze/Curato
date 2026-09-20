@@ -460,6 +460,19 @@ toggled off by accident.**
 - Designed as a library (`Curato.Organizer`) called by the API, so it can also run
   headless/scheduled server-side (e.g., watching a designated "drop" folder on the
   server's own filesystem) independent of any client being connected.
+  [Confirmed live a real bug in the re-scan-idempotency logic this depends on: after
+  Organize moves a CuratoManaged Event's files into a dated folder (giving it a real
+  FolderPath), a *later* re-scan of that same folder got (re-)classified as a brand-new
+  Adopted Event for content that already belonged to an existing one — visible as
+  already-auto-organized photos suddenly showing up marked "Adopted." Root cause:
+  `LibraryRepository.GetAdoptedEventsByFolderPath` (the lookup a re-scan uses to
+  recognize "this folder already belongs to an Event, don't reprocess it") only ever
+  queried `NamingMode = 'Adopted'` Events — CuratoManaged ones with a FolderPath weren't
+  in it at all, so their folder fell straight through to `AdoptedFolderPlanner` as if
+  never seen before. Renamed to `GetEventsByFolderPath` and broadened to any Event with a
+  non-null FolderPath, regardless of NamingMode — the "already tracked, don't
+  reprocess" check needs to cover both, not just the one it happened to be written for
+  first.]
 
 ### 4a. Getting new files in: upload, not local file access
 

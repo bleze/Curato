@@ -6,6 +6,18 @@
   flex-direction: column;
 }
 
+/* Base/secondary button text color: the accent blue used everywhere else
+   (Scan, Organize, etc.), on a plain background — the "inverted" look from
+   the solid-blue-background primary actions (.scan-form/.auth-form button),
+   which already set their own white text explicitly and so aren't affected
+   by this (a class selector always wins over this plain element one).
+   Fixes secondary buttons (Settings, Recycle Bin, thumbnail delete's ring
+   aside) previously falling back to the browser's plain default text
+   color with no explicit color set at all. */
+button {
+  color: #005fb8;
+}
+
 .tagline {
   color: #666;
   font-size: 14px;

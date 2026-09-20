@@ -62,12 +62,22 @@ public sealed class LibraryRepository(LibraryDatabase database)
     }
 
     /// <summary>
-    /// Existing Adopted Events keyed by folder path, each with its current
-    /// member MediaItemIds — so a re-scan can add newly-arrived files in an
-    /// already-adopted folder to the *same* Event instead of creating a
-    /// duplicate one for that folder.
+    /// Every existing Event that already owns a real folder path — keyed by
+    /// that path, each with its current member MediaItemIds — so a re-scan
+    /// can add newly-arrived files in an already-known folder to the *same*
+    /// Event instead of creating a duplicate one for that folder.
+    ///
+    /// Deliberately not filtered to `NamingMode = 'Adopted'` (its original
+    /// scope, before this bug was confirmed live): once Organize (§4) gives
+    /// a CuratoManaged Event a real FolderPath by moving its files into a
+    /// dated folder, a later re-scan needs to recognize that folder as
+    /// already-tracked too, or it falls through to
+    /// <see cref="Curato.Organizer.AdoptedFolderPlanner"/> and gets
+    /// (re-)classified as a brand-new Adopted Event for content that
+    /// already belongs to an existing one — the exact bug this method
+    /// existed to prevent, just for the other NamingMode.
     /// </summary>
-    public Dictionary<string, (long Id, List<long> MediaItemIds)> GetAdoptedEventsByFolderPath()
+    public Dictionary<string, (long Id, List<long> MediaItemIds)> GetEventsByFolderPath()
     {
         using var connection = database.OpenConnection();
 
@@ -80,7 +90,7 @@ public sealed class LibraryRepository(LibraryDatabase database)
         var mediaItemIdsByEvent = links.ToLookup(l => l.EventId, l => l.MediaItemId);
 
         var result = new Dictionary<string, (long, List<long>)>();
-        foreach (var row in connection.Query("SELECT Id, FolderPath FROM Event WHERE NamingMode = 'Adopted'"))
+        foreach (var row in connection.Query("SELECT Id, FolderPath FROM Event WHERE FolderPath IS NOT NULL"))
         {
             long id = row.Id;
             string? folderPath = row.FolderPath;
