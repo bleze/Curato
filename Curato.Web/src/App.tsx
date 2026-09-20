@@ -1,7 +1,7 @@
 import { useEffect, useState } from 'react'
 import './App.css'
 import type { AuthStatus, LibraryDto } from './api'
-import { getAuthStatus, getLibrary, logout, scanLibrary } from './api'
+import { getAuthStatus, getLibrary, logout, organizeLibrary, scanLibrary } from './api'
 import { AuthGate } from './components/AuthGate'
 import { EventSection } from './components/EventSection'
 
@@ -37,6 +37,25 @@ function App() {
       const lib = await getLibrary(path)
       setLibrary(lib)
       setLoadedPath(path)
+    } catch (err) {
+      setError(err instanceof Error ? err.message : String(err))
+    } finally {
+      setBusy(false)
+    }
+  }
+
+  async function handleOrganize() {
+    if (!loadedPath) return
+    setBusy(true)
+    setError(null)
+    setStatus('Organizing…')
+    try {
+      const result = await organizeLibrary(loadedPath)
+      setStatus(
+        `Organize: ${result.eventsOrganized} event(s) arranged, ${result.filesMoved} file(s) moved.`,
+      )
+      const lib = await getLibrary(loadedPath)
+      setLibrary(lib)
     } catch (err) {
       setError(err instanceof Error ? err.message : String(err))
     } finally {
@@ -99,6 +118,15 @@ function App() {
 
       {library && loadedPath && (
         <div className="library">
+          <div className="organize-bar">
+            <button type="button" onClick={handleOrganize} disabled={busy}>
+              {busy ? 'Working…' : 'Organize'}
+            </button>
+            <span className="organize-hint">
+              Moves newly auto-organized items into their dated folders. Adopted folders are
+              never touched.
+            </span>
+          </div>
           {library.trips.map((trip) => (
             <section className="trip" key={trip.id}>
               <h2>

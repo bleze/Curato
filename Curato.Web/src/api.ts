@@ -95,6 +95,19 @@ export function getLibrary(path: string): Promise<LibraryDto> {
   return fetch(`/api/library?path=${encodeURIComponent(path)}`).then(asJson<LibraryDto>)
 }
 
+export interface OrganizeResult {
+  eventsOrganized: number
+  filesMoved: number
+}
+
+export function organizeLibrary(path: string): Promise<OrganizeResult> {
+  return fetch('/api/organize', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ path }),
+  }).then(asJson<OrganizeResult>)
+}
+
 export function thumbnailUrl(libraryPath: string, relativePath: string): string {
   const params = new URLSearchParams({ libraryPath, relativePath })
   return `/api/media/thumbnail?${params.toString()}`
