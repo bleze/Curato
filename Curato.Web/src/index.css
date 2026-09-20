@@ -17,7 +17,16 @@
 
   font: 18px/145% var(--sans);
   letter-spacing: 0.18px;
-  color-scheme: light dark;
+  /* The rest of the app (App.css) is 100% hardcoded light-mode colors —
+     confirmed zero `var(--...)` usage and no dark-mode media query
+     anywhere in it, so the dark palette below is unused dead scaffold
+     code, not a real theme. `light dark` was telling browsers this page
+     supports both, which made native form-control defaults (e.g. a
+     <button>'s text color, when nothing else sets one) switch to their
+     dark variant under a dark OS/browser preference — while every
+     button's *background* stayed hardcoded white from App.css. White
+     text on a white background. Light-only until real dark mode exists. */
+  color-scheme: light;
   color: var(--text);
   background: var(--bg);
   font-synthesis: none;

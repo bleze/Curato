@@ -1052,6 +1052,16 @@ Tracked as a §14 follow-on, not a separate model/phase of its own.
   (`prefers-color-scheme`) by default with an in-app override — the near-black
   fullscreen-viewer chrome stays dark in *both* themes, since a light lightbox frame
   around photos looks wrong regardless of the surrounding UI's theme.
+  [Not built yet — confirmed live this was actively broken rather than just absent:
+  leftover scaffold CSS (`index.css`, same file the fixed/removed `#root` width and
+  favicon leftovers came from) declared `color-scheme: light dark` even though every
+  real component style (`App.css`) is 100% hardcoded light-mode color with zero
+  `var(--...)` usage or dark-mode media query anywhere in it. That declaration tells
+  browsers this page supports both themes, so under a dark OS/browser preference,
+  native form-control defaults (e.g. a `<button>`'s text color, when nothing else sets
+  one) switched to their dark variant while the button's own hardcoded-white background
+  from `App.css` didn't — white text on a white background, on every button. Forced to
+  `color-scheme: light` until this feature is actually built.]
 - **Authentication** (new, since this is now a network-exposed service, not a desktop
   app inheriting OS login as its access control) — see §15.
 
