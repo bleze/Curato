@@ -58,7 +58,7 @@ export function TagGrid({
   }
 
   return (
-    <div className="library-scroll" ref={scrollRef}>
+    <div className="library-scroll" ref={scrollRef} tabIndex={0}>
       <div style={{ height: virtualizer.getTotalSize(), position: 'relative', width: '100%' }}>
         {virtualizer.getVirtualItems().map((virtualRow) => {
           const row = rows[virtualRow.index]
@@ -72,6 +72,10 @@ export function TagGrid({
                 top: 0,
                 left: 0,
                 width: '100%',
+                // Padding (not margin) so measureElement's border-box
+                // measurement actually includes it — see LibraryGrid's
+                // identical fix for why margin wouldn't work here.
+                paddingBottom: GAP,
                 transform: `translateY(${virtualRow.start}px)`,
               }}
             >

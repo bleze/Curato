@@ -1,6 +1,4 @@
 .app-shell {
-  max-width: 960px;
-  margin: 0 auto;
   padding: 32px 24px 0;
   height: 100vh;
   box-sizing: border-box;
@@ -192,6 +190,15 @@
   padding-right: 18px;
 }
 
+.library-scroll:focus {
+  outline: none;
+}
+
+.library-scroll:focus-visible {
+  outline: 2px solid #005fb8;
+  outline-offset: -2px;
+}
+
 .date-scrubber {
   position: absolute;
   top: 0;
@@ -303,6 +310,13 @@
   border-radius: 6px;
   overflow: hidden;
   background: #eee;
+  transition: transform 0.15s ease, box-shadow 0.15s ease;
+}
+
+.thumb:hover {
+  transform: scale(1.08);
+  box-shadow: 0 6px 18px rgba(0, 0, 0, 0.3);
+  z-index: 2;
 }
 
 .thumb-delete {

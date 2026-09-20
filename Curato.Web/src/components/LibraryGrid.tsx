@@ -13,6 +13,14 @@ const THUMB_MIN_WIDTH = 120
 const GAP = 6
 const EVENT_HEADER_HEIGHT = 54
 const TRIP_HEADER_HEIGHT = 60
+// Added to a header's estimate when it also renders a "Will move to" hint
+// line (§4's dry-run preview) — without this, that one extra line's worth
+// of height was the single biggest source of estimate-vs-actual drift,
+// which is what made the scrollbar's drag handle and jump-to-end both
+// unreliable: the browser's native scrollbar assumes a stable scrollHeight
+// for the duration of a drag, and every header that got measured as taller
+// than estimated shifted it out from under the cursor mid-drag.
+const PROPOSED_PATH_HEIGHT = 34
 
 type Block =
   | { type: 'trip-header'; key: string; trip: TripGroupDto }
@@ -157,8 +165,12 @@ export function LibraryGrid({
     getItemKey: (index) => blocks[index].key,
     estimateSize: (index) => {
       const block = blocks[index]
-      if (block.type === 'trip-header') return TRIP_HEADER_HEIGHT
-      if (block.type === 'event-header') return EVENT_HEADER_HEIGHT
+      if (block.type === 'trip-header') {
+        return TRIP_HEADER_HEIGHT + (block.trip.proposedFolderPath ? PROPOSED_PATH_HEIGHT : 0)
+      }
+      if (block.type === 'event-header') {
+        return EVENT_HEADER_HEIGHT + (block.event.proposedFolderPath ? PROPOSED_PATH_HEIGHT : 0)
+      }
       return rowHeight
     },
     overscan: 6,
@@ -170,7 +182,7 @@ export function LibraryGrid({
 
   return (
     <div className="library-scroll-wrapper">
-      <div className="library-scroll" ref={scrollRef}>
+      <div className="library-scroll" ref={scrollRef} tabIndex={0}>
       <div style={{ height: virtualizer.getTotalSize(), position: 'relative', width: '100%' }}>
         {virtualizer.getVirtualItems().map((virtualRow) => {
           const block = blocks[virtualRow.index]
@@ -184,6 +196,18 @@ export function LibraryGrid({
                 top: 0,
                 left: 0,
                 width: '100%',
+                // Padding, not margin: measureElement reads the element's
+                // own border-box (getBoundingClientRect), which excludes
+                // margins entirely — a marginBottom here would be invisible
+                // to it and fix nothing. Padding is what actually reserves
+                // GAP's worth of space in a row's *measured* height; without
+                // it, measureElement reports exactly the row's own content
+                // height, so once the virtualizer switches from the estimate
+                // to that real measurement, consecutive rows end up flush
+                // against each other (the "gap horizontally but not
+                // vertically" bug). Only thumb-rows need this — a header
+                // sitting flush above its own row's images is correct.
+                paddingBottom: block.type === 'thumb-row' ? GAP : 0,
                 transform: `translateY(${virtualRow.start}px)`,
               }}
             >
