@@ -13,6 +13,13 @@ const THUMB_MIN_WIDTH = 120
 const GAP = 6
 const EVENT_HEADER_HEIGHT = 54
 const TRIP_HEADER_HEIGHT = 60
+// Must match .library-scroll's padding-right in App.css. getBoundingClientRect
+// measures the border-box (padding included), but that padding is space the
+// grid content never actually gets — subtracted out below so computed
+// thumbnail sizes match what CSS Grid actually renders. See App.css's
+// .library-scroll comment for why a mismatch here compounds into the
+// scrollbar-drag/reachable-scroll-range bug.
+const SCRUBBER_RESERVED_WIDTH = 18
 // Added to a header's estimate when it also renders a "Will move to" hint
 // line (§4's dry-run preview) — without this, that one extra line's worth
 // of height was the single biggest source of estimate-vs-actual drift,
@@ -137,7 +144,14 @@ export function LibraryGrid({
     // uses the real column count instead of a placeholder guess — avoids a
     // pointless blocks-array rebuild (and virtualizer cache churn) a moment
     // after mount purely because ResizeObserver's first callback is async.
-    setContainerWidth(el.getBoundingClientRect().width)
+    //
+    // getBoundingClientRect returns the border-box (padding included), so
+    // the reserved scrubber space has to be subtracted back out here.
+    // ResizeObserver's entries[0].contentRect is different — it's already
+    // the pure content box, excluding padding — so it does NOT get the same
+    // subtraction; doing so would double-subtract and undercount on every
+    // resize after the first.
+    setContainerWidth(el.getBoundingClientRect().width - SCRUBBER_RESERVED_WIDTH)
     const observer = new ResizeObserver((entries) => setContainerWidth(entries[0].contentRect.width))
     observer.observe(el)
     return () => observer.disconnect()
@@ -182,7 +196,7 @@ export function LibraryGrid({
 
   return (
     <div className="library-scroll-wrapper">
-      <div className="library-scroll" ref={scrollRef} tabIndex={0}>
+      <div className="library-scroll library-scroll-with-scrubber" ref={scrollRef} tabIndex={0}>
       <div style={{ height: virtualizer.getTotalSize(), position: 'relative', width: '100%' }}>
         {virtualizer.getVirtualItems().map((virtualRow) => {
           const block = blocks[virtualRow.index]

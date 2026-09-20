@@ -187,6 +187,17 @@
   overflow-y: auto;
   overflow-x: hidden;
   padding-bottom: 48px;
+}
+
+/* LibraryGrid only (reserves room for its date scrubber) — deliberately not
+   part of the base .library-scroll rule above, since TagGrid shares that
+   class but has no scrubber: this padding was previously applied there too,
+   wasting width AND (since JS measured the padded border-box directly)
+   causing the same computed-thumbnail-size-too-wide bug this class was
+   trying to avoid for its own case. This value is duplicated as
+   SCRUBBER_RESERVED_WIDTH in LibraryGrid.tsx, which subtracts it back out
+   of its own width measurement — update both together if it changes. */
+.library-scroll-with-scrubber {
   padding-right: 18px;
 }
 
