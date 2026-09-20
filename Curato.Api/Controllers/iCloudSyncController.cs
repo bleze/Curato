@@ -45,7 +45,12 @@ public sealed class iCloudSyncController(
         DateTime? LastSyncAt,
         string? LastSyncStatus,
         string? LastSyncMessage,
-        int? LastSyncItemCount);
+        int? LastSyncItemCount,
+        // Live progress signal for a sync currently in flight — the
+        // Settings panel polls this endpoint while "Sync now" is running
+        // so a slow-but-working sync doesn't look identical to a stuck
+        // one. Null whenever nothing is currently running.
+        string? CurrentActivity);
     public sealed record SyncNowResponse(bool Success, string? ErrorMessage, int ItemsDownloaded, int NewEventCount);
 
     [HttpGet("status")]
@@ -64,7 +69,8 @@ public sealed class iCloudSyncController(
             LastSyncAt: config?.LastSyncAt,
             LastSyncStatus: config?.LastSyncStatus,
             LastSyncMessage: config?.LastSyncMessage,
-            LastSyncItemCount: config?.LastSyncItemCount));
+            LastSyncItemCount: config?.LastSyncItemCount,
+            CurrentActivity: syncRunner.CurrentActivity));
     }
 
     [HttpPost("login")]

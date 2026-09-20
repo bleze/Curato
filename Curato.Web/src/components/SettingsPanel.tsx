@@ -24,6 +24,7 @@ export function SettingsPanel({ onClose }: { onClose: () => void }) {
   const [awaitingCode, setAwaitingCode] = useState(false)
   const [code, setCode] = useState('')
   const [lookbackInput, setLookbackInput] = useState('')
+  const [syncing, setSyncing] = useState(false)
 
   function refresh() {
     getLibraryFolder().then((path) => {
@@ -41,6 +42,23 @@ export function SettingsPanel({ onClose }: { onClose: () => void }) {
   }
 
   useEffect(refresh, [])
+
+  // "Sync now" is a single long-running request with no progress in its
+  // own response — poll the status endpoint on the side while it's in
+  // flight so CurrentActivity (icloudpd's latest output line) shows up
+  // live instead of the UI looking identical whether it's working or stuck.
+  useEffect(() => {
+    if (!syncing) return
+    const interval = setInterval(() => {
+      getICloudSyncStatus()
+        .then(setStatus)
+        .catch(() => {
+          // Transient poll failure — the main sync-now call's own error
+          // handling covers real failures, so this is safe to ignore.
+        })
+    }, 1500)
+    return () => clearInterval(interval)
+  }, [syncing])
 
   async function runBusy(action: () => Promise<void>) {
     setBusy(true)
@@ -100,10 +118,15 @@ export function SettingsPanel({ onClose }: { onClose: () => void }) {
   }
 
   function handleSyncNow() {
+    setSyncing(true)
     return runBusy(async () => {
-      const result = await iCloudSyncNow()
-      if (!result.success) {
-        setError(result.errorMessage ?? 'Sync failed.')
+      try {
+        const result = await iCloudSyncNow()
+        if (!result.success) {
+          setError(result.errorMessage ?? 'Sync failed.')
+        }
+      } finally {
+        setSyncing(false)
       }
       refresh()
     })
@@ -184,6 +207,11 @@ export function SettingsPanel({ onClose }: { onClose: () => void }) {
             </p>
             {status.lastSyncStatus === 'Error' && status.lastSyncMessage && (
               <p className="error">{status.lastSyncMessage}</p>
+            )}
+            {syncing && (
+              <p className="settings-meta" title="icloudpd's most recent output line, updating live">
+                {status.currentActivity ? `Working: ${status.currentActivity}` : 'Starting…'}
+              </p>
             )}
             <div className="settings-row">
               <button type="button" onClick={handleSyncNow} disabled={busy}>

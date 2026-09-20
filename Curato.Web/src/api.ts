@@ -117,6 +117,8 @@ export interface iCloudSyncStatus {
   lastSyncStatus: string | null
   lastSyncMessage: string | null
   lastSyncItemCount: number | null
+  /** The most recent line icloudpd printed, live, while a sync is running — null once it's done. */
+  currentActivity: string | null
 }
 
 export interface iCloudSyncNowResult {

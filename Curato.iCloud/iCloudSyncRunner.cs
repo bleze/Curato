@@ -1,6 +1,7 @@
 using System.Diagnostics;
 using Curato.Data;
 using Curato.Organizer;
+using Microsoft.Extensions.Logging;
 
 namespace Curato.iCloud;
 
@@ -18,12 +19,27 @@ public sealed record iCloudSyncResult(bool Success, string? ErrorMessage, int It
 /// UploadController.cs) — zero new clustering/auto-titling logic, since
 /// loose new files there already get auto-clustered into Events and
 /// auto-titled.
+///
+/// A "Sync now" click is a synchronous request/response (PLAN.md §4's
+/// deliberate v1 simplification — no polling infra), which left the user
+/// with zero visibility into a long-running sync: icloudpd's own output
+/// was captured but only ever surfaced on failure, so a slow-but-working
+/// run looked identical to a stuck one. <see cref="CurrentActivity"/>
+/// exposes the latest output line live (read by
+/// <c>iCloudSyncController.GetStatus</c>, polled by the Settings panel
+/// while a sync is in flight) and every line is also logged via
+/// <see cref="ILogger"/> for real-time visibility in the server's own
+/// console/log, not just after the fact.
 /// </summary>
-public sealed class iCloudSyncRunner(iCloudProcessOptions options, LibraryOperationGate gate, ServerDatabase database)
+public sealed class iCloudSyncRunner(
+    iCloudProcessOptions options, LibraryOperationGate gate, ServerDatabase database, ILogger<iCloudSyncRunner> logger)
 {
     // Not dot-prefixed, so MediaFileScanner's recursive walk (which only
     // excludes .curato/) picks this up as ordinary loose content.
     public const string StagingFolderName = "iCloud Sync";
+
+    /// <summary>The most recent line icloudpd printed, or null when no sync is currently running.</summary>
+    public string? CurrentActivity { get; private set; }
 
     // icloudpd stops paginating once it finds this many consecutive
     // already-downloaded items — the cheap way to make a periodic re-run
@@ -124,23 +140,74 @@ public sealed class iCloudSyncRunner(iCloudProcessOptions options, LibraryOperat
             startInfo.ArgumentList.Add(count.ToString());
         }
 
-        using var process = Process.Start(startInfo) ?? throw new InvalidOperationException("Failed to start icloudpd.");
-        var stdoutTask = process.StandardOutput.ReadToEndAsync(cancellationToken);
-        var stderrTask = process.StandardError.ReadToEndAsync(cancellationToken);
-        await process.WaitForExitAsync(cancellationToken);
-        var stdout = await stdoutTask;
-        var stderr = await stderrTask;
+        var stdoutLines = new List<string>();
+        var stderrLines = new List<string>();
+        var itemsDownloaded = 0;
+
+        using var process = new Process { StartInfo = startInfo, EnableRaisingEvents = true };
+
+        process.OutputDataReceived += (_, e) =>
+        {
+            if (e.Data is null)
+            {
+                return;
+            }
+
+            lock (stdoutLines)
+            {
+                stdoutLines.Add(e.Data);
+            }
+
+            CurrentActivity = e.Data;
+            logger.LogInformation("icloudpd: {Line}", e.Data);
+            if (e.Data.Contains("Downloading", StringComparison.OrdinalIgnoreCase))
+            {
+                Interlocked.Increment(ref itemsDownloaded);
+            }
+        };
+        process.ErrorDataReceived += (_, e) =>
+        {
+            if (e.Data is null)
+            {
+                return;
+            }
+
+            lock (stderrLines)
+            {
+                stderrLines.Add(e.Data);
+            }
+
+            CurrentActivity = e.Data;
+            logger.LogWarning("icloudpd (stderr): {Line}", e.Data);
+        };
+
+        if (!process.Start())
+        {
+            throw new InvalidOperationException("Failed to start icloudpd.");
+        }
+
+        process.BeginOutputReadLine();
+        process.BeginErrorReadLine();
+
+        try
+        {
+            await process.WaitForExitAsync(cancellationToken);
+        }
+        finally
+        {
+            CurrentActivity = null;
+        }
 
         if (process.ExitCode != 0)
         {
+            var stderr = string.Join('\n', stderrLines);
+            var stdout = string.Join('\n', stdoutLines);
             return new iCloudSyncResult(
                 Success: false,
                 ErrorMessage: string.IsNullOrWhiteSpace(stderr) ? stdout : stderr,
                 ItemsDownloaded: 0,
                 ScanResult: null);
         }
-
-        var itemsDownloaded = CountDownloadedLines(stdout);
 
         using var release = await gate.AcquireAsync(libraryFolder, cancellationToken);
         var database = new LibraryDatabase(libraryFolder);
@@ -150,10 +217,4 @@ public sealed class iCloudSyncRunner(iCloudProcessOptions options, LibraryOperat
 
         return new iCloudSyncResult(Success: true, ErrorMessage: null, itemsDownloaded, scanResult);
     }
-
-    // icloudpd logs one line containing "Downloading" per file actually
-    // saved — a rough-but-good-enough count for the UI. Exact log wording
-    // to confirm against a real run during implementation/first live test.
-    private static int CountDownloadedLines(string stdout) =>
-        stdout.Split('\n').Count(line => line.Contains("Downloading", StringComparison.OrdinalIgnoreCase));
 }

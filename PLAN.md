@@ -547,7 +547,19 @@ Photos, Immich):
   `--until-found` limit). `iCloudSync.LookbackDays` (default 365, editable in Settings,
   applies to every sync, not just the first) bounds this via icloudpd's own
   `--skip-created-before {N}d` flag rather than a Curato-side date filter, so the
-  same year's worth of history downloads either way — first sync or incremental.]
+  same year's worth of history downloads either way — first sync or incremental.
+
+  Also confirmed live: a "Sync now" click (a single long-running synchronous request,
+  per v1's deliberate no-polling-infra simplification) gave zero visibility into whether
+  a slow sync was working or stuck — icloudpd's own output was only ever captured and
+  surfaced on failure, never while running. `iCloudSyncRunner` now streams stdout/stderr
+  line-by-line as icloudpd produces it (`OutputDataReceived`/`ErrorDataReceived`, not the
+  original `ReadToEndAsync` which only returns after the whole process exits) instead of
+  capturing it opaquely: every line is logged via `ILogger` for real-time visibility in
+  the server's own log, and the latest line is exposed as `CurrentActivity`, polled by
+  the Settings panel every 1.5s while a sync is in flight and shown as a live "Working:
+  ..." line — the request itself is still synchronous, but the UI now has independent
+  insight into it rather than reporting on the result only after the fact.]
 - **A new shared "library folder" setting** (`Curato.Data`'s `LibraryFolderRepository`,
   surfaced in a new minimal Settings panel) — the destination iCloud sync (and any future
   external-source puller) copies into, since there's nothing to "organize in place" for
