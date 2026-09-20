@@ -265,6 +265,32 @@ public sealed class LibraryRepository(LibraryDatabase database)
         return tripIds.Count;
     }
 
+    /// <summary>
+    /// Manual title edit (PLAN.md §3/§4). Also flips TitleIsAuto off so a
+    /// later re-scan/re-cluster never silently overwrites a name the user
+    /// chose. Renaming an already-Organized Event's on-disk folder to match
+    /// is <see cref="Curato.Organizer.RenameService"/>'s job, not this one —
+    /// this only ever writes the Title column itself.
+    /// </summary>
+    public bool SetEventTitle(long eventId, string title)
+    {
+        using var connection = database.OpenConnection();
+        var updated = connection.Execute(
+            "UPDATE Event SET Title = @Title, TitleIsAuto = 0 WHERE Id = @Id",
+            new { Id = eventId, Title = title });
+        return updated > 0;
+    }
+
+    /// <summary>Manual title edit for a TripGroup — see <see cref="SetEventTitle"/>.</summary>
+    public bool SetTripGroupTitle(long tripId, string title)
+    {
+        using var connection = database.OpenConnection();
+        var updated = connection.Execute(
+            "UPDATE TripGroup SET Title = @Title, TitleIsAuto = 0 WHERE Id = @Id",
+            new { Id = tripId, Title = title });
+        return updated > 0;
+    }
+
     /// <summary>Links a Live Photo's still frame to its motion clip (idempotent — a no-op once already set).</summary>
     public void SetLivePhotoPair(long photoMediaItemId, long videoMediaItemId)
     {

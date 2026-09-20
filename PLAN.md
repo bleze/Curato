@@ -438,6 +438,20 @@ that mockup predates this server/web pivot and shows a WinUI desktop shell — t
 *content*/flow it depicts is still accurate, the visual chrome will differ in the
 actual web UI).
 
+[Phase 2 built shape: title rename (a "Rename" link next to an Event/Trip's title in
+the library view, `Curato.Organizer.RenameService`) — the one control from the four
+above that's actually built so far; Split/Merge/Group-into-trip/Shift-timestamps remain
+unbuilt. Before Organize, `FolderPath` is still null, so there's nothing on disk to
+rename — this is a pure database write. Once Organize has given a CuratoManaged
+Event/Trip a real folder, the folder-naming template renders the title straight into
+the path, so the folder is renamed to match immediately (a single `Directory.Move` on
+the Trip's own folder carries every nested Event subfolder and file along with it in
+one filesystem operation; only the DB's path strings need rewriting after). Deliberately
+never renames an *Adopted* folder, matching this section's "Adopted archives keep
+whatever structure they already had" rule — that folder is real, pre-existing structure
+the user made themselves outside Curato, not something Curato's naming template owns;
+editing an Adopted item's title only ever corrects how Curato displays it.]
+
 ## 4. File organizer
 
 **Organize never deletes anything. That's a hard rule, not a default that can be

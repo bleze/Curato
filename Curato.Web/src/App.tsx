@@ -8,6 +8,8 @@ import {
   getLibraryFolder,
   logout,
   organizeLibrary,
+  renameEvent,
+  renameTripGroup,
   scanLibrary,
   setTakenAt,
   uploadFiles,
@@ -257,6 +259,30 @@ function App() {
     }
   }
 
+  async function handleRenameEvent(eventId: number, title: string) {
+    if (!loadedPath) return
+    setError(null)
+    try {
+      await renameEvent(loadedPath, eventId, title)
+      const lib = await getLibrary(loadedPath)
+      setLibrary(lib)
+    } catch (err) {
+      setError(err instanceof Error ? err.message : String(err))
+    }
+  }
+
+  async function handleRenameTrip(tripGroupId: number, title: string) {
+    if (!loadedPath) return
+    setError(null)
+    try {
+      await renameTripGroup(loadedPath, tripGroupId, title)
+      const lib = await getLibrary(loadedPath)
+      setLibrary(lib)
+    } catch (err) {
+      setError(err instanceof Error ? err.message : String(err))
+    }
+  }
+
   async function handleLogout() {
     await logout()
     setLibrary(null)
@@ -389,6 +415,8 @@ function App() {
             libraryPath={loadedPath}
             onDelete={handleDelete}
             onTakenAtChanged={handleTakenAtChanged}
+            onRenameEvent={handleRenameEvent}
+            onRenameTrip={handleRenameTrip}
           />
         </div>
       )}

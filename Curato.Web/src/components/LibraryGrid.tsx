@@ -122,11 +122,15 @@ export function LibraryGrid({
   libraryPath,
   onDelete,
   onTakenAtChanged,
+  onRenameEvent,
+  onRenameTrip,
 }: {
   library: LibraryDto
   libraryPath: string
   onDelete: (mediaItemId: number) => void
   onTakenAtChanged: (mediaItemId: number, takenAt: string) => void
+  onRenameEvent: (eventId: number, title: string) => void
+  onRenameTrip: (tripGroupId: number, title: string) => void
 }) {
   const scrollRef = useRef<HTMLDivElement>(null)
   // null = not yet measured. Deliberately never guess a fallback column
@@ -232,7 +236,10 @@ export function LibraryGrid({
               {block.type === 'trip-header' && (
                 <div className="trip-header-block">
                   <h2>
-                    {block.trip.title}
+                    <EditableTitle
+                      title={block.trip.title}
+                      onRename={(title) => onRenameTrip(block.trip.id, title)}
+                    />
                     {block.trip.namingMode === 'Adopted' && <span className="badge">Adopted</span>}
                   </h2>
                   {block.trip.proposedFolderPath && (
@@ -243,7 +250,12 @@ export function LibraryGrid({
 
               {block.type === 'event-header' && (
                 <header className="event-header">
-                  <h3>{block.event.title}</h3>
+                  <h3>
+                    <EditableTitle
+                      title={block.event.title}
+                      onRename={(title) => onRenameEvent(block.event.id, title)}
+                    />
+                  </h3>
                   <span className="event-meta">
                     {formatRange(block.event.startAt, block.event.endAt)} &middot;{' '}
                     {block.event.items.length} items
@@ -290,6 +302,63 @@ export function LibraryGrid({
         />
       )}
     </div>
+  )
+}
+
+// Deliberately stays a single line, matching the h2/h3's normal single-line
+// height, whether displaying or editing — LibraryGrid's virtualizer no
+// longer remeasures header blocks against reality after they render (see
+// the getItemKey/estimateSize comment above), so a taller editing state
+// here would silently reintroduce the scrollbar drag-handle desync bug that
+// took four attempts to actually fix.
+function EditableTitle({ title, onRename }: { title: string; onRename: (newTitle: string) => void }) {
+  const [editing, setEditing] = useState(false)
+  const [draft, setDraft] = useState(title)
+
+  if (!editing) {
+    return (
+      <>
+        {title}
+        <button
+          type="button"
+          className="title-rename-button"
+          onClick={() => {
+            setDraft(title)
+            setEditing(true)
+          }}
+        >
+          Rename
+        </button>
+      </>
+    )
+  }
+
+  function commit() {
+    const trimmed = draft.trim()
+    setEditing(false)
+    if (trimmed && trimmed !== title) {
+      onRename(trimmed)
+    }
+  }
+
+  return (
+    <span className="title-edit" onClick={(e) => e.stopPropagation()}>
+      <input
+        value={draft}
+        onChange={(e) => setDraft(e.target.value)}
+        onKeyDown={(e) => {
+          if (e.key === 'Enter') commit()
+          if (e.key === 'Escape') setEditing(false)
+        }}
+        autoFocus
+      />
+      <button type="button" onClick={commit}>
+        Save
+      </button>
+      <button type="button" onClick={() => setEditing(false)}>
+        Cancel
+      </button>
+    </span>
   )
 }
 

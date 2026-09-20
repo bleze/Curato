@@ -1,5 +1,6 @@
 using Curato.Core;
 using Curato.Data;
+using Curato.Organizer;
 using Microsoft.AspNetCore.Mvc;
 
 namespace Curato.Api.Controllers;
@@ -16,7 +17,7 @@ namespace Curato.Api.Controllers;
 /// </summary>
 [ApiController]
 [Route("api")]
-public sealed class LibraryController : ControllerBase
+public sealed class LibraryController(LibraryOperationGate gate) : ControllerBase
 {
     public sealed record MediaItemDto(long Id, string RelativePath, string Kind, DateTime TakenAt, string TakenAtSource, string? LiveVideoRelativePath);
 
@@ -132,5 +133,56 @@ public sealed class LibraryController : ControllerBase
         return repository.SetTakenAt(request.MediaItemId, request.TakenAt)
             ? NoContent()
             : NotFound($"No MediaItem with id {request.MediaItemId}");
+    }
+
+    public sealed record RenameEventRequest(string Path, long EventId, string Title);
+    public sealed record RenameTripGroupRequest(string Path, long TripGroupId, string Title);
+
+    /// <summary>
+    /// Manual title edit for an Event. Before Organize, this is a pure
+    /// database write (there's no folder yet); afterward, it also renames the
+    /// Event's real folder on disk to match — see <see cref="RenameService"/>.
+    /// Guarded by the same <see cref="LibraryOperationGate"/> as Scan/
+    /// Organize/Upload since, once organized, this moves a real folder.
+    /// </summary>
+    [HttpPost("events/rename")]
+    public async Task<IActionResult> RenameEvent([FromBody] RenameEventRequest request)
+    {
+        if (!Directory.Exists(request.Path))
+        {
+            return NotFound($"Folder not found: {request.Path}");
+        }
+
+        using var release = await gate.AcquireAsync(request.Path);
+        var database = new LibraryDatabase(request.Path);
+        database.EnsureSchema();
+
+        var service = new RenameService(
+            database, new LibraryQueryService(database), new LibraryRepository(database), new OrganizeRepository(database));
+
+        return service.RenameEvent(request.EventId, request.Title)
+            ? NoContent()
+            : BadRequest("Title cannot be empty, or no Event with that id exists.");
+    }
+
+    /// <summary>Manual title edit for a TripGroup — see <see cref="RenameEvent"/> and <see cref="RenameService"/>.</summary>
+    [HttpPost("trips/rename")]
+    public async Task<IActionResult> RenameTripGroup([FromBody] RenameTripGroupRequest request)
+    {
+        if (!Directory.Exists(request.Path))
+        {
+            return NotFound($"Folder not found: {request.Path}");
+        }
+
+        using var release = await gate.AcquireAsync(request.Path);
+        var database = new LibraryDatabase(request.Path);
+        database.EnsureSchema();
+
+        var service = new RenameService(
+            database, new LibraryQueryService(database), new LibraryRepository(database), new OrganizeRepository(database));
+
+        return service.RenameTripGroup(request.TripGroupId, request.Title)
+            ? NoContent()
+            : BadRequest("Title cannot be empty, or no TripGroup with that id exists.");
     }
 }

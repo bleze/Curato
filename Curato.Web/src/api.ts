@@ -210,6 +210,24 @@ export function organizeLibrary(path: string): Promise<OrganizeResult> {
   }).then(asJson<OrganizeResult>)
 }
 
+/** Renames an Event's title. Once it's been Organized, this also renames its real folder on disk to match. */
+export function renameEvent(path: string, eventId: number, title: string): Promise<void> {
+  return fetch('/api/events/rename', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ path, eventId, title }),
+  }).then(expectOk)
+}
+
+/** Renames a TripGroup's title. Once it's been Organized, this also renames its real folder (and every nested Event's folder under it) on disk to match. */
+export function renameTripGroup(path: string, tripGroupId: number, title: string): Promise<void> {
+  return fetch('/api/trips/rename', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ path, tripGroupId, title }),
+  }).then(expectOk)
+}
+
 export function thumbnailUrl(libraryPath: string, relativePath: string): string {
   const params = new URLSearchParams({ libraryPath, relativePath })
   return `/api/media/thumbnail?${params.toString()}`
