@@ -133,6 +133,9 @@ function App() {
                 {trip.title}
                 {trip.namingMode === 'Adopted' && <span className="badge">Adopted</span>}
               </h2>
+              {trip.proposedFolderPath && (
+                <p className="proposed-path">Will move to: {trip.proposedFolderPath}</p>
+              )}
               {trip.events.map((event) => (
                 <EventSection key={event.id} event={event} libraryPath={loadedPath} />
               ))}

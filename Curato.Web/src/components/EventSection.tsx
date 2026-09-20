@@ -21,6 +21,9 @@ export function EventSection({ event, libraryPath }: { event: EventDto; libraryP
           {event.namingMode === 'Adopted' && <span className="badge">Adopted</span>}
         </span>
       </header>
+      {event.proposedFolderPath && (
+        <p className="proposed-path">Will move to: {event.proposedFolderPath}</p>
+      )}
       <div className="thumb-grid">
         {event.items.map((item) => (
           <div className="thumb" key={item.id} title={item.relativePath}>

@@ -10,6 +10,8 @@ export interface EventDto {
   title: string
   namingMode: 'Adopted' | 'CuratoManaged'
   folderPath: string | null
+  /** What Organize would move this to, if it hasn't happened yet (dry-run preview). */
+  proposedFolderPath: string | null
   startAt: string
   endAt: string
   items: MediaItemDto[]
@@ -20,6 +22,7 @@ export interface TripGroupDto {
   title: string
   namingMode: 'Adopted' | 'CuratoManaged'
   folderPath: string | null
+  proposedFolderPath: string | null
   startDate: string
   endDate: string
   events: EventDto[]

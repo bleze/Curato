@@ -157,6 +157,17 @@
   font-size: 18px;
 }
 
+.proposed-path {
+  margin: -4px 0 10px;
+  font-size: 12px;
+  color: #96700f;
+  background: #fff7e8;
+  border: 1px solid #f4dfa6;
+  display: inline-block;
+  padding: 3px 8px;
+  border-radius: 5px;
+}
+
 .event-section {
   margin-top: 20px;
 }
