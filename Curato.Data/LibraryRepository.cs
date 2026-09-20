@@ -42,6 +42,100 @@ public sealed class LibraryRepository(LibraryDatabase database)
         return saved;
     }
 
+    /// <summary>
+    /// Every MediaItemId that already belongs to some Event — re-scanning
+    /// must never re-cluster these into a *second* Event alongside the one
+    /// they're already in (that's the "scanning the same folder twice makes
+    /// duplicates" bug).
+    /// </summary>
+    public HashSet<long> GetMediaItemIdsAlreadyInAnyEvent()
+    {
+        using var connection = database.OpenConnection();
+        var ids = new HashSet<long>();
+        foreach (var row in connection.Query("SELECT DISTINCT MediaItemId FROM EventMediaItem"))
+        {
+            ids.Add((long)row.MediaItemId);
+        }
+
+        return ids;
+    }
+
+    /// <summary>
+    /// Existing Adopted Events keyed by folder path, each with its current
+    /// member MediaItemIds — so a re-scan can add newly-arrived files in an
+    /// already-adopted folder to the *same* Event instead of creating a
+    /// duplicate one for that folder.
+    /// </summary>
+    public Dictionary<string, (long Id, List<long> MediaItemIds)> GetAdoptedEventsByFolderPath()
+    {
+        using var connection = database.OpenConnection();
+
+        var links = new List<(long EventId, long MediaItemId)>();
+        foreach (var row in connection.Query("SELECT * FROM EventMediaItem"))
+        {
+            links.Add(((long)row.EventId, (long)row.MediaItemId));
+        }
+
+        var mediaItemIdsByEvent = links.ToLookup(l => l.EventId, l => l.MediaItemId);
+
+        var result = new Dictionary<string, (long, List<long>)>();
+        foreach (var row in connection.Query("SELECT Id, FolderPath FROM Event WHERE NamingMode = 'Adopted'"))
+        {
+            long id = row.Id;
+            string? folderPath = row.FolderPath;
+            if (folderPath is not null)
+            {
+                result[folderPath] = (id, mediaItemIdsByEvent[id].ToList());
+            }
+        }
+
+        return result;
+    }
+
+    /// <summary>
+    /// Adds newly-found items to an already-existing Event (from a folder
+    /// that was already adopted, or an auto-organized moment new files
+    /// arrived into) and widens its StartAt/EndAt to cover them, rather than
+    /// creating a second Event for the same folder/moment.
+    /// </summary>
+    public void AddMediaItemsToEvent(long eventId, IReadOnlyList<MediaItem> newItems)
+    {
+        if (newItems.Count == 0)
+        {
+            return;
+        }
+
+        using var connection = database.OpenConnection();
+        using var transaction = connection.BeginTransaction();
+
+        var nextSortOrder = connection.ExecuteScalar<int>(
+            "SELECT COALESCE(MAX(SortOrder), -1) + 1 FROM EventMediaItem WHERE EventId = @EventId",
+            new { EventId = eventId }, transaction);
+
+        foreach (var item in newItems)
+        {
+            connection.Execute("""
+                INSERT INTO EventMediaItem (EventId, MediaItemId, SortOrder)
+                VALUES (@EventId, @MediaItemId, @SortOrder)
+                """, new { EventId = eventId, MediaItemId = item.Id, SortOrder = nextSortOrder++ }, transaction);
+        }
+
+        var newStartAt = newItems.Min(i => i.TakenAt);
+        var newEndAt = newItems.Max(i => i.TakenAt);
+        connection.Execute("""
+            UPDATE Event
+            SET StartAt = MIN(StartAt, @NewStartAt), EndAt = MAX(EndAt, @NewEndAt)
+            WHERE Id = @EventId
+            """, new
+        {
+            EventId = eventId,
+            NewStartAt = newStartAt.ToString("O"),
+            NewEndAt = newEndAt.ToString("O")
+        }, transaction);
+
+        transaction.Commit();
+    }
+
     public void SaveEvents(IReadOnlyList<Event> events)
     {
         using var connection = database.OpenConnection();

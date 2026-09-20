@@ -32,9 +32,10 @@ export interface LibraryDto {
 
 export interface ScanResult {
   mediaItemCount: number
-  autoOrganizedEventCount: number
-  adoptedEventCount: number
-  tripGroupCount: number
+  newAutoOrganizedEventCount: number
+  newAdoptedEventCount: number
+  newTripGroupCount: number
+  itemsAddedToExistingEvents: number
 }
 
 export interface AuthStatus {

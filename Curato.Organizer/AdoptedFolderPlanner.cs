@@ -11,14 +11,18 @@ namespace Curato.Organizer;
 public static class AdoptedFolderPlanner
 {
     /// <summary>
-    /// One Adopted Event per existing folder that directly contains media —
-    /// <paramref name="items"/> must already have real database ids (i.e. be
-    /// saved). Event.Id is left unset; the caller assigns it on save, the same
-    /// way the auto-organize path already works.
+    /// One Adopted Event per folder group — <paramref name="folderGroups"/> is
+    /// typically <see cref="FolderGrouper.GroupByContainingFolder"/>'s result
+    /// (an <c>ILookup</c>, which is itself a sequence of groupings) filtered
+    /// down to whichever folders the caller actually wants planned this time
+    /// (e.g. excluding ones already adopted in an earlier scan — see
+    /// <c>ScanController</c>). Items must already have real database ids
+    /// (i.e. be saved). Event.Id is left unset; the caller assigns it on
+    /// save, the same way the auto-organize path already works.
     /// </summary>
-    public static IReadOnlyList<Event> PlanEvents(ILookup<string, MediaItem> itemsByFolder)
+    public static IReadOnlyList<Event> PlanEvents(IEnumerable<IGrouping<string, MediaItem>> folderGroups)
     {
-        return itemsByFolder
+        return folderGroups
             .Where(group => group.Key != FolderGrouper.LooseItemsKey)
             .Select(group => BuildEvent(group.Key, group.ToList()))
             .ToList();

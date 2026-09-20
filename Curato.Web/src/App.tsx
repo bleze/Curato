@@ -28,10 +28,11 @@ function App() {
     try {
       const result = await scanLibrary(path)
       setStatus(
-        `Found ${result.mediaItemCount} items \u2014 ` +
-          `${result.autoOrganizedEventCount} auto-organized event(s), ` +
-          `${result.adoptedEventCount} adopted event(s), ` +
-          `${result.tripGroupCount} trip(s).`,
+        `${result.mediaItemCount} items total \u2014 new this scan: ` +
+          `${result.newAutoOrganizedEventCount} auto-organized event(s), ` +
+          `${result.newAdoptedEventCount} adopted event(s), ` +
+          `${result.newTripGroupCount} trip(s), ` +
+          `${result.itemsAddedToExistingEvents} item(s) added to existing events.`,
       )
       const lib = await getLibrary(path)
       setLibrary(lib)

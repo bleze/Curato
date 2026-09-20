@@ -1,0 +1,18 @@
+<Project>
+  <PropertyGroup>
+    <!--
+      This dev machine has a global `Platform=x64` environment variable that
+      MSBuild picks up ambiently. Depending on whether a given `dotnet
+      build`/`dotnet run`/`dotnet test` invocation happens to pass
+      `-p:Platform=...` itself, that silently changes the build output
+      folder (bin\Debug\net10.0 vs. bin\x64\Debug\net10.0 vs.
+      bin\"Any CPU"\Debug\net10.0) - three different folders that can each
+      hold a different, silently-stale build. That cost real debugging time
+      chasing a phantom bug that was actually just a stale binary.
+      Force it unconditionally so every build in this repo lands in the same
+      place regardless of the ambient environment - none of these projects
+      need an architecture-specific build.
+    -->
+    <Platform>AnyCPU</Platform>
+  </PropertyGroup>
+</Project>
