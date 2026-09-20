@@ -300,6 +300,17 @@ it entirely changes nothing about how the app itself works day to day.
    6-hour gap → evening event).
 4. Minimum event size (e.g. 1 item) — singletons are fine, just get their own folder.
 
+[Real bug found and fixed: this sort-by-TakenAt guarantee only held the *first*
+time an Event was created. When a re-scan added newly-found files to an
+*already-adopted* folder's existing Event (`LibraryRepository.
+AddMediaItemsToEvent`), the new items were simply appended with an
+ever-increasing `SortOrder`, regardless of their actual `TakenAt` — so a
+file added in a later scan always landed at the end of that Event's
+thumb-grid, even if it was chronologically the very first photo in the
+folder. Fixed by re-sorting the *whole* membership (existing + newly-added)
+by `TakenAt` and reassigning every row's `SortOrder` accordingly, rather
+than only ever appending.]
+
 ### Step 2 — Trip/range detection (grouping Events into a TripGroup)
 1. Walk consecutive `Event`s; group into a `TripGroup` when the gap between one
    event's end and the next event's start is below a larger threshold (default
@@ -751,7 +762,20 @@ Tracked as a §14 follow-on, not a separate model/phase of its own.
   those rows (only to header rows, whose "Will move to" hint line or not
   makes their height genuinely variable, and which are far too few in a
   large library for residual drift there to matter the way it did across
-  every thumbnail row).]
+  every thumbnail row). A third, unrelated bug that looked similar from the
+  outside (intermittently huge, pixelated thumbnails, "fixed" by a full
+  page reload): the container-width measurement used to combine a
+  synchronous `getBoundingClientRect` read with a `columnCount = 4`
+  fallback while unmeasured. `getBoundingClientRect` returns the border-box,
+  which — unlike `ResizeObserver`'s `contentRect` — does *not* exclude a
+  scrollbar's width, so that initial read could be wrong by however wide
+  the scrollbar is; if no further resize ever fired to correct it, the
+  wrong value stuck for the component's whole lifetime (a real render race,
+  not a deterministic calculation error, matching both the "sometimes" and
+  the reload-fixes-it symptoms). Fixed by removing the guess entirely:
+  width starts at `null` and the component renders an empty (but ref'd, so
+  still measurable) scroll container until `ResizeObserver`'s own first
+  callback — the one guaranteed to be correct — actually fires.]
 - Server-side thumbnail pipeline: decode + downscale on the server, cache to disk
   (a regenerable cache, keyed by `ContentHash`, separate from the portable `.curato/`
   data per §2), served to any client over HTTP — so a thumbnail is generated once no
@@ -777,6 +801,10 @@ Tracked as a §14 follow-on, not a separate model/phase of its own.
 - Fullscreen/lightbox viewer: swipe/arrow-key/remote-control navigation, pinch-zoom or
   scroll-to-zoom for photos, native `<video>` playback for video with a generated
   poster frame as the grid thumbnail.
+  [Phase 2 built shape: scroll-wheel and double-click-to-toggle zoom
+  (1x-4x), with drag-to-pan once zoomed — pinch-zoom (touch) and a poster
+  frame for videos aren't built yet. The caption shows TakenAt alongside
+  the relative path and position, formatted in the viewer's own locale.]
 - Grouping-aware navigation: browse by Event/Trip, or an "all photos" timeline view.
 - Fast-scroll date scrubber (like Photos/Picasa's right-edge date rail).
   [Phase 2 built shape: Trips and standalone Events are merged into one true
