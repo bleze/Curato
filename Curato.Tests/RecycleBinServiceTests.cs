@@ -40,6 +40,44 @@ public class RecycleBinServiceTests
     }
 
     [Fact]
+    public void Deleting_an_item_referenced_by_every_other_table_still_succeeds()
+    {
+        // Regression: RemoveMediaItem only ever cleaned up EventMediaItem —
+        // confirmed live that deleting any item with a Tag, Edit, Face, or
+        // Picasa-import marker (or an OrganizeMove log entry) failed
+        // outright with a raw SQLite "FOREIGN KEY constraint failed".
+        WithTempLibrary((root, database, repository, service) =>
+        {
+            var mediaItemId = SeedFile(root, database, "photo.jpg");
+
+            using (var connection = database.OpenConnection())
+            {
+                using var command = connection.CreateCommand();
+                command.CommandText = """
+                    INSERT INTO Tag (Id, Name, IsFavoriteShortcut, SortOrder) VALUES (1, 'Favorites', 1, 0);
+                    INSERT INTO MediaItemTag (TagId, MediaItemId, AddedAt) VALUES (1, @Id, @Now);
+                    INSERT INTO Edit (MediaItemId, OperationType, Parameters, PipelineOrder, Source)
+                        VALUES (@Id, 'Rotate', '{}', 0, 'Manual');
+                    INSERT INTO Face (MediaItemId, BoundingBoxX, BoundingBoxY, BoundingBoxWidth, BoundingBoxHeight, Source, Ignored)
+                        VALUES (@Id, 0, 0, 10, 10, 'Manual', 0);
+                    INSERT INTO PicasaImportedMediaItem (MediaItemId) VALUES (@Id);
+                    INSERT INTO OrganizeBatch (Id, StartedAt) VALUES (1, @Now);
+                    INSERT INTO OrganizeMove (BatchId, MediaItemId, OldRelativePath, NewRelativePath)
+                        VALUES (1, @Id, 'a.jpg', 'b.jpg');
+                    """;
+                command.Parameters.AddWithValue("@Id", mediaItemId);
+                command.Parameters.AddWithValue("@Now", DateTime.UtcNow.ToString("O"));
+                command.ExecuteNonQuery();
+            }
+
+            var deleted = service.DeleteMediaItem(mediaItemId, "Manual");
+
+            Assert.NotNull(deleted);
+            Assert.Null(new LibraryQueryService(database).GetAllMediaItems().SingleOrDefault(m => m.Id == mediaItemId));
+        });
+    }
+
+    [Fact]
     public void Restoring_puts_the_file_back_at_its_original_path_and_clears_the_bin_entry()
     {
         WithTempLibrary((root, database, repository, service) =>

@@ -31,12 +31,37 @@ public sealed class RecycleBinRepository(LibraryDatabase database)
         return ((long)row.Id, relativePath, kind, livePhotoVideoItemId);
     }
 
+    /// <summary>
+    /// Cleans up every table with a foreign key into MediaItem (Schema.cs)
+    /// before dropping the row itself — confirmed live that only
+    /// EventMediaItem was ever handled here, so deleting any item that
+    /// happened to have a Tag, Edit, Face, or Picasa-import marker (or was
+    /// referenced by another OrganizeMove log entry) failed outright with a
+    /// raw SQLite "FOREIGN KEY constraint failed", no indication of which
+    /// table. LivePhotoVideoItemId (MediaItem's own self-reference) is
+    /// deliberately handled by clearing the pointer rather than deleting
+    /// the referencing row — that row is a separate photo the caller isn't
+    /// deleting, it just no longer has a paired Live Photo video.
+    /// </summary>
     public void RemoveMediaItem(long mediaItemId)
     {
         using var connection = database.OpenConnection();
         using var transaction = connection.BeginTransaction();
         connection.Execute(
+            "UPDATE MediaItem SET LivePhotoVideoItemId = NULL WHERE LivePhotoVideoItemId = @Id",
+            new { Id = mediaItemId }, transaction);
+        connection.Execute(
             "DELETE FROM EventMediaItem WHERE MediaItemId = @Id", new { Id = mediaItemId }, transaction);
+        connection.Execute(
+            "DELETE FROM MediaItemTag WHERE MediaItemId = @Id", new { Id = mediaItemId }, transaction);
+        connection.Execute(
+            "DELETE FROM Edit WHERE MediaItemId = @Id", new { Id = mediaItemId }, transaction);
+        connection.Execute(
+            "DELETE FROM Face WHERE MediaItemId = @Id", new { Id = mediaItemId }, transaction);
+        connection.Execute(
+            "DELETE FROM PicasaImportedMediaItem WHERE MediaItemId = @Id", new { Id = mediaItemId }, transaction);
+        connection.Execute(
+            "DELETE FROM OrganizeMove WHERE MediaItemId = @Id", new { Id = mediaItemId }, transaction);
         connection.Execute(
             "DELETE FROM MediaItem WHERE Id = @Id", new { Id = mediaItemId }, transaction);
         transaction.Commit();

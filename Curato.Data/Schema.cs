@@ -5,6 +5,21 @@ namespace Curato.Data;
 /// for now; Tag/Edit/DeletedItem/BackupDestination/Person/Face land with their
 /// respective features. `CREATE TABLE IF NOT EXISTS` throughout since this
 /// runs on every startup, not via a separate migration step yet.
+///
+/// Every foreign key into MediaItem carries `ON DELETE CASCADE` (or, for
+/// MediaItem's own self-reference, `ON DELETE SET NULL` — see
+/// <see cref="ColumnMigrations"/>) — confirmed live that relying on
+/// application code to remember every referencing table before deleting a
+/// MediaItem is fragile: only <c>EventMediaItem</c> was ever cleaned up in
+/// <c>RecycleBinRepository.RemoveMediaItem</c>, so deleting any item with a
+/// Tag, Edit, Face, or Picasa-import marker failed with a raw SQLite
+/// "FOREIGN KEY constraint failed". `RemoveMediaItem` still deletes each
+/// child row explicitly rather than relying on CASCADE alone, since
+/// `CREATE TABLE IF NOT EXISTS` can't retroactively add this clause to a
+/// table an existing library.db already created without a full rebuild —
+/// the explicit deletes are what actually protects an existing database;
+/// CASCADE is what protects the *next* table someone adds here without
+/// remembering to update that method too.
 /// </summary>
 internal static class Schema
 {
@@ -49,8 +64,8 @@ internal static class Schema
         );
 
         CREATE TABLE IF NOT EXISTS EventMediaItem (
-            EventId INTEGER NOT NULL REFERENCES Event (Id),
-            MediaItemId INTEGER NOT NULL REFERENCES MediaItem (Id),
+            EventId INTEGER NOT NULL REFERENCES Event (Id) ON DELETE CASCADE,
+            MediaItemId INTEGER NOT NULL REFERENCES MediaItem (Id) ON DELETE CASCADE,
             SortOrder INTEGER NOT NULL,
             PRIMARY KEY (EventId, MediaItemId)
         );
@@ -66,8 +81,8 @@ internal static class Schema
 
         CREATE TABLE IF NOT EXISTS OrganizeMove (
             Id INTEGER PRIMARY KEY AUTOINCREMENT,
-            BatchId INTEGER NOT NULL REFERENCES OrganizeBatch (Id),
-            MediaItemId INTEGER NOT NULL REFERENCES MediaItem (Id),
+            BatchId INTEGER NOT NULL REFERENCES OrganizeBatch (Id) ON DELETE CASCADE,
+            MediaItemId INTEGER NOT NULL REFERENCES MediaItem (Id) ON DELETE CASCADE,
             OldRelativePath TEXT NOT NULL,
             NewRelativePath TEXT NOT NULL
         );
@@ -90,8 +105,8 @@ internal static class Schema
         );
 
         CREATE TABLE IF NOT EXISTS MediaItemTag (
-            TagId INTEGER NOT NULL REFERENCES Tag (Id),
-            MediaItemId INTEGER NOT NULL REFERENCES MediaItem (Id),
+            TagId INTEGER NOT NULL REFERENCES Tag (Id) ON DELETE CASCADE,
+            MediaItemId INTEGER NOT NULL REFERENCES MediaItem (Id) ON DELETE CASCADE,
             AddedAt TEXT NOT NULL,
             ManualSortOrder INTEGER NULL,
             PRIMARY KEY (TagId, MediaItemId)
@@ -102,7 +117,7 @@ internal static class Schema
         -- 'Picasa' — inert metadata until §10's render-time pipeline exists.
         CREATE TABLE IF NOT EXISTS Edit (
             Id INTEGER PRIMARY KEY AUTOINCREMENT,
-            MediaItemId INTEGER NOT NULL REFERENCES MediaItem (Id),
+            MediaItemId INTEGER NOT NULL REFERENCES MediaItem (Id) ON DELETE CASCADE,
             OperationType TEXT NOT NULL,
             Parameters TEXT NOT NULL,
             PipelineOrder INTEGER NOT NULL,
@@ -118,7 +133,7 @@ internal static class Schema
 
         CREATE TABLE IF NOT EXISTS Face (
             Id INTEGER PRIMARY KEY AUTOINCREMENT,
-            MediaItemId INTEGER NOT NULL REFERENCES MediaItem (Id),
+            MediaItemId INTEGER NOT NULL REFERENCES MediaItem (Id) ON DELETE CASCADE,
             PersonId INTEGER NULL REFERENCES Person (Id),
             BoundingBoxX INTEGER NOT NULL,
             BoundingBoxY INTEGER NOT NULL,
@@ -134,7 +149,7 @@ internal static class Schema
         -- only Picasa data was e.g. `star=yes` leaves no Face/Edit row behind,
         -- so "already imported" can't be inferred from those tables alone.
         CREATE TABLE IF NOT EXISTS PicasaImportedMediaItem (
-            MediaItemId INTEGER PRIMARY KEY REFERENCES MediaItem (Id)
+            MediaItemId INTEGER PRIMARY KEY REFERENCES MediaItem (Id) ON DELETE CASCADE
         );
 
         CREATE TABLE IF NOT EXISTS DeletedItem (
@@ -157,6 +172,11 @@ internal static class Schema
     /// </summary>
     public static readonly IReadOnlyList<(string Table, string Column, string Definition)> ColumnMigrations =
     [
-        ("MediaItem", "LivePhotoVideoItemId", "INTEGER NULL REFERENCES MediaItem (Id)")
+        // SET NULL, not CASCADE: this is MediaItem's own self-reference (a
+        // photo pointing at its paired Live Photo video), so cascading
+        // would delete the *photo* if its video were ever removed on its
+        // own — the photo is a perfectly good standalone item and should
+        // survive losing its motion-clip pairing, not disappear with it.
+        ("MediaItem", "LivePhotoVideoItemId", "INTEGER NULL REFERENCES MediaItem (Id) ON DELETE SET NULL")
     ];
 }

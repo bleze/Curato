@@ -667,6 +667,19 @@ enforce a Curato-specific retention policy, neither of which an OS-level trash c
   `PurgeAt`.
 - Every other deletion-capable feature in the plan (Duplicate Finder §7, and any future
   one) is written to always go through this, never straight to a permanent delete.
+  [Confirmed live: `RecycleBinRepository.RemoveMediaItem` only ever cleaned up
+  `EventMediaItem` before dropping the `MediaItem` row — every other table with a foreign
+  key into it (`MediaItemTag`, `Edit`, `Face`, `PicasaImportedMediaItem`, `OrganizeMove`,
+  and `MediaItem.LivePhotoVideoItemId` itself) wasn't, so deleting any item that happened
+  to have a Tag, Edit, Face, or Picasa-import marker failed outright with a raw SQLite
+  "FOREIGN KEY constraint failed." Fixed two ways at once (§2's schema, `Schema.cs`): every
+  such foreign key now carries `ON DELETE CASCADE` (`SET NULL` for the self-reference,
+  since losing a Live Photo's paired video shouldn't delete the photo itself), *and*
+  `RemoveMediaItem` still explicitly deletes each child row rather than relying on CASCADE
+  alone — `CREATE TABLE IF NOT EXISTS` can't retroactively add that clause to a table an
+  existing `library.db` already created without a full rebuild, so the explicit deletes
+  are what actually protects a database created before this fix; CASCADE is what protects
+  the next table someone adds here without remembering to update this method too.]
 
 ## 6. Auto Backup
 
