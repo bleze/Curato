@@ -44,6 +44,17 @@ public sealed class MediaFileScanner
     {
         foreach (var filePath in System.IO.Directory.EnumerateFiles(rootPath, "*", SearchOption.AllDirectories))
         {
+            // .curato/ holds Curato's own data (library.db, the Recycle Bin's
+            // trashed originals, the thumbnail cache) — never real library
+            // content, and RecycleBin/thumbnail-cache both contain real
+            // .jpg files that would otherwise get indexed as new photos on
+            // every re-scan.
+            var normalized = filePath.Replace('\\', '/');
+            if (normalized.Contains("/.curato/", StringComparison.OrdinalIgnoreCase))
+            {
+                continue;
+            }
+
             var extension = Path.GetExtension(filePath);
             MediaKind kind;
             if (PhotoExtensions.Contains(extension))
