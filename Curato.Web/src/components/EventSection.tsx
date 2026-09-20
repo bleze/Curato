@@ -1,5 +1,7 @@
+import { useState } from 'react'
 import type { EventDto } from '../api'
 import { thumbnailUrl } from '../api'
+import { Lightbox } from './Lightbox'
 
 function formatRange(startAt: string, endAt: string): string {
   const start = new Date(startAt)
@@ -20,6 +22,8 @@ export function EventSection({
   libraryPath: string
   onDelete: (mediaItemId: number) => void
 }) {
+  const [openIndex, setOpenIndex] = useState<number | null>(null)
+
   return (
     <section className="event-section">
       <header className="event-header">
@@ -33,13 +37,14 @@ export function EventSection({
         <p className="proposed-path">Will move to: {event.proposedFolderPath}</p>
       )}
       <div className="thumb-grid">
-        {event.items.map((item) => (
+        {event.items.map((item, index) => (
           <div className="thumb" key={item.id} title={item.relativePath}>
             {item.kind === 'Photo' ? (
               <img
                 src={thumbnailUrl(libraryPath, item.relativePath)}
                 alt=""
                 loading="lazy"
+                onClick={() => setOpenIndex(index)}
                 onError={(e) => {
                   e.currentTarget.replaceWith(Object.assign(document.createElement('div'), {
                     className: 'thumb-fallback',
@@ -48,7 +53,9 @@ export function EventSection({
                 }}
               />
             ) : (
-              <div className="thumb-fallback">Video</div>
+              <div className="thumb-fallback" onClick={() => setOpenIndex(index)}>
+                Video
+              </div>
             )}
             <button
               type="button"
@@ -61,6 +68,15 @@ export function EventSection({
           </div>
         ))}
       </div>
+      {openIndex !== null && (
+        <Lightbox
+          items={event.items}
+          index={openIndex}
+          libraryPath={libraryPath}
+          onClose={() => setOpenIndex(null)}
+          onNavigate={setOpenIndex}
+        />
+      )}
     </section>
   )
 }

@@ -116,6 +116,16 @@ export function thumbnailUrl(libraryPath: string, relativePath: string): string 
   return `/api/media/thumbnail?${params.toString()}`
 }
 
+export function fullImageUrl(libraryPath: string, relativePath: string): string {
+  const params = new URLSearchParams({ libraryPath, relativePath })
+  return `/api/media/full?${params.toString()}`
+}
+
+export function rawFileUrl(libraryPath: string, relativePath: string): string {
+  const params = new URLSearchParams({ libraryPath, relativePath })
+  return `/api/media/raw?${params.toString()}`
+}
+
 export interface DeletedItemDto {
   id: number
   originalRelativePath: string

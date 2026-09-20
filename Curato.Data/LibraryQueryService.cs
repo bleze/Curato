@@ -75,6 +75,41 @@ public sealed class LibraryQueryService(LibraryDatabase database)
         return trips;
     }
 
+    /// <summary>Every Edit row for the MediaItem at this relative path, for render-time application (§10).</summary>
+    public IReadOnlyList<Edit> GetEditsForRelativePath(string relativePath)
+    {
+        using var connection = database.OpenConnection();
+        var edits = new List<Edit>();
+        foreach (var row in connection.Query("""
+            SELECT Edit.* FROM Edit
+            JOIN MediaItem ON MediaItem.Id = Edit.MediaItemId
+            WHERE MediaItem.RelativePath = @RelativePath
+            """, new { RelativePath = relativePath }))
+        {
+            edits.Add(MapEdit(row));
+        }
+
+        return edits;
+    }
+
+    private static Edit MapEdit(dynamic row)
+    {
+        string operationType = row.OperationType;
+        string parameters = row.Parameters;
+        long pipelineOrder = row.PipelineOrder;
+        string source = row.Source;
+
+        return new Edit
+        {
+            Id = (long)row.Id,
+            MediaItemId = (long)row.MediaItemId,
+            OperationType = Enum.Parse<EditOperationType>(operationType),
+            Parameters = parameters,
+            PipelineOrder = (int)pipelineOrder,
+            Source = Enum.Parse<RecordSource>(source)
+        };
+    }
+
     private static DateTime ParseDateTime(string value) =>
         DateTime.Parse(value, null, DateTimeStyles.RoundtripKind);
 
