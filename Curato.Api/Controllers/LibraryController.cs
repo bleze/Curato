@@ -91,7 +91,12 @@ public sealed class LibraryController : ControllerBase
         var tripDtos = trips
             .Select(t => new TripGroupDto(
                 t.Id, t.Title, t.NamingMode.ToString(), t.FolderPath, ProposeTripPath(t), t.StartDate, t.EndDate,
-                t.EventIds.Where(eventsById.ContainsKey).Select(id => ToEventDto(eventsById[id])).ToList()))
+                t.EventIds
+                    .Where(eventsById.ContainsKey)
+                    .Select(id => ToEventDto(eventsById[id]))
+                    .OrderBy(e => e.StartAt)
+                    .ToList()))
+            .OrderBy(t => t.StartDate)
             .ToList();
 
         var standaloneEvents = events

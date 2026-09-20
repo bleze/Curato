@@ -712,6 +712,14 @@ Tracked as a §14 follow-on, not a separate model/phase of its own.
   poster frame as the grid thumbnail.
 - Grouping-aware navigation: browse by Event/Trip, or an "all photos" timeline view.
 - Fast-scroll date scrubber (like Photos/Picasa's right-edge date rail).
+  [Phase 2 built shape: Trips and standalone Events are merged into one true
+  chronological timeline client-side (they arrive from the API as two
+  separate pre-sorted arrays) — fixed alongside this, since a scrubber only
+  means anything over a genuinely time-ordered list, and trips themselves
+  weren't even being sorted before now. The rail shows a tick per calendar
+  year and jumps via the virtualizer's own scrollToIndex on click/drag;
+  ticks are spaced evenly by count, not by each month's actual rendered
+  height, which varies with how many photos it has.]
 - **Light + dark theme, both first-class**, following the OS/browser preference
   (`prefers-color-scheme`) by default with an in-app override — the near-black
   fullscreen-viewer chrome stays dark in *both* themes, since a light lightbox frame

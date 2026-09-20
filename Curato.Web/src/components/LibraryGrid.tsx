@@ -2,6 +2,8 @@ import { useVirtualizer } from '@tanstack/react-virtual'
 import { useLayoutEffect, useMemo, useRef, useState } from 'react'
 import type { EventDto, LibraryDto, MediaItemDto, TripGroupDto } from '../api'
 import { thumbnailUrl } from '../api'
+import type { DateMarker } from './DateScrubber'
+import { DateScrubber } from './DateScrubber'
 import { Lightbox } from './Lightbox'
 
 // Mirrors the old CSS grid's `repeat(auto-fill, minmax(120px, 1fr))` — kept
@@ -27,6 +29,24 @@ function formatRange(startAt: string, endAt: string): string {
     : `${start.toLocaleDateString(undefined, dateFmt)} – ${end.toLocaleDateString(undefined, dateFmt)}`
 }
 
+// Trips and standalone events each arrive pre-sorted from the server, but as
+// two separate arrays — merged here into one true chronological timeline
+// instead of "every trip, then every standalone event", so scrolling (and
+// the date scrubber) actually reflects when things happened.
+type TimelineEntry = { date: string } & (
+  | { kind: 'trip'; trip: TripGroupDto }
+  | { kind: 'event'; event: EventDto }
+)
+
+function buildTimeline(library: LibraryDto): TimelineEntry[] {
+  const entries: TimelineEntry[] = [
+    ...library.trips.map((trip): TimelineEntry => ({ kind: 'trip', date: trip.startDate, trip })),
+    ...library.standaloneEvents.map((event): TimelineEntry => ({ kind: 'event', date: event.startAt, event })),
+  ]
+  entries.sort((a, b) => a.date.localeCompare(b.date))
+  return entries
+}
+
 function buildBlocks(library: LibraryDto, columnCount: number): Block[] {
   const blocks: Block[] = []
 
@@ -43,13 +63,50 @@ function buildBlocks(library: LibraryDto, columnCount: number): Block[] {
     }
   }
 
-  for (const trip of library.trips) {
-    blocks.push({ type: 'trip-header', key: `th-${trip.id}`, trip })
-    trip.events.forEach(pushEvent)
+  for (const entry of buildTimeline(library)) {
+    if (entry.kind === 'trip') {
+      blocks.push({ type: 'trip-header', key: `th-${entry.trip.id}`, trip: entry.trip })
+      entry.trip.events.forEach(pushEvent)
+    } else {
+      pushEvent(entry.event)
+    }
   }
-  library.standaloneEvents.forEach(pushEvent)
 
   return blocks
+}
+
+function blockDate(block: Block): string | null {
+  if (block.type === 'trip-header') return block.trip.startDate
+  if (block.type === 'event-header') return block.event.startAt
+  return block.event.startAt
+}
+
+function buildDateMarkers(blocks: Block[]): DateMarker[] {
+  const markers: DateMarker[] = []
+  let lastMonthKey = ''
+  let lastYear = -1
+
+  blocks.forEach((block, index) => {
+    const dateStr = blockDate(block)
+    if (!dateStr) return
+
+    const date = new Date(dateStr)
+    const monthKey = `${date.getFullYear()}-${date.getMonth()}`
+    if (monthKey === lastMonthKey) return
+    lastMonthKey = monthKey
+
+    const isMajor = date.getFullYear() !== lastYear
+    if (isMajor) lastYear = date.getFullYear()
+
+    markers.push({
+      blockIndex: index,
+      label: String(date.getFullYear()),
+      tooltipLabel: date.toLocaleDateString(undefined, { year: 'numeric', month: 'short' }),
+      isMajor,
+    })
+  })
+
+  return markers
 }
 
 export function LibraryGrid({
@@ -83,6 +140,7 @@ export function LibraryGrid({
   const rowHeight = thumbSize + GAP
 
   const blocks = useMemo(() => buildBlocks(library, columnCount), [library, columnCount])
+  const dateMarkers = useMemo(() => buildDateMarkers(blocks), [blocks])
 
   const virtualizer = useVirtualizer({
     count: blocks.length,
@@ -111,7 +169,8 @@ export function LibraryGrid({
   }
 
   return (
-    <div className="library-scroll" ref={scrollRef}>
+    <div className="library-scroll-wrapper">
+      <div className="library-scroll" ref={scrollRef}>
       <div style={{ height: virtualizer.getTotalSize(), position: 'relative', width: '100%' }}>
         {virtualizer.getVirtualItems().map((virtualRow) => {
           const block = blocks[virtualRow.index]
@@ -171,6 +230,12 @@ export function LibraryGrid({
           )
         })}
       </div>
+      </div>
+
+      <DateScrubber
+        markers={dateMarkers}
+        onJump={(blockIndex) => virtualizer.scrollToIndex(blockIndex, { align: 'start' })}
+      />
 
       {lightbox && (
         <Lightbox
