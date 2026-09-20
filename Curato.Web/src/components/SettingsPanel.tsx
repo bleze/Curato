@@ -15,9 +15,11 @@ import {
 export function SettingsPanel({
   onClose,
   onOpenLibrary,
+  onLibraryContentChanged,
 }: {
   onClose: () => void
   onOpenLibrary: (path: string) => void
+  onLibraryContentChanged: (path: string) => void
 }) {
   const [libraryFolder, setLibraryFolderValue] = useState<string | null>(null)
   const [libraryFolderInput, setLibraryFolderInput] = useState('')
@@ -130,6 +132,8 @@ export function SettingsPanel({
         const result = await iCloudSyncNow()
         if (!result.success) {
           setError(result.errorMessage ?? 'Sync failed.')
+        } else if (libraryFolder) {
+          onLibraryContentChanged(libraryFolder)
         }
       } finally {
         setSyncing(false)

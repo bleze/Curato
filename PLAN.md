@@ -632,6 +632,14 @@ Photos, Immich):
   library" in Settings stays too, for jumping back to it from whatever else you're
   currently viewing without a page reload.
 
+  One more gap the same confusion surfaced: even with the library already open, a
+  Settings-triggered "Sync now" updates that library's database, but the main grid has no
+  way to know that happened on its own — confirmed live, needing a manual hard refresh to
+  see newly-synced content appear. `App.refreshLibraryIfCurrentlyOpen` re-fetches silently
+  after a successful sync, but only when the currently-open library is the one that just
+  changed — deliberately a no-op otherwise, so a sync never swaps out whatever you're
+  actually looking at from under you.
+
 ## 5. Recycle Bin (every deletion in the app goes through here)
 
 A second hard rule, alongside "Organize never deletes": **nothing Curato ever removes

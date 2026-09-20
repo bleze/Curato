@@ -114,6 +114,28 @@ function App() {
       .finally(() => setAutoLoading(false))
   }, [authStatus?.isAuthenticated])
 
+  // Silently re-fetches the currently-open library if it's the one that
+  // just changed — for after a Settings-triggered "Sync now" completes.
+  // Confirmed live this was needed: a sync run from Settings updates the
+  // library folder's database, but the main grid (if already loaded before
+  // the sync started) has no way to know that happened on its own, so new
+  // content stayed invisible until a manual hard refresh. Deliberately a
+  // no-op if a different library is currently open — never surprise-swap
+  // what's on screen out from under whatever you're actually looking at.
+  function refreshLibraryIfCurrentlyOpen(path: string) {
+    if (!loadedPath || loadedPath.toLowerCase() !== path.toLowerCase()) {
+      return
+    }
+
+    getLibrary(path)
+      .then(setLibrary)
+      .catch(() => {
+        // Best-effort — the sync's own success/error status already
+        // reported the result; a failed silent refresh isn't worth
+        // surfacing as a separate error.
+      })
+  }
+
   // Just views a library, without re-scanning — for a folder that's already
   // indexed (e.g. an iCloud sync already ran ScanService server-side; there's
   // nothing to gain from re-scanning just to look at it). Same shape as the
@@ -324,7 +346,13 @@ function App() {
         />
       )}
 
-      {showSettings && <SettingsPanel onClose={() => setShowSettings(false)} onOpenLibrary={handleOpenLibrary} />}
+      {showSettings && (
+        <SettingsPanel
+          onClose={() => setShowSettings(false)}
+          onOpenLibrary={handleOpenLibrary}
+          onLibraryContentChanged={refreshLibraryIfCurrentlyOpen}
+        />
+      )}
 
       {library && loadedPath && (
         <div className="library">
