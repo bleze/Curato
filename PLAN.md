@@ -607,8 +607,12 @@ on the same `rect64`/`rotate(N)` primitives, which are well enough attested
 to trust. `contacts.xml` and `Picasa2Albums.ini` are looked for anywhere
 under the library root (their real, machine-local paths aren't reachable by
 a self-hosted server) — if absent, faces still import with boxes intact and
-`PersonId = null`. Opt-in via a dedicated `/api/picasa-import` action, never
-run automatically by a scan.]
+`PersonId = null`. Runs automatically as part of every scan/upload (no
+separate button to press) — idempotent and a no-op when no `.picasa.ini`
+files exist, so there's no real cost to always checking. The standalone
+`/api/picasa-import` action still exists underneath for a future settings
+dialog to make this opt-out, but nothing in the UI calls it directly
+anymore.]
 
 ## 9. Tags / Albums
 

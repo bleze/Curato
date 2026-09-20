@@ -10,6 +10,11 @@ namespace Curato.Api.Controllers;
 /// <see cref="ScanService"/> so the upload endpoint (§4a) can trigger the
 /// exact same pipeline after writing new files to disk.
 ///
+/// Every scan also runs Picasa import (§8) automatically — no separate
+/// button/action for the user to remember, since it's idempotent and a
+/// no-op when no `.picasa.ini` files are found. A future settings dialog is
+/// the natural place to make this opt-out, not before one exists.
+///
 /// Protected by the fallback auth policy (§15) — requires a logged-in session.
 /// </summary>
 [ApiController]
@@ -17,9 +22,10 @@ namespace Curato.Api.Controllers;
 public sealed class ScanController : ControllerBase
 {
     public sealed record ScanRequest(string Path);
+    public sealed record ScanResponse(ScanResult Scan, PicasaImportResult PicasaImport);
 
     [HttpPost]
-    public ActionResult<ScanResult> Scan([FromBody] ScanRequest request)
+    public ActionResult<ScanResponse> Scan([FromBody] ScanRequest request)
     {
         if (!Directory.Exists(request.Path))
         {
@@ -28,8 +34,11 @@ public sealed class ScanController : ControllerBase
 
         var database = new LibraryDatabase(request.Path);
         database.EnsureSchema();
-        var service = new ScanService(new LibraryRepository(database), new LibraryQueryService(database));
+        var query = new LibraryQueryService(database);
 
-        return Ok(service.Scan(request.Path));
+        var scanResult = new ScanService(new LibraryRepository(database), query).Scan(request.Path);
+        var picasaResult = new PicasaImportService(database, query, new PicasaImportRepository(database)).Import();
+
+        return Ok(new ScanResponse(scanResult, picasaResult));
     }
 }

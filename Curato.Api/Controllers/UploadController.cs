@@ -27,7 +27,7 @@ public sealed class UploadController : ControllerBase
     // door to arbitrary-size uploads exhausting server disk space unchecked.
     private const long MaxFileSizeBytes = 2L * 1024 * 1024 * 1024;
 
-    public sealed record UploadResponse(int FilesSaved, int FilesSkipped, ScanResult Scan);
+    public sealed record UploadResponse(int FilesSaved, int FilesSkipped, ScanResult Scan, PicasaImportResult PicasaImport);
 
     [HttpPost]
     [RequestSizeLimit(20L * 1024 * 1024 * 1024)]
@@ -78,10 +78,12 @@ public sealed class UploadController : ControllerBase
 
         var database = new LibraryDatabase(libraryRoot);
         database.EnsureSchema();
-        var scanService = new ScanService(new LibraryRepository(database), new LibraryQueryService(database));
-        var scanResult = scanService.Scan(libraryRoot);
+        var query = new LibraryQueryService(database);
 
-        return Ok(new UploadResponse(filesSaved, filesSkipped, scanResult));
+        var scanResult = new ScanService(new LibraryRepository(database), query).Scan(libraryRoot);
+        var picasaResult = new PicasaImportService(database, query, new PicasaImportRepository(database)).Import();
+
+        return Ok(new UploadResponse(filesSaved, filesSkipped, scanResult, picasaResult));
     }
 
     private static string ResolveCollisionFreeName(string libraryRoot, string fileName, HashSet<string> claimedNames)

@@ -1,11 +1,10 @@
 import { useEffect, useState } from 'react'
 import './App.css'
-import type { AuthStatus, LibraryDto } from './api'
+import type { AuthStatus, LibraryDto, PicasaImportResult } from './api'
 import {
   deleteMediaItem,
   getAuthStatus,
   getLibrary,
-  importPicasaData,
   logout,
   organizeLibrary,
   scanLibrary,
@@ -33,6 +32,17 @@ function recallPath(): string | null {
   } catch {
     return null
   }
+}
+
+// Picasa import (§8) runs automatically on every scan/upload — no button to
+// press, no separate step to remember. This only has anything to say when
+// .picasa.ini files were actually found.
+function formatPicasaSummary(result: PicasaImportResult): string {
+  if (result.iniFilesFound === 0) return ''
+  return (
+    ` Picasa data: ${result.photosWithNewData} photo(s) newly imported ` +
+    `(${result.facesImported} face(s), ${result.editsImported} edit(s), ${result.tagsApplied} tag(s)).`
+  )
 }
 
 function App() {
@@ -90,11 +100,12 @@ function App() {
     try {
       const result = await scanLibrary(path)
       setStatus(
-        `${result.mediaItemCount} items total \u2014 new this scan: ` +
-          `${result.newAutoOrganizedEventCount} auto-organized event(s), ` +
-          `${result.newAdoptedEventCount} adopted event(s), ` +
-          `${result.newTripGroupCount} trip(s), ` +
-          `${result.itemsAddedToExistingEvents} item(s) added to existing events.`,
+        `${result.scan.mediaItemCount} items total \u2014 new this scan: ` +
+          `${result.scan.newAutoOrganizedEventCount} auto-organized event(s), ` +
+          `${result.scan.newAdoptedEventCount} adopted event(s), ` +
+          `${result.scan.newTripGroupCount} trip(s), ` +
+          `${result.scan.itemsAddedToExistingEvents} item(s) added to existing events.` +
+          formatPicasaSummary(result.picasaImport),
       )
       const lib = await getLibrary(path)
       setLibrary(lib)
@@ -137,35 +148,11 @@ function App() {
         `Uploaded ${result.filesSaved} file(s)` +
           (result.filesSkipped > 0 ? ` (${result.filesSkipped} skipped — unsupported type or too large)` : '') +
           `. ${result.scan.newAutoOrganizedEventCount} new event(s), ` +
-          `${result.scan.itemsAddedToExistingEvents} item(s) added to existing events.`,
+          `${result.scan.itemsAddedToExistingEvents} item(s) added to existing events.` +
+          formatPicasaSummary(result.picasaImport),
       )
       const lib = await getLibrary(loadedPath)
       setLibrary(lib)
-    } catch (err) {
-      setError(err instanceof Error ? err.message : String(err))
-    } finally {
-      setBusy(false)
-    }
-  }
-
-  async function handlePicasaImport() {
-    if (!loadedPath) return
-    setBusy(true)
-    setError(null)
-    setStatus('Importing legacy Picasa data…')
-    try {
-      const result = await importPicasaData(loadedPath)
-      if (result.iniFilesFound === 0) {
-        setStatus('No Picasa.ini files found under this library — nothing to import.')
-      } else {
-        setStatus(
-          `Picasa import: ${result.iniFilesFound} Picasa.ini file(s) found, ` +
-            `${result.photosMatched} photo(s) matched, ${result.photosWithNewData} newly imported. ` +
-            `${result.facesImported} face(s) (${result.peopleMatched} named), ` +
-            `${result.editsImported} edit(s), ${result.tagsApplied} tag(s) applied.` +
-            (result.contactsFileFound ? '' : ' No contacts.xml found, so faces have no names yet.'),
-        )
-      }
     } catch (err) {
       setError(err instanceof Error ? err.message : String(err))
     } finally {
@@ -286,9 +273,6 @@ function App() {
                 }}
               />
             </label>
-            <button type="button" className="upload-button" onClick={handlePicasaImport} disabled={busy}>
-              Import Picasa data
-            </button>
           </div>
           <LibraryGrid library={library} libraryPath={loadedPath} onDelete={handleDelete} />
         </div>

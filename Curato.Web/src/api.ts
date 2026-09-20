@@ -88,12 +88,17 @@ export function logout(): Promise<void> {
   return fetch('/api/auth/logout', { method: 'POST' }).then(expectOk)
 }
 
-export function scanLibrary(path: string): Promise<ScanResult> {
+export interface ScanApiResponse {
+  scan: ScanResult
+  picasaImport: PicasaImportResult
+}
+
+export function scanLibrary(path: string): Promise<ScanApiResponse> {
   return fetch('/api/scan', {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify({ path }),
-  }).then(asJson<ScanResult>)
+  }).then(asJson<ScanApiResponse>)
 }
 
 export function getLibrary(path: string): Promise<LibraryDto> {
@@ -174,6 +179,7 @@ export interface UploadResult {
   filesSaved: number
   filesSkipped: number
   scan: ScanResult
+  picasaImport: PicasaImportResult
 }
 
 export interface PicasaImportResult {
