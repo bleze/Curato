@@ -725,6 +725,12 @@ enforce a Curato-specific retention policy, neither of which an OS-level trash c
   existing `library.db` already created without a full rebuild, so the explicit deletes
   are what actually protects a database created before this fix; CASCADE is what protects
   the next table someone adds here without remembering to update this method too.]
+  [Confirmed live: deleting an Event's last remaining MediaItem left the Event row
+  behind with zero members — a photo-less stub that just sits in the library looking
+  broken. `RemoveMediaItem` now removes an Event once its last member is gone (and, in
+  turn, removes its TripGroup too if that leaves the TripGroup with no Events left), and
+  `RecycleBinService` deletes that Event's now-empty on-disk folder if it had been
+  Organized into one.]
 
 ## 6. Auto Backup
 

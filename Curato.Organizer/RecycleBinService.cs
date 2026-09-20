@@ -15,7 +15,9 @@ public sealed record DeletedItemDto(
 /// MediaItem row (and its Event membership) entirely; restoring puts the
 /// file back at its original path and leaves it for the next scan to
 /// re-discover, rather than trying to reconstruct its old Event/Trip
-/// membership, which may no longer even make sense.
+/// membership, which may no longer even make sense. If that was the Event's
+/// last remaining item, the now-empty Event (and its TripGroup, if that's
+/// now empty too) is removed rather than left behind as a photo-less stub.
 ///
 /// Auto-purge (§5: items older than the retention window get removed
 /// automatically) isn't a standing background timer yet - there's no
@@ -58,7 +60,11 @@ public sealed class RecycleBinService(LibraryDatabase database, RecycleBinReposi
             File.Move(sourceFullPath, trashFullPath);
         }
 
-        repository.RemoveMediaItem(id);
+        var emptiedEvents = repository.RemoveMediaItem(id);
+        foreach (var emptiedEvent in emptiedEvents)
+        {
+            TryDeleteNowEmptyEventFolder(libraryRoot, emptiedEvent.FolderPath);
+        }
 
         if (livePhotoVideoItemId is { } videoId)
         {
@@ -156,6 +162,26 @@ public sealed class RecycleBinService(LibraryDatabase database, RecycleBinReposi
         if (container is not null && Directory.Exists(container) && Directory.GetFileSystemEntries(container).Length == 0)
         {
             Directory.Delete(container);
+        }
+    }
+
+    /// <summary>
+    /// An Event whose last MediaItem was just deleted no longer exists in the
+    /// DB (<see cref="RecycleBinRepository.RemoveMediaItem"/>) — if it had
+    /// been Organized into its own folder, that folder is now empty on disk
+    /// too and would otherwise sit there forever looking like debris.
+    /// </summary>
+    private static void TryDeleteNowEmptyEventFolder(string libraryRoot, string? eventFolderPath)
+    {
+        if (eventFolderPath is null)
+        {
+            return;
+        }
+
+        var fullPath = Path.Combine(libraryRoot, eventFolderPath);
+        if (Directory.Exists(fullPath) && Directory.GetFileSystemEntries(fullPath).Length == 0)
+        {
+            Directory.Delete(fullPath);
         }
     }
 }
