@@ -137,12 +137,17 @@ export function iCloudLogin(username: string, password: string): Promise<{ requi
   }).then(asJson<{ requiresTwoFactor: boolean; error: string | null }>)
 }
 
-export function iCloudVerifyTwoFactor(username: string, password: string, code: string): Promise<void> {
+export function iCloudVerifyTwoFactor(username: string, code: string): Promise<void> {
   return fetch('/api/icloud-sync/verify-2fa', {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ username, password, code }),
+    body: JSON.stringify({ username, code }),
   }).then(expectOk)
+}
+
+/** Backs out of a pending login (e.g. leaving the 2FA screen) without completing it. */
+export function iCloudCancelLogin(): Promise<void> {
+  return fetch('/api/icloud-sync/cancel-login', { method: 'POST' }).then(expectOk)
 }
 
 export function iCloudSyncNow(): Promise<iCloudSyncNowResult> {

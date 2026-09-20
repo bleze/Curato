@@ -28,7 +28,7 @@ public sealed class iCloudSyncController(
 
     public sealed record LoginRequest(string Username, string Password);
     public sealed record LoginResponse(bool RequiresTwoFactor, string? Error);
-    public sealed record VerifyTwoFactorRequest(string Username, string Password, string Code);
+    public sealed record VerifyTwoFactorRequest(string Username, string Code);
     public sealed record UpdateSettingsRequest(int IntervalMinutes, bool Enabled);
     public sealed record StatusResponse(
         bool LibraryFolderConfigured,
@@ -84,8 +84,7 @@ public sealed class iCloudSyncController(
             return BadRequest("Set a library folder in Settings before connecting iCloud.");
         }
 
-        var cookieDirectory = GetCookieDirectory();
-        var result = await authClient.VerifyTwoFactorAsync(request.Username, request.Password, request.Code, cookieDirectory);
+        var result = await authClient.VerifyTwoFactorAsync(request.Code);
         if (result.Status != "ok")
         {
             return result.Status == "invalid_code"
@@ -93,7 +92,17 @@ public sealed class iCloudSyncController(
                 : BadRequest(result.Message ?? "Verification failed.");
         }
 
+        var cookieDirectory = GetCookieDirectory();
+
         new iCloudSyncRepository(database).Save(request.Username, cookieDirectory, intervalMinutes: 360, enabled: true);
+        return Ok();
+    }
+
+    /// <summary>Backs out of a pending login (e.g. the user leaves the 2FA screen) without completing it.</summary>
+    [HttpPost("cancel-login")]
+    public IActionResult CancelLogin()
+    {
+        authClient.CancelPending();
         return Ok();
     }
 

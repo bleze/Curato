@@ -497,13 +497,27 @@ Photos, Immich):
   reliably. A small custom script (`tools/icloud-sync/auth_helper.py`) drives the
   one-time Apple ID login/2FA handshake directly via `pyicloud`'s clean API
   (`requires_2fa`/`validate_2fa_code`/`trust_session`) rather than screen-scraping
-  `icloudpd`'s interactive CLI prompts, speaking one-line JSON on stdout instead; the
-  Apple password is piped over stdin (never an argument, never logged, never persisted)
-  and only `pyicloud`'s own session/cookie files survive, sharing the same
-  `--cookie-directory` `icloudpd` itself later reads for the recurring sync — kept at the
-  same trust boundary as `server.db` and the library itself, both already unencrypted on
-  the same volume, rather than building a new encryption-at-rest subsystem for
-  arguably-not-more-sensitive data. Downloaded files land in a `iCloud Sync/` staging
+  `icloudpd`'s interactive CLI prompts, speaking one JSON command/response per line over
+  stdin/stdout instead. Confirmed live that this has to be ONE long-lived process across
+  both the login and verify steps, not a fresh process per HTTP request as first built:
+  reconstructing `PyiCloudService` from scratch for verify-2fa (even pointed at the same
+  `--cookie-directory`) re-authenticates with Apple and silently issues a brand new
+  pending challenge, so a code from the first prompt just fails against a stale one —
+  visible as an endless loop back to another 2FA prompt instead of ever completing.
+  `Curato.iCloud`'s `iCloudAuthClient` now holds that one pending process alive between
+  the two HTTP calls (a single mutable field is proportionate — one iCloud account per
+  server, so only ever one login in flight), closing/killing it once verify actually
+  succeeds, fails outright, or the user backs out (`cancel-login`). The Apple password
+  travels inside that JSON payload over stdin (never a process argument, never logged,
+  never persisted) and only `pyicloud`'s own session/cookie files survive, sharing the
+  same `--cookie-directory` `icloudpd` itself later reads for the recurring sync — kept
+  at the same trust boundary as `server.db` and the library itself, both already
+  unencrypted on the same volume, rather than building a new encryption-at-rest
+  subsystem for arguably-not-more-sensitive data. Also confirmed live: `pyicloud`
+  unconditionally imports `rich` at startup (for its Notes service, unrelated to
+  anything this feature uses) but only declares it under its optional `[cli]` extra —
+  `requirements.txt` installs `pyicloud[cli]`, not the bare package, to avoid a
+  `ModuleNotFoundError` on a clean install. Downloaded files land in a `iCloud Sync/` staging
   subfolder inside the new shared "library folder" setting (below) and are fed through
   the *existing* scan pipeline exactly like a browser upload — zero new
   clustering/auto-titling logic, since loose new files already get auto-clustered and

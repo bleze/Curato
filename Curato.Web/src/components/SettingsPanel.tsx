@@ -3,6 +3,7 @@ import type { iCloudSyncStatus } from '../api'
 import {
   getICloudSyncStatus,
   getLibraryFolder,
+  iCloudCancelLogin,
   iCloudDisconnect,
   iCloudLogin,
   iCloudSyncNow,
@@ -60,6 +61,9 @@ export function SettingsPanel({ onClose }: { onClose: () => void }) {
       if (result.error) {
         setError(result.error)
       } else if (result.requiresTwoFactor) {
+        // The server keeps the live session alive for the verify step below —
+        // the password doesn't need to (and shouldn't) stick around here.
+        setPassword('')
         setAwaitingCode(true)
       } else {
         setUsername('')
@@ -71,12 +75,21 @@ export function SettingsPanel({ onClose }: { onClose: () => void }) {
 
   function handleICloudVerify() {
     return runBusy(async () => {
-      await iCloudVerifyTwoFactor(username, password, code)
+      await iCloudVerifyTwoFactor(username, code)
+      setAwaitingCode(false)
+      setUsername('')
+      setCode('')
+      refresh()
+    })
+  }
+
+  function handleCancelLogin() {
+    return runBusy(async () => {
+      await iCloudCancelLogin()
       setAwaitingCode(false)
       setUsername('')
       setPassword('')
       setCode('')
-      refresh()
     })
   }
 
@@ -182,6 +195,9 @@ export function SettingsPanel({ onClose }: { onClose: () => void }) {
             />
             <button type="button" onClick={handleICloudVerify} disabled={busy || !code.trim()}>
               Verify
+            </button>
+            <button type="button" onClick={handleCancelLogin} disabled={busy}>
+              Start over
             </button>
           </div>
         ) : (
