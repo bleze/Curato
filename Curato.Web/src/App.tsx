@@ -5,6 +5,7 @@ import {
   deleteMediaItem,
   getAuthStatus,
   getLibrary,
+  getLibraryFolder,
   logout,
   organizeLibrary,
   scanLibrary,
@@ -76,26 +77,34 @@ function App() {
       .catch((err) => setError(err instanceof Error ? err.message : String(err)))
   }, [])
 
-  // Once logged in, silently re-load whatever library you last had open —
-  // this is a read-only GET (no re-scan), so it's cheap and never touches
-  // files, and it's why the grid used to show up empty until you retyped
-  // the path and clicked Scan again.
+  // Once logged in, silently load a library without any manual step — this
+  // is a read-only GET (no re-scan), so it's cheap and never touches files.
+  // The configured "Library Folder" (Settings) wins when set: it's a
+  // server-side setting shared across every browser/device, and if you've
+  // set one up (e.g. for iCloud sync) it's clearly "the" library you care
+  // about — synced content should just show up, not require separately
+  // remembering to open it. Falls back to this browser's own last-scanned
+  // path (localStorage) for the plain manual-folder workflow, when no
+  // Library Folder is configured at all.
   useEffect(() => {
     if (!authStatus?.isAuthenticated) {
       return
     }
 
-    const lastPath = recallPath()
-    if (!lastPath) {
-      return
-    }
-
-    setPath(lastPath)
     setAutoLoading(true)
-    getLibrary(lastPath)
-      .then((lib) => {
-        setLibrary(lib)
-        setLoadedPath(lastPath)
+    getLibraryFolder()
+      .then((configuredPath) => configuredPath ?? recallPath())
+      .then((pathToLoad) => {
+        if (!pathToLoad) {
+          return
+        }
+
+        setPath(pathToLoad)
+        return getLibrary(pathToLoad).then((lib) => {
+          setLibrary(lib)
+          setLoadedPath(pathToLoad)
+          rememberPath(pathToLoad)
+        })
       })
       .catch(() => {
         // The folder may have moved/been unmounted since last time — fall

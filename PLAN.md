@@ -600,6 +600,15 @@ Photos, Immich):
   (`App.handleOpenLibrary`) just calls `getLibrary()` directly, the same read-only,
   no-rescan pattern already used to silently restore your last-open library on login.
 
+  Pressing a button at all was still one manual step too many for the actual expectation:
+  synced content should just show up on connecting, full stop. The auto-load-on-login
+  effect now checks the configured Library Folder *first* (a server-side setting, shared
+  across every browser/device — clearly "the" library once you've set one up) and only
+  falls back to this browser's own remembered last-scanned path (localStorage) when no
+  Library Folder is configured at all, for the plain manual-folder workflow. "Open this
+  library" in Settings stays too, for jumping back to it from whatever else you're
+  currently viewing without a page reload.
+
 ## 5. Recycle Bin (every deletion in the app goes through here)
 
 A second hard rule, alongside "Organize never deletes": **nothing Curato ever removes
