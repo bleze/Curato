@@ -23,35 +23,53 @@ public static class ThumbnailGenerator
     public static byte[] GenerateJpeg(string filePath, int maxDimension = 320, IReadOnlyList<Edit>? edits = null)
     {
         using var input = File.OpenRead(filePath);
-        using var original = SKBitmap.Decode(input)
+        using var codec = SKCodec.Create(input)
+            ?? throw new InvalidOperationException($"Could not decode image: {filePath}");
+        using var original = SKBitmap.Decode(codec)
             ?? throw new InvalidOperationException($"Could not decode image: {filePath}");
 
         var edited = edits is { Count: > 0 } ? EditRenderer.Apply(original, edits) : original;
         try
         {
-            // Never upscale — only shrink to fit within maxDimension x maxDimension,
-            // matching a typical "fit" thumbnail behavior.
-            var scale = Math.Min(1f, Math.Min((float)maxDimension / edited.Width, (float)maxDimension / edited.Height));
-
-            SKBitmap? resized = null;
+            // Last step: fixes the final visual orientation (§10's crop
+            // coordinates assume the file's raw, as-stored dimensions, so
+            // this can't run before Edit application without misaligning
+            // them for a photo that has both a Picasa crop and a rotated
+            // orientation tag).
+            var oriented = ExifOrientationCorrector.Apply(edited, codec.EncodedOrigin);
             try
             {
-                var bitmapToEncode = edited;
-                if (scale < 1f)
-                {
-                    var targetWidth = Math.Max(1, (int)Math.Round(edited.Width * scale));
-                    var targetHeight = Math.Max(1, (int)Math.Round(edited.Height * scale));
-                    resized = edited.Resize(new SKImageInfo(targetWidth, targetHeight), new SKSamplingOptions(SKFilterMode.Linear));
-                    bitmapToEncode = resized ?? edited;
-                }
+                // Never upscale — only shrink to fit within maxDimension x maxDimension,
+                // matching a typical "fit" thumbnail behavior.
+                var scale = Math.Min(1f, Math.Min((float)maxDimension / oriented.Width, (float)maxDimension / oriented.Height));
 
-                using var image = SKImage.FromBitmap(bitmapToEncode);
-                using var data = image.Encode(SKEncodedImageFormat.Jpeg, 80);
-                return data.ToArray();
+                SKBitmap? resized = null;
+                try
+                {
+                    var bitmapToEncode = oriented;
+                    if (scale < 1f)
+                    {
+                        var targetWidth = Math.Max(1, (int)Math.Round(oriented.Width * scale));
+                        var targetHeight = Math.Max(1, (int)Math.Round(oriented.Height * scale));
+                        resized = oriented.Resize(new SKImageInfo(targetWidth, targetHeight), new SKSamplingOptions(SKFilterMode.Linear));
+                        bitmapToEncode = resized ?? oriented;
+                    }
+
+                    using var image = SKImage.FromBitmap(bitmapToEncode);
+                    using var data = image.Encode(SKEncodedImageFormat.Jpeg, 80);
+                    return data.ToArray();
+                }
+                finally
+                {
+                    resized?.Dispose();
+                }
             }
             finally
             {
-                resized?.Dispose();
+                if (!ReferenceEquals(oriented, edited))
+                {
+                    oriented.Dispose();
+                }
             }
         }
         finally
