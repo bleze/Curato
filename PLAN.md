@@ -40,9 +40,15 @@ already written as plain .NET business logic independent of any UI; what changes
 - **MetadataExtractor** (NuGet) for EXIF/photo metadata (DateTaken, GPS, camera) — reads
   EXIF out of RAW files too, so RAW photos get correct dates/grouping even before
   decoding a preview image.
-- **FFmpeg** for video metadata (creation time, duration) and poster-frame thumbnails —
-  packaged per-platform (a Linux static build in the Docker image, a Windows build for
-  the Windows-hosted server).
+- **FFmpeg** for poster-frame thumbnails (not built yet) — packaged per-platform (a Linux
+  static build in the Docker image, a Windows build for the Windows-hosted server).
+  [Video *creation time* turned out not to need FFmpeg at all: MetadataExtractor (already
+  a dependency for photo EXIF) also reads the QuickTime/MP4-family "movie header" atom
+  that .mov/.mp4/.m4v/.3gp store it in — one fewer packaging dependency for that specific
+  need. This was a real, silent gap for a while: `MediaFileScanner` always fell back to
+  the file's filesystem date for every video, `TakenAtSource.VideoMetadata` existed in the
+  enum but nothing ever produced it. AVI/Matroska/WebM/WMV still have no reader in
+  MetadataExtractor and fall back to filesystem date as before.]
 - **HEIC support** (Apple's format, confirmed in scope): a cross-platform HEIF decode
   path (e.g. `libheif` bindings) rather than Windows' WIC extension, since the server no
   longer assumes Windows.
@@ -738,6 +744,15 @@ Tracked as a §14 follow-on, not a separate model/phase of its own.
   (a regenerable cache, keyed by `ContentHash`, separate from the portable `.curato/`
   data per §2), served to any client over HTTP — so a thumbnail is generated once no
   matter how many different clients (a browser, the Android TV app) ask for it.
+  [Disk caching itself isn't built yet — every request re-decodes. Also: SkiaSharp's
+  plain decode ignores EXIF orientation entirely, handing back pixels exactly as the
+  sensor stored them — for the very common case of a phone held in portrait (sensor data
+  stored "sideways" plus a tag saying how to display it), that came out visibly rotated.
+  `ExifOrientationCorrector` (Curato.Media) reads the tag via `SKCodec.EncodedOrigin` and
+  applies the matching rotate/mirror before resizing, as the *last* pipeline step —
+  after Edit application (§10), since Picasa-imported crop rectangles were computed
+  against the file's raw, as-stored dimensions, and correcting orientation first would
+  misalign them for a photo with both a Picasa crop and a rotated orientation tag.]
 - Fullscreen/lightbox viewer: swipe/arrow-key/remote-control navigation, pinch-zoom or
   scroll-to-zoom for photos, native `<video>` playback for video with a generated
   poster frame as the grid thumbnail.
