@@ -18,7 +18,13 @@ builder.Services
     {
         options.Cookie.HttpOnly = true;
         options.Cookie.SameSite = SameSiteMode.Strict;
-        options.Cookie.SecurePolicy = CookieSecurePolicy.Always;
+        // SameAsRequest, not Always: behind the reverse proxy PLAN.md §15
+        // expects in production, TLS is terminated there and Curato.Api only
+        // ever sees plain HTTP — Always would silently break the cookie on
+        // every request unless Forwarded Headers middleware is also wired up
+        // (tracked for when reverse-proxy deployment is actually configured).
+        // SameAsRequest also means local http-only dev keeps working.
+        options.Cookie.SecurePolicy = CookieSecurePolicy.SameAsRequest;
         options.ExpireTimeSpan = TimeSpan.FromDays(30);
         options.SlidingExpiration = true;
         options.LoginPath = "/api/auth/login";
@@ -55,7 +61,13 @@ if (app.Environment.IsDevelopment())
     app.MapOpenApi();
 }
 
-app.UseHttpsRedirection();
+// No UseHttpsRedirection(): per PLAN.md §15, TLS termination belongs to a
+// reverse proxy in front of Curato.Api, not the app itself — the app only
+// ever expects to receive plain HTTP (from the proxy in production, or
+// directly in local dev). Redirecting to HTTPS here was actively wrong, not
+// just inconvenient: it broke the Vite dev proxy, which forwards plain HTTP
+// and has no reason to expect (or trust) a redirect to a self-signed
+// dev-cert HTTPS endpoint.
 
 app.UseRateLimiter();
 app.UseAuthentication();
