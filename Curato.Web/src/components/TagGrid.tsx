@@ -21,20 +21,21 @@ export function TagGrid({
   onDelete: (mediaItemId: number) => void
 }) {
   const scrollRef = useRef<HTMLDivElement>(null)
-  const [containerWidth, setContainerWidth] = useState(0)
+  // null = not yet measured — see LibraryGrid's identical fix for why this
+  // never falls back to a guessed column count anymore.
+  const [containerWidth, setContainerWidth] = useState<number | null>(null)
   const [lightbox, setLightbox] = useState<number | null>(null)
 
   useLayoutEffect(() => {
     const el = scrollRef.current
     if (!el) return
-    setContainerWidth(el.getBoundingClientRect().width)
     const observer = new ResizeObserver((entries) => setContainerWidth(entries[0].contentRect.width))
     observer.observe(el)
     return () => observer.disconnect()
   }, [])
 
-  const columnCount = containerWidth > 0 ? Math.max(1, Math.floor((containerWidth + GAP) / (THUMB_MIN_WIDTH + GAP))) : 4
-  const thumbSize = containerWidth > 0 ? (containerWidth - (columnCount - 1) * GAP) / columnCount : THUMB_MIN_WIDTH
+  const columnCount = containerWidth !== null ? Math.max(1, Math.floor((containerWidth + GAP) / (THUMB_MIN_WIDTH + GAP))) : 1
+  const thumbSize = containerWidth !== null ? (containerWidth - (columnCount - 1) * GAP) / columnCount : THUMB_MIN_WIDTH
   const rowHeight = thumbSize + GAP
 
   const rows = useMemo(() => {
@@ -52,6 +53,10 @@ export function TagGrid({
     estimateSize: () => rowHeight,
     overscan: 6,
   })
+
+  if (containerWidth === null) {
+    return <div className="library-scroll" ref={scrollRef} tabIndex={0} />
+  }
 
   if (items.length === 0) {
     return <p>This album is empty.</p>

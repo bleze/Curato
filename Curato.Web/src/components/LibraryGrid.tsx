@@ -13,13 +13,6 @@ const THUMB_MIN_WIDTH = 120
 const GAP = 6
 const EVENT_HEADER_HEIGHT = 54
 const TRIP_HEADER_HEIGHT = 60
-// Must match .library-scroll's padding-right in App.css. getBoundingClientRect
-// measures the border-box (padding included), but that padding is space the
-// grid content never actually gets — subtracted out below so computed
-// thumbnail sizes match what CSS Grid actually renders. See App.css's
-// .library-scroll comment for why a mismatch here compounds into the
-// scrollbar-drag/reachable-scroll-range bug.
-const SCRUBBER_RESERVED_WIDTH = 18
 // Added to a header's estimate when it also renders a "Will move to" hint
 // line (§4's dry-run preview) — without this, that one extra line's worth
 // of height was the single biggest source of estimate-vs-actual drift,
@@ -134,31 +127,37 @@ export function LibraryGrid({
   onDelete: (mediaItemId: number) => void
 }) {
   const scrollRef = useRef<HTMLDivElement>(null)
-  const [containerWidth, setContainerWidth] = useState(0)
+  // null = not yet measured. Deliberately never guess a fallback column
+  // count here anymore: a guessed value (previously 4) could leak through
+  // as visibly huge, pixelated thumbnails whenever a race meant no
+  // subsequent resize ever corrected it — reported as intermittent and
+  // fixed by a full page reload, both consistent with a timing race rather
+  // than a permanently wrong calculation. Waiting for a real, confirmed
+  // ResizeObserver measurement before rendering any thumbnails at all
+  // removes the wrong state entirely rather than needing to find and patch
+  // every path that could produce it.
+  const [containerWidth, setContainerWidth] = useState<number | null>(null)
   const [lightbox, setLightbox] = useState<{ items: MediaItemDto[]; index: number } | null>(null)
 
   useLayoutEffect(() => {
     const el = scrollRef.current
     if (!el) return
-    // Measure synchronously before paint so the very first render already
-    // uses the real column count instead of a placeholder guess — avoids a
-    // pointless blocks-array rebuild (and virtualizer cache churn) a moment
-    // after mount purely because ResizeObserver's first callback is async.
-    //
-    // getBoundingClientRect returns the border-box (padding included), so
-    // the reserved scrubber space has to be subtracted back out here.
-    // ResizeObserver's entries[0].contentRect is different — it's already
-    // the pure content box, excluding padding — so it does NOT get the same
-    // subtraction; doing so would double-subtract and undercount on every
-    // resize after the first.
-    setContainerWidth(el.getBoundingClientRect().width - SCRUBBER_RESERVED_WIDTH)
+    // No synchronous getBoundingClientRect read here on purpose (there
+    // used to be one, to avoid a one-frame delay): it returns the
+    // border-box, which — unlike ResizeObserver's contentRect — does NOT
+    // exclude a scrollbar's width, only padding. Manually subtracting just
+    // the known padding still left it wrong by the scrollbar's width
+    // whenever one was actually present, which is most of the time for
+    // this view. ResizeObserver's own first callback is the only
+    // measurement used now, since it's the one that's actually guaranteed
+    // correct (content-box, padding and scrollbar both already excluded).
     const observer = new ResizeObserver((entries) => setContainerWidth(entries[0].contentRect.width))
     observer.observe(el)
     return () => observer.disconnect()
   }, [])
 
-  const columnCount = containerWidth > 0 ? Math.max(1, Math.floor((containerWidth + GAP) / (THUMB_MIN_WIDTH + GAP))) : 4
-  const thumbSize = containerWidth > 0 ? (containerWidth - (columnCount - 1) * GAP) / columnCount : THUMB_MIN_WIDTH
+  const columnCount = containerWidth !== null ? Math.max(1, Math.floor((containerWidth + GAP) / (THUMB_MIN_WIDTH + GAP))) : 1
+  const thumbSize = containerWidth !== null ? (containerWidth - (columnCount - 1) * GAP) / columnCount : THUMB_MIN_WIDTH
   const rowHeight = thumbSize + GAP
 
   const blocks = useMemo(() => buildBlocks(library, columnCount), [library, columnCount])
@@ -189,6 +188,17 @@ export function LibraryGrid({
     },
     overscan: 6,
   })
+
+  // The scroll container itself must always render (so its ref attaches
+  // and ResizeObserver has something to measure) — only its *content* waits
+  // for a real measurement.
+  if (containerWidth === null) {
+    return (
+      <div className="library-scroll-wrapper">
+        <div className="library-scroll library-scroll-with-scrubber" ref={scrollRef} tabIndex={0} />
+      </div>
+    )
+  }
 
   if (blocks.length === 0) {
     return <p>No media found in this folder.</p>
