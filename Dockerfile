@@ -39,11 +39,16 @@ RUN dotnet publish Curato.Api/Curato.Api.csproj -c Release -o /app/publish --no-
 FROM mcr.microsoft.com/dotnet/aspnet:10.0 AS final
 WORKDIR /app
 
-# ffmpeg for video metadata/thumbnails (PLAN.md §1); libheif for HEIC decode;
-# python3/pip for direct iCloud integration (§4 — icloudpd, MIT-licensed,
-# invoked directly as an external process by Curato.iCloud rather than
-# ported into C#; python3/pip are needed both to install it and to run it,
-# since the icloudpd executable is itself a Python program).
+# ffmpeg for video metadata/thumbnails (PLAN.md §1); libheif1 as a system
+# fallback for HEIC decode (Curato.Media's actual HEIC decoding — see
+# HeicDecoder — depends on LibHeif.Native.Runtime's own bundled NuGet
+# native binary instead, copied straight to the app's output directory, so
+# this apt package is likely redundant now, but left in as a harmless
+# safety net rather than removed without a real Docker build to verify
+# against); python3/pip for direct iCloud integration (§4 — icloudpd,
+# MIT-licensed, invoked directly as an external process by Curato.iCloud
+# rather than ported into C#; python3/pip are needed both to install it
+# and to run it, since the icloudpd executable is itself a Python program).
 RUN apt-get update \
     && apt-get install -y --no-install-recommends ffmpeg libheif1 python3 python3-pip \
     && rm -rf /var/lib/apt/lists/*

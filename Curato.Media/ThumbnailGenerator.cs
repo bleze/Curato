@@ -15,18 +15,16 @@ namespace Curato.Media;
 /// for basic thumbnailing), and works cross-platform including the Linux
 /// Docker image via SkiaSharp.NativeAssets.Linux.NoDependencies.
 ///
-/// RAW/HEIC preview extraction (§1) isn't implemented yet; this only handles
-/// formats Skia can decode natively (JPEG/PNG/WebP/etc.) for now.
+/// HEIC/HEIF decoding (§1, Apple's format) goes via <see cref="HeicDecoder"/>
+/// (libheif — plain Skia has no built-in HEIF codec); every other format
+/// Skia can decode natively (JPEG/PNG/WebP/etc.) goes straight through it.
+/// RAW preview extraction still isn't implemented.
 /// </summary>
 public static class ThumbnailGenerator
 {
     public static byte[] GenerateJpeg(string filePath, int maxDimension = 320, IReadOnlyList<Edit>? edits = null)
     {
-        using var input = File.OpenRead(filePath);
-        using var codec = SKCodec.Create(input)
-            ?? throw new InvalidOperationException($"Could not decode image: {filePath}");
-        using var original = SKBitmap.Decode(codec)
-            ?? throw new InvalidOperationException($"Could not decode image: {filePath}");
+        using var original = DecodeSource(filePath, out var encodedOrigin);
 
         var edited = edits is { Count: > 0 } ? EditRenderer.Apply(original, edits) : original;
         try
@@ -36,7 +34,7 @@ public static class ThumbnailGenerator
             // this can't run before Edit application without misaligning
             // them for a photo that has both a Picasa crop and a rotated
             // orientation tag).
-            var oriented = ExifOrientationCorrector.Apply(edited, codec.EncodedOrigin);
+            var oriented = ExifOrientationCorrector.Apply(edited, encodedOrigin);
             try
             {
                 // Never upscale — only shrink to fit within maxDimension x maxDimension,
@@ -79,5 +77,26 @@ public static class ThumbnailGenerator
                 edited.Dispose();
             }
         }
+    }
+
+    private static SKBitmap DecodeSource(string filePath, out SKEncodedOrigin encodedOrigin)
+    {
+        var extension = Path.GetExtension(filePath);
+        if (extension.Equals(".heic", StringComparison.OrdinalIgnoreCase) ||
+            extension.Equals(".heif", StringComparison.OrdinalIgnoreCase))
+        {
+            // TopLeft here means "no further correction needed", not "this
+            // file has no rotation" — libheif's own decode already applies
+            // the container's orientation transform (see HeicDecoder).
+            encodedOrigin = SKEncodedOrigin.TopLeft;
+            return HeicDecoder.Decode(filePath);
+        }
+
+        using var input = File.OpenRead(filePath);
+        using var codec = SKCodec.Create(input)
+            ?? throw new InvalidOperationException($"Could not decode image: {filePath}");
+        encodedOrigin = codec.EncodedOrigin;
+        return SKBitmap.Decode(codec)
+            ?? throw new InvalidOperationException($"Could not decode image: {filePath}");
     }
 }

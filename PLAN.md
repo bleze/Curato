@@ -52,6 +52,19 @@ already written as plain .NET business logic independent of any UI; what changes
 - **HEIC support** (Apple's format, confirmed in scope): a cross-platform HEIF decode
   path (e.g. `libheif` bindings) rather than Windows' WIC extension, since the server no
   longer assumes Windows.
+  [Phase 2 built shape: `MediaFileScanner`'s EXIF-date-reading path already worked for
+  HEIC (MetadataExtractor doesn't need pixel decoding for that), but actual thumbnail/
+  preview rendering was never implemented — confirmed live via the iCloud sync feature,
+  since every synced iPhone photo showed "No preview" (plain SkiaSharp has no built-in
+  HEIF codec at all). `HeicDecoder` (`Curato.Media`) now handles it via `LibHeifSharp`,
+  with native binaries from `LibHeif.Native.Runtime` (bundles prebuilt Windows x64 +
+  Linux x64 builds, copied to the output directory automatically — the same "just works"
+  bar `SkiaSharp.NativeAssets.Linux.NoDependencies` already sets) rather than requiring a
+  separately-installed system library. Deliberately does *not* run
+  `ExifOrientationCorrector` afterward: unlike JPEG, the HEIF spec treats the EXIF
+  orientation tag as purely informational, and libheif's own decode already returns
+  pixels in the correct display orientation using the container's own transform —
+  applying EXIF rotation on top would rotate/mirror an already-correct image twice.]
 - **RAW support** (DSLR files, confirmed in scope, **preview-based, not full RAW
   development**): every common RAW format (CR2/CR3, NEF, ARW, DNG, ...) embeds a
   full-size JPEG preview — Curato reads EXIF plus that embedded preview for
