@@ -1,6 +1,7 @@
 using Curato.Core;
 using MetadataExtractor;
 using MetadataExtractor.Formats.Exif;
+using MetadataExtractor.Formats.QuickTime;
 
 namespace Curato.Media;
 
@@ -69,7 +70,7 @@ public sealed class MediaFileScanner
 
         var (takenAt, source) = kind == MediaKind.Photo
             ? ReadPhotoTakenAt(filePath, info)
-            : (info.LastWriteTimeUtc, TakenAtSource.FileSystem);
+            : ReadVideoTakenAt(filePath, info);
 
         return new MediaItem
         {
@@ -98,6 +99,35 @@ public sealed class MediaFileScanner
         catch (ImageProcessingException)
         {
             // Not a format MetadataExtractor understands, or no EXIF present —
+            // fall through to the filesystem-date fallback below.
+        }
+
+        return (info.LastWriteTimeUtc, TakenAtSource.FileSystem);
+    }
+
+    /// <summary>
+    /// Reads the QuickTime/MP4-family "movie header" creation date (covers
+    /// .mov/.mp4/.m4v/.3gp — the ISO-base-media-file-format family, by far
+    /// the common case for phone-recorded video). MetadataExtractor has no
+    /// reader for AVI/Matroska/WebM/WMV creation dates, so those still fall
+    /// back to the file's filesystem date, same as before this method existed.
+    /// </summary>
+    private static (DateTime TakenAt, TakenAtSource Source) ReadVideoTakenAt(string filePath, FileInfo info)
+    {
+        try
+        {
+            var directories = ImageMetadataReader.ReadMetadata(filePath);
+            var movieHeader = directories.OfType<QuickTimeMovieHeaderDirectory>().FirstOrDefault();
+            if (movieHeader is not null &&
+                movieHeader.TryGetDateTime(QuickTimeMovieHeaderDirectory.TagCreated, out var created) &&
+                created.Year > 1904) // some encoders write an all-zero "unknown" creation time (decodes to the 1904 epoch itself) rather than omitting the field
+            {
+                return (created, TakenAtSource.VideoMetadata);
+            }
+        }
+        catch (ImageProcessingException)
+        {
+            // Not a format MetadataExtractor understands, or no usable header present —
             // fall through to the filesystem-date fallback below.
         }
 

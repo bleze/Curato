@@ -26,4 +26,13 @@
     <ProjectReference Include="..\Curato.Picasa\Curato.Picasa.csproj" />
   </ItemGroup>
 
+  <ItemGroup>
+    <!-- Real EXIF/QuickTime-bearing files (a plain JPEG, a HEIC, and a
+         minimal hand-built .mov with a genuine mvhd creation_time atom) —
+         committed as binary fixtures so MediaFileScanner's date-reading
+         tests don't depend on Python/piexif/pillow-heif being available
+         wherever tests run. See MediaFileScannerDateReadingTests. -->
+    <None Include="TestAssets\**" CopyToOutputDirectory="PreserveNewest" />
+  </ItemGroup>
+
 </Project>
