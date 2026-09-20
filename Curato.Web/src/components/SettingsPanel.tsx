@@ -12,7 +12,13 @@ import {
   setLibraryFolder,
 } from '../api'
 
-export function SettingsPanel({ onClose }: { onClose: () => void }) {
+export function SettingsPanel({
+  onClose,
+  onOpenLibrary,
+}: {
+  onClose: () => void
+  onOpenLibrary: (path: string) => void
+}) {
   const [libraryFolder, setLibraryFolderValue] = useState<string | null>(null)
   const [libraryFolderInput, setLibraryFolderInput] = useState('')
   const [status, setStatus] = useState<iCloudSyncStatus | null>(null)
@@ -188,7 +194,14 @@ export function SettingsPanel({ onClose }: { onClose: () => void }) {
             Save
           </button>
         </div>
-        {libraryFolder && <p className="settings-meta">Current: {libraryFolder}</p>}
+        {libraryFolder && (
+          <p className="settings-meta">
+            Current: {libraryFolder}{' '}
+            <button type="button" onClick={() => onOpenLibrary(libraryFolder)} disabled={busy}>
+              Open this library
+            </button>
+          </p>
+        )}
       </section>
 
       <section className="settings-section">

@@ -590,6 +590,16 @@ Photos, Immich):
   intentionally minimal rather than building a generic settings framework ahead of a
   second concrete need.
 
+  Confirmed live a real gap this created: after a successful sync, nothing showed up in
+  the main library view — the library folder and whatever path is currently loaded in the
+  main UI are two independent things, and a sync's `ScanService.Scan()` call updates the
+  library folder's own database regardless of what the browser happens to have open. The
+  fix isn't "re-scan," since the sync already ran the scan pipeline server-side — it's
+  purely that "Scan" was the only existing button that also happened to load a library
+  into view, conflating the two. Settings' "Open this library" button
+  (`App.handleOpenLibrary`) just calls `getLibrary()` directly, the same read-only,
+  no-rescan pattern already used to silently restore your last-open library on login.
+
 ## 5. Recycle Bin (every deletion in the app goes through here)
 
 A second hard rule, alongside "Organize never deletes": **nothing Curato ever removes

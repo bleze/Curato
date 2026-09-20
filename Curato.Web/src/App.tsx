@@ -105,6 +105,27 @@ function App() {
       .finally(() => setAutoLoading(false))
   }, [authStatus?.isAuthenticated])
 
+  // Just views a library, without re-scanning — for a folder that's already
+  // indexed (e.g. an iCloud sync already ran ScanService server-side; there's
+  // nothing to gain from re-scanning just to look at it). Same shape as the
+  // auto-load-on-login effect above.
+  async function handleOpenLibrary(pathToOpen: string) {
+    setBusy(true)
+    setError(null)
+    try {
+      const lib = await getLibrary(pathToOpen)
+      setLibrary(lib)
+      setLoadedPath(pathToOpen)
+      setPath(pathToOpen)
+      rememberPath(pathToOpen)
+      setShowSettings(false)
+    } catch (err) {
+      setError(err instanceof Error ? err.message : String(err))
+    } finally {
+      setBusy(false)
+    }
+  }
+
   async function handleScan() {
     if (!path.trim()) return
     setBusy(true)
@@ -294,7 +315,7 @@ function App() {
         />
       )}
 
-      {showSettings && <SettingsPanel onClose={() => setShowSettings(false)} />}
+      {showSettings && <SettingsPanel onClose={() => setShowSettings(false)} onOpenLibrary={handleOpenLibrary} />}
 
       {library && loadedPath && (
         <div className="library">
