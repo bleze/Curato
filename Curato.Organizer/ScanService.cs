@@ -14,6 +14,7 @@ public sealed record ScanResult(
     int NewAdoptedEventCount,
     int NewTripGroupCount,
     int ItemsAddedToExistingEvents,
+    int RemovedAutoTripGroupCount,
     IReadOnlyList<EventSummary> NewEvents);
 
 /// <summary>
@@ -80,10 +81,23 @@ public sealed class ScanService(LibraryRepository repository, LibraryQueryServic
         var allNewEvents = newAutoEvents.Concat(newAdoptedEvents).ToList();
         repository.SaveEvents(allNewEvents); // assigns real Ids, needed before trip-grouping
 
-        var newAutoTrips = new TripClusterer().Cluster(newAutoEvents);
-        var newAdoptedTrips = AdoptedFolderPlanner.PlanTrips(newAdoptedEvents);
-        var allNewTrips = newAutoTrips.Concat(newAdoptedTrips).ToList();
+        // Auto-Trip formation (TripClusterer, purely time-gap-based) is
+        // deliberately not wired in here: with no location signal at all, it
+        // has no way to tell "a real trip away from home" apart from just an
+        // ordinary run of days with photos on them, and for anyone who takes
+        // photos close to daily, that's most of their library — TripClusterer
+        // itself stays (correct for what it does, and a reasonable building
+        // block once GPS-based detection, PLAN.md §12, actually lands), just
+        // not used to auto-create Trips a user never asked for. Adopted
+        // Trips are unaffected: those come from folder structure the user
+        // already made themselves, never a time-based guess.
+        var allNewTrips = AdoptedFolderPlanner.PlanTrips(newAdoptedEvents);
         repository.SaveTripGroups(allNewTrips);
+
+        // Self-heals a library scanned before auto-Trip formation was
+        // disabled: any leftover CuratoManaged TripGroup from the old
+        // time-gap heuristic is ungrouped back into standalone Events.
+        var removedAutoTripGroupCount = repository.RemoveAutoFormedTripGroups();
 
         DetectAndPersistLivePhotoPairs();
 
@@ -93,6 +107,7 @@ public sealed class ScanService(LibraryRepository repository, LibraryQueryServic
             NewAdoptedEventCount: newAdoptedEvents.Count,
             NewTripGroupCount: allNewTrips.Count,
             ItemsAddedToExistingEvents: itemsAddedToExisting,
+            RemovedAutoTripGroupCount: removedAutoTripGroupCount,
             NewEvents: allNewEvents
                 .OrderBy(e => e.StartAt)
                 .Select(e => new EventSummary(

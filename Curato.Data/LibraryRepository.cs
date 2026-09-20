@@ -136,6 +136,41 @@ public sealed class LibraryRepository(LibraryDatabase database)
         transaction.Commit();
     }
 
+    /// <summary>
+    /// Un-does auto-formed (NamingMode = CuratoManaged) TripGroups: their
+    /// member Events are ungrouped (TripGroupId set back to null, becoming
+    /// standalone Events again — no file or MediaItem is touched) and the
+    /// TripGroup row itself is deleted. Adopted TripGroups (real folder
+    /// structure the user made themselves) are never touched. Idempotent —
+    /// a no-op once none are left. Cleans up what auto-Trip formation
+    /// already wrote to existing libraries before it was disabled (see
+    /// ScanService); running this on every scan means an existing library
+    /// self-heals the next time it's scanned, with no separate migration
+    /// step to remember.
+    /// </summary>
+    public int RemoveAutoFormedTripGroups()
+    {
+        using var connection = database.OpenConnection();
+        using var transaction = connection.BeginTransaction();
+
+        var tripIds = new List<long>();
+        foreach (var row in connection.Query(
+            "SELECT Id FROM TripGroup WHERE NamingMode = 'CuratoManaged'", transaction: transaction))
+        {
+            tripIds.Add((long)row.Id);
+        }
+
+        foreach (var tripId in tripIds)
+        {
+            connection.Execute(
+                "UPDATE Event SET TripGroupId = NULL WHERE TripGroupId = @TripId", new { TripId = tripId }, transaction);
+            connection.Execute("DELETE FROM TripGroup WHERE Id = @TripId", new { TripId = tripId }, transaction);
+        }
+
+        transaction.Commit();
+        return tripIds.Count;
+    }
+
     /// <summary>Links a Live Photo's still frame to its motion clip (idempotent — a no-op once already set).</summary>
     public void SetLivePhotoPair(long photoMediaItemId, long videoMediaItemId)
     {

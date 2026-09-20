@@ -302,6 +302,26 @@ it entirely changes nothing about how the app itself works day to day.
 2. `TripGroup`s are proposals: shown to the user before organizing, with merge/split
    controls, but no manual date-range selection required for the common case.
 
+[**Disabled in the built Phase 1/2 pipeline** — TripClusterer (this
+algorithm) is implemented and unit-tested, but ScanService no longer calls
+it to auto-create TripGroups. With zero location signal, a pure time gap
+can't tell "an actual trip away from home" apart from an ordinary run of
+days that happen to have photos on them — for anyone who takes photos close
+to daily, nearly their whole library has <36h gaps between consecutive
+days' Events, so it was merging unrelated weeks/months into sprawling,
+meaningless "trips." Confirmed against a real library and fixed per
+explicit product decision rather than just tuning the threshold, since any
+purely time-based number has the same fundamental problem. Adopted
+TripGroups (§3 Step 0 — real folder structure the user already made, e.g.
+`2019 Summer/Day 1`, `2019 Summer/Day 2`) are unaffected; that's reading
+existing organization, never a guess. A library scanned before this fix
+self-heals on its next scan: `LibraryRepository.RemoveAutoFormedTripGroups`
+ungroups any leftover CuratoManaged TripGroup back into standalone Events
+(no file or MediaItem is touched). The real fix is Step 3's location-aware
+naming logic below, generalized into location-aware *grouping* — tracked
+against Phase 4 (Map view, §12) landing GPS EXIF extraction, not scheduled
+before then.]
+
 ### Step 3 — Titling
 - Auto-title an `Event` from its date/time-of-day (e.g. "Morning", "Evening") unless
   the user supplies one; auto-title a `TripGroup` as its date range until named.
@@ -703,6 +723,17 @@ Tracked as a §14 follow-on, not a separate model/phase of its own.
 - Virtualized grid (e.g. React + TanStack Virtual, or the equivalent in whatever
   frontend framework is settled on) so scrolling stays smooth over tens of thousands of
   items — never request full-res images for off-screen tiles.
+  [Also: the grid uses the full window width rather than a fixed max-width
+  (photo galleries want the space); the scroll container is keyboard-
+  focusable (tabIndex) since native Page Down/End/arrow-key scrolling only
+  ever targets a focused element, not just whatever's under the mouse; a
+  hovered tile scales up slightly (transform, no layout impact on
+  neighbors) for a bit of tactile feedback. One easy-to-miss virtualization
+  gotcha worth remembering if it resurfaces elsewhere: TanStack's
+  measureElement reads an item's own border-box, which excludes margin —
+  reserving gap-sized space between virtualized rows needs padding on the
+  measured element, not margin, or the gap silently disappears once real
+  measurements replace the initial estimate.]
 - Server-side thumbnail pipeline: decode + downscale on the server, cache to disk
   (a regenerable cache, keyed by `ContentHash`, separate from the portable `.curato/`
   data per §2), served to any client over HTTP — so a thumbnail is generated once no

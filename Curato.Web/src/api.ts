@@ -41,6 +41,8 @@ export interface ScanResult {
   newAdoptedEventCount: number
   newTripGroupCount: number
   itemsAddedToExistingEvents: number
+  /** Leftover auto-formed (time-gap-only) Trips from before that heuristic was disabled, ungrouped this scan. */
+  removedAutoTripGroupCount: number
 }
 
 export interface AuthStatus {

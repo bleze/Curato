@@ -46,6 +46,14 @@ function formatPicasaSummary(result: PicasaImportResult): string {
   )
 }
 
+// Auto-Trip formation (a pure time-gap guess, no location signal) has been
+// disabled — this only has anything to say the one time a library scanned
+// before that change gets its leftover bogus Trips cleaned up.
+function formatRemovedTripsNote(removedAutoTripGroupCount: number): string {
+  if (removedAutoTripGroupCount === 0) return ''
+  return ` Removed ${removedAutoTripGroupCount} old auto-generated trip grouping(s) that were never based on real location data.`
+}
+
 function App() {
   const [authStatus, setAuthStatus] = useState<AuthStatus | null>(null)
   const [path, setPath] = useState('')
@@ -107,6 +115,7 @@ function App() {
           `${result.scan.newAdoptedEventCount} adopted event(s), ` +
           `${result.scan.newTripGroupCount} trip(s), ` +
           `${result.scan.itemsAddedToExistingEvents} item(s) added to existing events.` +
+          formatRemovedTripsNote(result.scan.removedAutoTripGroupCount) +
           formatPicasaSummary(result.picasaImport),
       )
       const lib = await getLibrary(path)
@@ -151,6 +160,7 @@ function App() {
           (result.filesSkipped > 0 ? ` (${result.filesSkipped} skipped — unsupported type or too large)` : '') +
           `. ${result.scan.newAutoOrganizedEventCount} new event(s), ` +
           `${result.scan.itemsAddedToExistingEvents} item(s) added to existing events.` +
+          formatRemovedTripsNote(result.scan.removedAutoTripGroupCount) +
           formatPicasaSummary(result.picasaImport),
       )
       const lib = await getLibrary(loadedPath)
