@@ -1,20 +1,19 @@
 using Curato.Core;
 using Curato.Data;
 using Curato.Media;
+using Curato.Organizer;
 using Microsoft.AspNetCore.Mvc;
 
 namespace Curato.Api.Controllers;
 
 /// <summary>
 /// First testable vertical slice of PLAN.md §3's engine: scan a folder,
-/// cluster it into Events/Trips (Step 1-2), persist the result.
+/// split it into loose vs. already-organized content (Step 0), cluster the
+/// loose part (Steps 1-2), adopt the rest as-is, persist everything.
 ///
 /// NOT YET behind auth (§15) — there's no admin-account/login flow built yet
 /// (that's the very next piece of work), so this is deliberately open only
 /// for local scaffold testing. Do not expose this port before that lands.
-/// Also doesn't yet implement §3 Step 0's "existing folders are the
-/// boundary" rule — everything scanned is treated as loose/unstructured
-/// input for now, so point it at a flat test folder, not a real archive.
 /// </summary>
 [ApiController]
 [Route("api/[controller]")]
@@ -24,11 +23,14 @@ public sealed class ScanController : ControllerBase
 
     public sealed record ScanResponse(
         int MediaItemCount,
-        int EventCount,
+        int AutoOrganizedEventCount,
+        int AdoptedEventCount,
         int TripGroupCount,
         IReadOnlyList<EventSummary> Events);
 
-    public sealed record EventSummary(long Id, string Title, DateTime StartAt, DateTime EndAt, int ItemCount);
+    public sealed record EventSummary(
+        long Id, string Title, string NamingMode, string? FolderPath,
+        DateTime StartAt, DateTime EndAt, int ItemCount);
 
     [HttpPost]
     public ActionResult<ScanResponse> Scan([FromBody] ScanRequest request)
@@ -46,19 +48,32 @@ public sealed class ScanController : ControllerBase
         var scannedItems = scanner.Scan(request.Path).ToList();
         var savedItems = repository.UpsertMediaItems(scannedItems);
 
-        var events = new EventClusterer().Cluster(savedItems);
-        repository.SaveEvents(events);
+        // PLAN.md §3 Step 0: split by whether an existing folder already
+        // bounds these items, or they're loose at the library root.
+        var byFolder = FolderGrouper.GroupByContainingFolder(savedItems);
+        var looseItems = byFolder[FolderGrouper.LooseItemsKey].ToList();
 
-        var trips = new TripClusterer().Cluster(events);
-        repository.SaveTripGroups(trips);
+        var autoEvents = new EventClusterer().Cluster(looseItems);
+        var adoptedEvents = AdoptedFolderPlanner.PlanEvents(byFolder);
+
+        var allEvents = autoEvents.Concat(adoptedEvents).ToList();
+        repository.SaveEvents(allEvents); // assigns real Ids, needed before trip-grouping
+
+        var autoTrips = new TripClusterer().Cluster(autoEvents);
+        var adoptedTrips = AdoptedFolderPlanner.PlanTrips(adoptedEvents);
+        var allTrips = autoTrips.Concat(adoptedTrips).ToList();
+        repository.SaveTripGroups(allTrips);
 
         var response = new ScanResponse(
             MediaItemCount: savedItems.Count,
-            EventCount: events.Count,
-            TripGroupCount: trips.Count,
-            Events: events
+            AutoOrganizedEventCount: autoEvents.Count,
+            AdoptedEventCount: adoptedEvents.Count,
+            TripGroupCount: allTrips.Count,
+            Events: allEvents
                 .OrderBy(e => e.StartAt)
-                .Select(e => new EventSummary(e.Id, e.Title, e.StartAt, e.EndAt, e.MediaItemIds.Count))
+                .Select(e => new EventSummary(
+                    e.Id, e.Title, e.NamingMode.ToString(), e.FolderPath,
+                    e.StartAt, e.EndAt, e.MediaItemIds.Count))
                 .ToList());
 
         return Ok(response);
