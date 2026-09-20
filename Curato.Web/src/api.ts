@@ -115,3 +115,45 @@ export function thumbnailUrl(libraryPath: string, relativePath: string): string 
   const params = new URLSearchParams({ libraryPath, relativePath })
   return `/api/media/thumbnail?${params.toString()}`
 }
+
+export interface DeletedItemDto {
+  id: number
+  originalRelativePath: string
+  kind: 'Photo' | 'Video'
+  deletedAt: string
+  purgeAt: string
+  source: string
+}
+
+export function deleteMediaItem(path: string, mediaItemId: number): Promise<DeletedItemDto> {
+  return fetch('/api/recyclebin/delete', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ path, mediaItemId }),
+  }).then(asJson<DeletedItemDto>)
+}
+
+export function getRecycleBin(path: string): Promise<DeletedItemDto[]> {
+  return fetch(`/api/recyclebin?path=${encodeURIComponent(path)}`).then(asJson<DeletedItemDto[]>)
+}
+
+export function restoreDeletedItem(path: string, deletedItemId: number): Promise<void> {
+  return fetch('/api/recyclebin/restore', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ path, deletedItemId }),
+  }).then(expectOk)
+}
+
+export function purgeDeletedItem(path: string, deletedItemId: number): Promise<void> {
+  return fetch('/api/recyclebin/purge', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ path, deletedItemId }),
+  }).then(expectOk)
+}
+
+export function recycleBinThumbnailUrl(libraryPath: string, deletedItemId: number): string {
+  const params = new URLSearchParams({ path: libraryPath, deletedItemId: String(deletedItemId) })
+  return `/api/recyclebin/thumbnail?${params.toString()}`
+}

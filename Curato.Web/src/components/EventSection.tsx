@@ -11,7 +11,15 @@ function formatRange(startAt: string, endAt: string): string {
     : `${start.toLocaleDateString(undefined, dateFmt)} – ${end.toLocaleDateString(undefined, dateFmt)}`
 }
 
-export function EventSection({ event, libraryPath }: { event: EventDto; libraryPath: string }) {
+export function EventSection({
+  event,
+  libraryPath,
+  onDelete,
+}: {
+  event: EventDto
+  libraryPath: string
+  onDelete: (mediaItemId: number) => void
+}) {
   return (
     <section className="event-section">
       <header className="event-header">
@@ -42,6 +50,14 @@ export function EventSection({ event, libraryPath }: { event: EventDto; libraryP
             ) : (
               <div className="thumb-fallback">Video</div>
             )}
+            <button
+              type="button"
+              className="thumb-delete"
+              title="Move to Recycle Bin"
+              onClick={() => onDelete(item.id)}
+            >
+              &times;
+            </button>
           </div>
         ))}
       </div>

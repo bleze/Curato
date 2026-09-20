@@ -162,6 +162,12 @@ Edit                          -- non-destructive; never touches the original fil
 DeletedItem                   -- the in-app Recycle Bin (§5) — every deletion lands here
   Id, MediaItemId, OriginalFilePath, TrashFilePath, ThumbnailPath,
   DeletedAt, PurgeAt, Source (DuplicateFinder/Manual/...)
+  [Phase 1 built shape: the MediaItem row is deleted outright at delete-time
+  rather than kept alongside its DeletedItem row, so restoring just puts the
+  file back and lets the next scan re-discover it rather than reconstructing
+  its old Event/Trip membership. No stored ThumbnailPath either — the
+  Recycle Bin UI's thumbnail endpoint generates one on demand straight from
+  the trashed file, so there's never a second on-disk copy to keep in sync.]
 
 BackupDestination             -- Auto Backup (§6)
   Id, Path, Label, Enabled, LastSuccessAt, LastError

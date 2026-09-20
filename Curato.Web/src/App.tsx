@@ -1,9 +1,10 @@
 import { useEffect, useState } from 'react'
 import './App.css'
 import type { AuthStatus, LibraryDto } from './api'
-import { getAuthStatus, getLibrary, logout, organizeLibrary, scanLibrary } from './api'
+import { deleteMediaItem, getAuthStatus, getLibrary, logout, organizeLibrary, scanLibrary } from './api'
 import { AuthGate } from './components/AuthGate'
 import { EventSection } from './components/EventSection'
+import { RecycleBinPanel } from './components/RecycleBinPanel'
 
 const LAST_PATH_KEY = 'curato:lastLibraryPath'
 
@@ -33,6 +34,7 @@ function App() {
   const [error, setError] = useState<string | null>(null)
   const [busy, setBusy] = useState(false)
   const [autoLoading, setAutoLoading] = useState(false)
+  const [showRecycleBin, setShowRecycleBin] = useState(false)
 
   useEffect(() => {
     getAuthStatus()
@@ -113,6 +115,18 @@ function App() {
     }
   }
 
+  async function handleDelete(mediaItemId: number) {
+    if (!loadedPath) return
+    setError(null)
+    try {
+      await deleteMediaItem(loadedPath, mediaItemId)
+      const lib = await getLibrary(loadedPath)
+      setLibrary(lib)
+    } catch (err) {
+      setError(err instanceof Error ? err.message : String(err))
+    }
+  }
+
   async function handleLogout() {
     await logout()
     setLibrary(null)
@@ -142,6 +156,11 @@ function App() {
       <header className="app-header">
         <h1>Curato</h1>
         <div className="account">
+          {loadedPath && (
+            <button type="button" onClick={() => setShowRecycleBin(true)}>
+              Recycle Bin
+            </button>
+          )}
           <span>{authStatus.username}</span>
           <button type="button" onClick={handleLogout}>
             Sign out
@@ -167,6 +186,10 @@ function App() {
       {status && <p className="status">{status}</p>}
       {error && <p className="error">{error}</p>}
 
+      {showRecycleBin && loadedPath && (
+        <RecycleBinPanel libraryPath={loadedPath} onClose={() => setShowRecycleBin(false)} />
+      )}
+
       {library && loadedPath && (
         <div className="library">
           <div className="organize-bar">
@@ -188,13 +211,23 @@ function App() {
                 <p className="proposed-path">Will move to: {trip.proposedFolderPath}</p>
               )}
               {trip.events.map((event) => (
-                <EventSection key={event.id} event={event} libraryPath={loadedPath} />
+                <EventSection
+                  key={event.id}
+                  event={event}
+                  libraryPath={loadedPath}
+                  onDelete={handleDelete}
+                />
               ))}
             </section>
           ))}
 
           {library.standaloneEvents.map((event) => (
-            <EventSection key={event.id} event={event} libraryPath={loadedPath} />
+            <EventSection
+              key={event.id}
+              event={event}
+              libraryPath={loadedPath}
+              onDelete={handleDelete}
+            />
           ))}
 
           {library.trips.length === 0 && library.standaloneEvents.length === 0 && (

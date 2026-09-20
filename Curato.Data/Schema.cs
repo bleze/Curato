@@ -71,5 +71,23 @@ internal static class Schema
             OldRelativePath TEXT NOT NULL,
             NewRelativePath TEXT NOT NULL
         );
+
+        -- PLAN.md §5, Recycle Bin. Deleting a MediaItem removes its row (and
+        -- its EventMediaItem links) and moves the physical file into
+        -- `.curato/RecycleBin/<TrashRelativePath>` rather than deleting it -
+        -- everything the Recycle Bin UI needs to show/restore/purge it lives
+        -- here instead, since the MediaItem row itself is gone. Restoring
+        -- just puts the file back at OriginalRelativePath and lets the next
+        -- scan re-discover it, rather than trying to re-create its exact
+        -- former Event/Trip membership.
+        CREATE TABLE IF NOT EXISTS DeletedItem (
+            Id INTEGER PRIMARY KEY AUTOINCREMENT,
+            OriginalRelativePath TEXT NOT NULL,
+            TrashRelativePath TEXT NOT NULL,
+            Kind TEXT NOT NULL,
+            DeletedAt TEXT NOT NULL,
+            PurgeAt TEXT NOT NULL,
+            Source TEXT NOT NULL
+        );
         """;
 }

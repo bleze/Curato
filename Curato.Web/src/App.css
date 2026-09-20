@@ -208,10 +208,119 @@
 }
 
 .thumb {
+  position: relative;
   aspect-ratio: 1 / 1;
   border-radius: 6px;
   overflow: hidden;
   background: #eee;
+}
+
+.thumb-delete {
+  position: absolute;
+  top: 4px;
+  right: 4px;
+  width: 20px;
+  height: 20px;
+  line-height: 18px;
+  padding: 0;
+  border: none;
+  border-radius: 50%;
+  background: rgba(0, 0, 0, 0.55);
+  color: white;
+  font-size: 14px;
+  cursor: pointer;
+  opacity: 0;
+  transition: opacity 0.15s;
+}
+
+.thumb:hover .thumb-delete {
+  opacity: 1;
+}
+
+.recyclebin-panel {
+  margin: 16px 0;
+  padding: 14px 18px;
+  border: 1px solid #dce8f5;
+  background: #fafcff;
+  border-radius: 8px;
+}
+
+.recyclebin-header {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+}
+
+.recyclebin-header h2 {
+  margin: 0;
+  font-size: 16px;
+}
+
+.recyclebin-header button {
+  padding: 5px 12px;
+  font-size: 12.5px;
+  border-radius: 6px;
+  border: 1px solid #ccc;
+  background: white;
+  cursor: pointer;
+}
+
+.recyclebin-hint {
+  color: #666;
+  font-size: 12.5px;
+  margin: 6px 0 14px;
+}
+
+.recyclebin-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(140px, 1fr));
+  gap: 14px;
+}
+
+.recyclebin-item {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
+.recyclebin-item-path {
+  font-size: 11px;
+  color: #666;
+  margin: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.recyclebin-item-meta {
+  font-size: 11px;
+  color: #96700f;
+  margin: 0;
+}
+
+.recyclebin-item-actions {
+  display: flex;
+  gap: 6px;
+}
+
+.recyclebin-item-actions button {
+  flex: 1;
+  padding: 4px 6px;
+  font-size: 11px;
+  border-radius: 5px;
+  border: 1px solid #ccc;
+  background: white;
+  cursor: pointer;
+}
+
+.recyclebin-item-actions button.danger {
+  border-color: #e0a3a0;
+  color: #b3261e;
+}
+
+.recyclebin-item-actions button:disabled {
+  opacity: 0.5;
+  cursor: default;
 }
 
 .thumb img {
