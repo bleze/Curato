@@ -843,16 +843,27 @@ a real deployment mode with its own requirements, not an afterthought:
 - **Passwords hashed with a well-vetted adaptive algorithm** (ASP.NET Core Identity's
   default password hasher — PBKDF2 with a proper work factor, or Argon2 if preferred) —
   never a custom scheme, never a fast general-purpose hash like plain SHA-256.
-- **Session-based auth** (ASP.NET Core's built-in cookie auth: `HttpOnly`, `Secure`,
-  `SameSite=Strict` cookies) for the web UI; the Android TV client (§16) authenticates
-  the same way and holds a long-lived session/token, since re-entering a password with a
-  remote control every time is a bad experience. Sessions are individually revocable
-  ("log out all devices") for when a device is lost or a session might be compromised.
-- **Login brute-force protection**: rate limiting on the login endpoint (ASP.NET Core's
-  built-in `Microsoft.AspNetCore.RateLimiting` middleware — no extra dependency) plus
-  escalating lockout after repeated failures. An internet-exposed login is a real
-  target for credential stuffing in a way a LAN-only one never was; this is not
-  optional once a port is open to the internet.
+- **Session-based auth** (ASP.NET Core's built-in cookie auth: `HttpOnly`,
+  `SameAsRequest`-secure, `SameSite=Strict` cookies) for the web UI; the Android TV
+  client (§16) authenticates the same way and holds a long-lived session/token, since
+  re-entering a password with a remote control every time is a bad experience.
+  **Not yet implemented**: sessions being individually revocable ("log out all
+  devices," or real protection if a device/cookie is stolen) needs a server-side ticket
+  store checked on every request (ASP.NET Core's `OnValidatePrincipal` hook) — what
+  exists today is the simpler self-contained encrypted cookie, where logout only tells
+  *that* browser to delete its own cookie rather than revoking the ticket server-side.
+  Tracked as a gap, not silently assumed solved.
+- **Login brute-force protection**: rate limiting on the login/setup endpoints
+  (ASP.NET Core's built-in `Microsoft.AspNetCore.RateLimiting` middleware — no extra
+  dependency, 5/minute). Escalating lockout beyond the rate limit isn't added yet.
+  An internet-exposed login is a real target for credential stuffing in a way a
+  LAN-only one never was; this is not optional once a port is open to the internet.
+- **Implemented so far**: single-admin-account setup/login/logout (`AuthController`),
+  password hashing via `PasswordHasher`, a global fallback authorization policy so
+  every controller requires a session by default unless explicitly marked
+  `[AllowAnonymous]` (only the auth endpoints and `/health` are). Server-wide config
+  (currently just this one account) lives in its own `server.db`, separate from any
+  library's `.curato/library.db` (§2), in the server's persistent data directory.
 - **HTTPS is mandatory for internet exposure, not "the deployer's job, take it or leave
   it."** Recommended path: run behind a reverse proxy that already does TLS well
   (Synology DSM's own built-in reverse proxy + Let's Encrypt integration for the

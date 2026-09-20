@@ -10,6 +10,9 @@
 
   <ItemGroup>
     <PackageReference Include="Microsoft.AspNetCore.OpenApi" Version="10.0.12" />
+    <!-- Microsoft.Extensions.Identity.Core (for PasswordHasher, PLAN.md §15)
+         ships as part of the ASP.NET Core shared framework already - no
+         explicit PackageReference needed, and one triggers NU1510. -->
   </ItemGroup>
 
   <ItemGroup>

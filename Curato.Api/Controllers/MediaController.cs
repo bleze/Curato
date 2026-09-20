@@ -4,8 +4,9 @@ using Microsoft.AspNetCore.Mvc;
 namespace Curato.Api.Controllers;
 
 /// <summary>
-/// Serves thumbnails for the web UI's grid (§11). NOT YET behind auth (§15) —
-/// same caveat as the other controllers here.
+/// Serves thumbnails for the web UI's grid (§11). Protected by the fallback
+/// auth policy (§15) — an `&lt;img&gt;` tag still sends the session cookie
+/// automatically since this is a same-origin request.
 ///
 /// Path-traversal note (§15): <paramref name="relativePath"/> is resolved
 /// against <paramref name="libraryPath"/> and the result is checked to still

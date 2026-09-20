@@ -1,8 +1,19 @@
 using System.Threading.RateLimiting;
+using Curato.Data;
 using Microsoft.AspNetCore.Authentication.Cookies;
+using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.RateLimiting;
 
 var builder = WebApplication.CreateBuilder(args);
+
+// Server-wide config — currently just the single admin account (§15) — lives
+// in its own database, separate from any library's `.curato/library.db`
+// (§2), in the server's persistent data directory (the Docker volume at
+// `/data`, or `./data` for local dev).
+var dataDirectory = builder.Configuration["Curato:DataDirectory"] ?? "./data";
+var serverDatabase = new ServerDatabase(dataDirectory);
+serverDatabase.EnsureSchema();
+builder.Services.AddSingleton(serverDatabase);
 
 // Add services to the container.
 
@@ -37,7 +48,16 @@ builder.Services
         };
     });
 
-builder.Services.AddAuthorization();
+// Secure by default (§15): every endpoint requires a session unless it opts
+// out with [AllowAnonymous] (AuthController's setup/login/status only) —
+// so a new controller added later is protected automatically, not by
+// remembering to annotate it.
+builder.Services.AddAuthorization(options =>
+{
+    options.FallbackPolicy = new AuthorizationPolicyBuilder()
+        .RequireAuthenticatedUser()
+        .Build();
+});
 
 // Login brute-force protection (PLAN.md §15) — built into ASP.NET Core, no extra
 // dependency. Applied to the login endpoint specifically once it exists (Phase 1);

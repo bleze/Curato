@@ -7,8 +7,7 @@ namespace Curato.Api.Controllers;
 /// <summary>
 /// Read-only view of an already-scanned library, for the web UI (§11).
 ///
-/// NOT YET behind auth (§15) — same caveat as ScanController: no admin
-/// account/login flow exists yet. Local testing only.
+/// Protected by the fallback auth policy (§15) — requires a logged-in session.
 /// </summary>
 [ApiController]
 [Route("api")]

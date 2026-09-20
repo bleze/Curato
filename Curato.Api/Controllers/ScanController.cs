@@ -11,9 +11,7 @@ namespace Curato.Api.Controllers;
 /// split it into loose vs. already-organized content (Step 0), cluster the
 /// loose part (Steps 1-2), adopt the rest as-is, persist everything.
 ///
-/// NOT YET behind auth (§15) — there's no admin-account/login flow built yet
-/// (that's the very next piece of work), so this is deliberately open only
-/// for local scaffold testing. Do not expose this port before that lands.
+/// Protected by the fallback auth policy (§15) — requires a logged-in session.
 /// </summary>
 [ApiController]
 [Route("api/[controller]")]
