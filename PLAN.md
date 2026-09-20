@@ -546,8 +546,17 @@ Photos, Immich):
   9604 items with no cap at all (`RunFullBackfillAsync` originally passed no
   `--until-found` limit). `iCloudSync.LookbackDays` (default 365, editable in Settings,
   applies to every sync, not just the first) bounds this via icloudpd's own
-  `--skip-created-before {N}d` flag rather than a Curato-side date filter, so the
-  same year's worth of history downloads either way — first sync or incremental.
+  `--skip-created-before {N}d` flag rather than a Curato-side date filter.
+
+  A second round confirmed `--skip-created-before` alone wasn't enough: set to just 1 day,
+  a 9604-item library still took just as long as an unbounded sync — `--skip-created-before`
+  still enumerates and date-checks every single remote item one by one (logging a
+  "Skipping ..." line for each), it just skips the *download* for old ones. It bounds what
+  gets pulled, not how long the walk takes. The original design deliberately omitted
+  `--until-found` on a never-yet-synced account for a genuine unbounded first backfill —
+  that no longer makes sense now that `LookbackDays` already expresses "how much history"
+  directly; every sync (first included) now always passes `--until-found 50` too, so it can
+  short-circuit the remote listing early instead of always walking the whole library.
 
   Also confirmed live: a "Sync now" click (a single long-running synchronous request,
   per v1's deliberate no-polling-infra simplification) gave zero visibility into whether

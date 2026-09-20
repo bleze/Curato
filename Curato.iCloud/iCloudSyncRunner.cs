@@ -42,11 +42,20 @@ public sealed class iCloudSyncRunner(
     public string? CurrentActivity { get; private set; }
 
     // icloudpd stops paginating once it finds this many consecutive
-    // already-downloaded items — the cheap way to make a periodic re-run
-    // fast instead of re-listing the whole remote library every time. A
-    // first-ever sync should omit this (or pass a much larger value) to
-    // actually backfill everything.
-    private const int IncrementalUntilFoundCount = 50;
+    // already-processed items — the cheap way to avoid walking the whole
+    // remote library every run. Applied on every sync, including the
+    // first, now that --skip-created-before (below) is the real scope
+    // control: confirmed live that --skip-created-before alone still
+    // enumerates and date-checks every single remote item one by one
+    // (just skipping the download for old ones), so a 9604-item library
+    // took just as long with a 1-day lookback as an unbounded one — the
+    // lookback bounds what gets *downloaded*, not how long the walk takes.
+    // Originally the very first sync deliberately omitted --until-found
+    // entirely for a true unbounded backfill; that's no longer the right
+    // default now that LookbackDays exists to express "how much history"
+    // directly and predictably, rather than via this consecutive-count
+    // heuristic.
+    private const int UntilFoundCount = 50;
 
     /// <summary>
     /// The single entry point both the manual "Sync now" button
@@ -80,9 +89,8 @@ public sealed class iCloudSyncRunner(
             }
         }
 
-        var result = config.LastSyncAt is null
-            ? await RunFullBackfillAsync(libraryFolder, config.AppleUsername, config.CookieDirectory, config.LookbackDays, cancellationToken)
-            : await RunIncrementalAsync(libraryFolder, config.AppleUsername, config.CookieDirectory, config.LookbackDays, cancellationToken);
+        var result = await RunAsync(
+            libraryFolder, config.AppleUsername, config.CookieDirectory, config.LookbackDays, cancellationToken);
 
         repository.RecordSyncResult(
             DateTime.UtcNow,
@@ -93,16 +101,8 @@ public sealed class iCloudSyncRunner(
         return result;
     }
 
-    private Task<iCloudSyncResult> RunIncrementalAsync(
-        string libraryFolder, string appleUsername, string cookieDirectory, int lookbackDays, CancellationToken cancellationToken) =>
-        RunAsync(libraryFolder, appleUsername, cookieDirectory, lookbackDays, IncrementalUntilFoundCount, cancellationToken);
-
-    private Task<iCloudSyncResult> RunFullBackfillAsync(
-        string libraryFolder, string appleUsername, string cookieDirectory, int lookbackDays, CancellationToken cancellationToken) =>
-        RunAsync(libraryFolder, appleUsername, cookieDirectory, lookbackDays, untilFound: null, cancellationToken);
-
     private async Task<iCloudSyncResult> RunAsync(
-        string libraryFolder, string appleUsername, string cookieDirectory, int lookbackDays, int? untilFound,
+        string libraryFolder, string appleUsername, string cookieDirectory, int lookbackDays,
         CancellationToken cancellationToken)
     {
         var stagingFolder = Path.Combine(libraryFolder, StagingFolderName);
@@ -129,15 +129,10 @@ public sealed class iCloudSyncRunner(
                      // relative interval like "365d" here as well as an
                      // absolute ISO date.
                      "--skip-created-before", $"{lookbackDays}d",
+                     "--until-found", UntilFoundCount.ToString(),
                  })
         {
             startInfo.ArgumentList.Add(arg);
-        }
-
-        if (untilFound is { } count)
-        {
-            startInfo.ArgumentList.Add("--until-found");
-            startInfo.ArgumentList.Add(count.ToString());
         }
 
         var stdoutLines = new List<string>();
