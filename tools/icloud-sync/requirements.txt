@@ -1,7 +1,8 @@
-# [cli] extra, not just the bare package: pyicloud's own code unconditionally
-# imports `rich` at startup (for its Notes service's rendering/exporter
-# module, even though we never touch Notes) but only declares it as an
-# optional dependency under this extra — a plain `pip install pyicloud`
-# fails at import time with "No module named 'rich'" otherwise.
-pyicloud[cli]>=1.0.0
+# Just icloudpd — it vendors its own internal iCloud client (pyicloud_ipd)
+# rather than depending on the standalone `pyicloud` PyPI package, and the
+# two are NOT session-compatible (confirmed live: a session established via
+# plain pyicloud was never recognized by icloudpd's own sync run, since it
+# uses a different fork/session format internally). Curato.iCloud drives
+# the real icloudpd CLI directly for both login and sync, so nothing else
+# is needed here.
 icloudpd>=1.20.0

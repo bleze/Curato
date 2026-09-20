@@ -29,10 +29,9 @@ COPY Curato.Picasa/ Curato.Picasa/
 COPY Curato.Organizer/ Curato.Organizer/
 COPY Curato.Vision/ Curato.Vision/
 COPY Curato.Api/ Curato.Api/
-# Curato.Api.csproj copies this into its own build/publish output (see its
-# Content item) so iCloudProcessOptions's AppContext.BaseDirectory-relative
-# default path finds auth_helper.py the same way in dev and in this image —
-# needs to exist at this relative path before `dotnet publish` runs below.
+# requirements.txt for the icloudpd install below — needs to exist at this
+# relative path before `dotnet publish` runs (Curato.Api.csproj also has a
+# Content item copying it into the build/publish output, for local dev).
 COPY tools/ tools/
 RUN dotnet publish Curato.Api/Curato.Api.csproj -c Release -o /app/publish --no-restore
 
@@ -41,9 +40,10 @@ FROM mcr.microsoft.com/dotnet/aspnet:10.0 AS final
 WORKDIR /app
 
 # ffmpeg for video metadata/thumbnails (PLAN.md §1); libheif for HEIC decode;
-# python3/pip for direct iCloud integration (§4 — icloudpd/pyicloud, MIT-
-# licensed, invoked as external processes by Curato.iCloud rather than
-# ported into C#).
+# python3/pip for direct iCloud integration (§4 — icloudpd, MIT-licensed,
+# invoked directly as an external process by Curato.iCloud rather than
+# ported into C#; python3/pip are needed both to install it and to run it,
+# since the icloudpd executable is itself a Python program).
 RUN apt-get update \
     && apt-get install -y --no-install-recommends ffmpeg libheif1 python3 python3-pip \
     && rm -rf /var/lib/apt/lists/*

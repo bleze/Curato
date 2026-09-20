@@ -63,13 +63,27 @@ public sealed class iCloudSyncController(
     [HttpPost("login")]
     public async Task<ActionResult<LoginResponse>> Login([FromBody] LoginRequest request)
     {
+        var libraryFolder = new LibraryFolderRepository(database).Get();
+        if (libraryFolder is null)
+        {
+            return BadRequest("Set a library folder in Settings before connecting iCloud.");
+        }
+
         var cookieDirectory = GetCookieDirectory();
         Directory.CreateDirectory(cookieDirectory);
 
         var result = await authClient.LoginAsync(request.Username, request.Password, cookieDirectory);
+        if (result.Status == "trusted")
+        {
+            // No 2FA needed (e.g. reconnecting an already-trusted account) —
+            // nothing more to wait on, so save now rather than only in
+            // VerifyTwoFactor below, which never runs in this case.
+            new iCloudSyncRepository(database).Save(request.Username, cookieDirectory, intervalMinutes: 360, enabled: true);
+            return Ok(new LoginResponse(RequiresTwoFactor: false, Error: null));
+        }
+
         return result.Status switch
         {
-            "trusted" => Ok(new LoginResponse(RequiresTwoFactor: false, Error: null)),
             "2fa_required" => Ok(new LoginResponse(RequiresTwoFactor: true, Error: null)),
             _ => Ok(new LoginResponse(RequiresTwoFactor: false, Error: result.Message ?? "Sign-in failed."))
         };
@@ -87,9 +101,7 @@ public sealed class iCloudSyncController(
         var result = await authClient.VerifyTwoFactorAsync(request.Code);
         if (result.Status != "ok")
         {
-            return result.Status == "invalid_code"
-                ? BadRequest("That code wasn't accepted.")
-                : BadRequest(result.Message ?? "Verification failed.");
+            return BadRequest(result.Message ?? "That code wasn't accepted.");
         }
 
         var cookieDirectory = GetCookieDirectory();

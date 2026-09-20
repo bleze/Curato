@@ -487,44 +487,60 @@ Photos, Immich):
   Synology/Linux deployment target at all**, so the "official path" the original decision
   leaned on isn't even available where this app is actually meant to run.
   [Phase 2 built shape: direct integration via
-  [icloudpd](https://github.com/icloud-photos-downloader/icloud_photos_downloader) and
-  its underlying `pyicloud` library (both MIT-licensed) — invoked as external Python
-  processes (`Curato.iCloud`), not ported into C#, since that's a mature, maintained
-  reverse-engineering of Apple's own iCloud-web API surface rather than something worth
-  redoing from scratch. Crucially, `icloudpd`'s `--set-exif-datetime` flag writes iCloud's
-  own internal (correct) date back into the downloaded file's Exif — directly fixing the
-  metadata-stripping problem, something the official client apparently doesn't do
-  reliably. A small custom script (`tools/icloud-sync/auth_helper.py`) drives the
-  one-time Apple ID login/2FA handshake directly via `pyicloud`'s clean API
-  (`requires_2fa`/`validate_2fa_code`/`trust_session`) rather than screen-scraping
-  `icloudpd`'s interactive CLI prompts, speaking one JSON command/response per line over
-  stdin/stdout instead. Confirmed live that this has to be ONE long-lived process across
-  both the login and verify steps, not a fresh process per HTTP request as first built:
-  reconstructing `PyiCloudService` from scratch for verify-2fa (even pointed at the same
-  `--cookie-directory`) re-authenticates with Apple and silently issues a brand new
-  pending challenge, so a code from the first prompt just fails against a stale one —
-  visible as an endless loop back to another 2FA prompt instead of ever completing.
-  `Curato.iCloud`'s `iCloudAuthClient` now holds that one pending process alive between
-  the two HTTP calls (a single mutable field is proportionate — one iCloud account per
-  server, so only ever one login in flight), closing/killing it once verify actually
-  succeeds, fails outright, or the user backs out (`cancel-login`). The Apple password
-  travels inside that JSON payload over stdin (never a process argument, never logged,
-  never persisted) and only `pyicloud`'s own session/cookie files survive, sharing the
-  same `--cookie-directory` `icloudpd` itself later reads for the recurring sync — kept
-  at the same trust boundary as `server.db` and the library itself, both already
-  unencrypted on the same volume, rather than building a new encryption-at-rest
-  subsystem for arguably-not-more-sensitive data. Also confirmed live: `pyicloud`
-  unconditionally imports `rich` at startup (for its Notes service, unrelated to
-  anything this feature uses) but only declares it under its optional `[cli]` extra —
-  `requirements.txt` installs `pyicloud[cli]`, not the bare package, to avoid a
-  `ModuleNotFoundError` on a clean install. Downloaded files land in a `iCloud Sync/` staging
-  subfolder inside the new shared "library folder" setting (below) and are fed through
-  the *existing* scan pipeline exactly like a browser upload — zero new
-  clustering/auto-titling logic, since loose new files already get auto-clustered and
-  auto-titled. A new `LibraryOperationGate` (`Curato.Organizer`) serializes
-  ScanService/OrganizeService calls per library root, since a periodic background sync is
-  the first thing that can genuinely race a user-triggered scan/upload/organize — nothing
-  defended against that before.]
+  [icloudpd](https://github.com/icloud-photos-downloader/icloud_photos_downloader)
+  (MIT-licensed) — invoked as an external process (`Curato.iCloud`), not ported into C#,
+  since that's a mature, maintained reverse-engineering of Apple's own iCloud-web API
+  surface rather than something worth redoing from scratch. Crucially, `icloudpd`'s
+  `--set-exif-datetime` flag writes iCloud's own internal (correct) date back into the
+  downloaded file's Exif — directly fixing the metadata-stripping problem, something the
+  official client apparently doesn't do reliably.
+
+  Getting the one-time Apple ID login/2FA handshake right took two failed attempts,
+  both confirmed live against a real account before landing on the actual fix:
+  1. A custom script driving the standalone `pyicloud` PyPI package directly (a clean
+     `requires_2fa`/`validate_2fa_code`/`trust_session` API) seemed like the obvious
+     choice — until live testing showed entering a correct 2FA code just produced
+     another 2FA prompt, every time. Root cause: `icloudpd` doesn't actually depend on
+     that package at all — it vendors its own separate, incompatible fork
+     (`pyicloud_ipd`) with a different session/cookie format, so a session established
+     via plain `pyicloud` was never recognized by `icloudpd`'s own sync run.
+  2. Rewriting the same script against `pyicloud_ipd` directly was the next instinct,
+     but that class isn't a stable public API (a `domain`/`password_provider`-callable/
+     `response_observer`/`client_id` constructor clearly meant for internal use), and
+     replicating icloudpd's own auth-flow behavior exactly would mean re-deriving
+     everything `icloudpd` already does.
+
+  The actual fix: stop building a separate script and drive the *real* `icloudpd` CLI
+  directly for the handshake too, via its own `--auth-only` mode ("performs
+  authentication, persists tokens/cookies, and exits without processing assets") — this
+  guarantees byte-for-byte session compatibility with the sync step, since it's the
+  literal same code path. `Curato.iCloud`'s `iCloudAuthClient` starts one `icloudpd
+  --auth-only` process and reads its output incrementally (not line-buffered — its
+  prompts don't end in a newline until answered) watching for a "...authentication
+  code..." substring, since icloudpd's 2FA prompt uses plain `input()` (confirmed in its
+  source), which respects redirected stdin normally. The *password* prompt, by contrast,
+  uses `getpass.getpass()`, which tries to read directly from the console device and
+  behaves unreliably for a console-less background child process — exactly the context
+  Curato.Api spawns it in — so the password goes in via icloudpd's own `--password` flag
+  instead (a command-line argument, technically visible to another OS user via a process
+  listing for icloudpd's brief run — accepted as the pragmatic trade-off over an
+  interactive prompt that risks not working at all on Windows). If 2FA is required, the
+  process is held open (a single mutable field is proportionate — one iCloud account per
+  server, so only ever one login in flight) until the code arrives over stdin
+  (`VerifyTwoFactorAsync`) or the user backs out (`cancel-login`), closing/killing it
+  either way. Only `icloudpd`'s own session/cookie files persist, sharing the same
+  `--cookie-directory` the recurring sync reads — kept at the same trust boundary as
+  `server.db` and the library itself, both already unencrypted on the same volume,
+  rather than building a new encryption-at-rest subsystem for arguably-not-more-sensitive
+  data.
+
+  Downloaded files land in an `iCloud Sync/` staging subfolder inside the new shared
+  "library folder" setting (below) and are fed through the *existing* scan pipeline
+  exactly like a browser upload — zero new clustering/auto-titling logic, since loose new
+  files already get auto-clustered and auto-titled. A new `LibraryOperationGate`
+  (`Curato.Organizer`) serializes ScanService/OrganizeService calls per library root,
+  since a periodic background sync is the first thing that can genuinely race a
+  user-triggered scan/upload/organize — nothing defended against that before.]
 - **A new shared "library folder" setting** (`Curato.Data`'s `LibraryFolderRepository`,
   surfaced in a new minimal Settings panel) — the destination iCloud sync (and any future
   external-source puller) copies into, since there's nothing to "organize in place" for
