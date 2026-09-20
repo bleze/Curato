@@ -8,9 +8,11 @@ namespace Curato.Api.Controllers;
 /// <summary>
 /// Serves rendered images for the web UI's grid and fullscreen viewer (§11),
 /// applying each MediaItem's non-destructive Edit pipeline first (§10) so
-/// imported Picasa crops/rotations show up correctly. Protected by the
-/// fallback auth policy (§15) — an `&lt;img&gt;` tag still sends the session
-/// cookie automatically since this is a same-origin request.
+/// imported Picasa crops/rotations show up correctly, and caching the
+/// result to disk (ThumbnailCache) so repeated requests for the same
+/// rendered output skip the decode/edit/resize/encode cost. Protected by
+/// the fallback auth policy (§15) — an `&lt;img&gt;` tag still sends the
+/// session cookie automatically since this is a same-origin request.
 ///
 /// Path-traversal note (§15): <paramref name="relativePath"/> is resolved
 /// against <paramref name="libraryPath"/> and the result is checked to still
@@ -86,7 +88,9 @@ public sealed class MediaController : ControllerBase
             database.EnsureSchema();
             var edits = new LibraryQueryService(database).GetEditsForRelativePath(relativePath);
 
-            var jpegBytes = ThumbnailGenerator.GenerateJpeg(fullPath, maxDimension, edits);
+            var jpegBytes = ThumbnailCache.GetOrGenerate(
+                root, relativePath, new FileInfo(fullPath), maxDimension, edits,
+                () => ThumbnailGenerator.GenerateJpeg(fullPath, maxDimension, edits));
             return File(jpegBytes, "image/jpeg");
         }
         catch (Exception) when (!System.Diagnostics.Debugger.IsAttached)

@@ -744,15 +744,24 @@ Tracked as a §14 follow-on, not a separate model/phase of its own.
   (a regenerable cache, keyed by `ContentHash`, separate from the portable `.curato/`
   data per §2), served to any client over HTTP — so a thumbnail is generated once no
   matter how many different clients (a browser, the Android TV app) ask for it.
-  [Disk caching itself isn't built yet — every request re-decodes. Also: SkiaSharp's
-  plain decode ignores EXIF orientation entirely, handing back pixels exactly as the
-  sensor stored them — for the very common case of a phone held in portrait (sensor data
-  stored "sideways" plus a tag saying how to display it), that came out visibly rotated.
-  `ExifOrientationCorrector` (Curato.Media) reads the tag via `SKCodec.EncodedOrigin` and
-  applies the matching rotate/mirror before resizing, as the *last* pipeline step —
-  after Edit application (§10), since Picasa-imported crop rectangles were computed
-  against the file's raw, as-stored dimensions, and correcting orientation first would
-  misalign them for a photo with both a Picasa crop and a rotated orientation tag.]
+  [`ThumbnailCache` (Curato.Media) lives at `.curato/thumbnail-cache/` — deliberately
+  *not* keyed by `ContentHash` as first planned, since that's lazily computed (§7) and
+  forcing it on every first thumbnail request would defeat the point; keyed instead by a
+  cheap composite (source file size+mtime, requested pixel size, and an Edit-set stamp)
+  that invalidates on everything that actually changes rendered output, without hashing
+  the whole file. No eviction policy yet — a replaced file's old entry just becomes
+  orphaned dead weight. Also: SkiaSharp's plain decode ignores EXIF orientation entirely,
+  handing back pixels exactly as the sensor stored them — for the very common case of a
+  phone held in portrait (sensor data stored "sideways" plus a tag saying how to display
+  it), that came out visibly rotated. `ExifOrientationCorrector` (Curato.Media) reads the
+  tag via `SKCodec.EncodedOrigin` and applies the matching rotate/mirror before resizing,
+  as the *last* pipeline step — after Edit application (§10), since Picasa-imported crop
+  rectangles were computed against the file's raw, as-stored dimensions, and correcting
+  orientation first would misalign them for a photo with both a Picasa crop and a rotated
+  orientation tag. One more real bug this surfaced: `MediaFileScanner`'s recursive walk
+  never excluded `.curato/` at all — the Recycle Bin's trashed originals and now the
+  thumbnail cache both genuinely contain real `.jpg` files on disk, which without that
+  exclusion would get indexed as new library photos on every re-scan.]
 - Fullscreen/lightbox viewer: swipe/arrow-key/remote-control navigation, pinch-zoom or
   scroll-to-zoom for photos, native `<video>` playback for video with a generated
   poster frame as the grid thumbnail.
