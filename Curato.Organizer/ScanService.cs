@@ -15,6 +15,7 @@ public sealed record ScanResult(
     int NewTripGroupCount,
     int ItemsAddedToExistingEvents,
     int RemovedAutoTripGroupCount,
+    int RemovedMissingFileCount,
     IReadOnlyList<EventSummary> NewEvents);
 
 /// <summary>
@@ -32,10 +33,76 @@ public sealed record ScanResult(
 /// TripGroup isn't retroactively formed once the second folder shows up —
 /// real but narrow enough to leave as a follow-up rather than block on.)
 /// </summary>
-public sealed class ScanService(LibraryRepository repository, LibraryQueryService query)
+public sealed class ScanService(LibraryRepository repository, LibraryQueryService query, LibraryDatabase database)
 {
-    /// <summary>Walks <paramref name="libraryRoot"/> from scratch and indexes whatever's found.</summary>
-    public ScanResult Scan(string libraryRoot) => ScanItems(new MediaFileScanner().Scan(libraryRoot));
+    /// <summary>
+    /// Walks <paramref name="libraryRoot"/> from scratch, indexes whatever's
+    /// found, and — confirmed live as a real gap, not just a hypothetical —
+    /// cleans up anything previously indexed that's no longer there. Before
+    /// this, a file deleted outside Curato (Explorer, a manual `rm`, etc.)
+    /// stuck around forever as a "ghost" MediaItem showing "No preview"
+    /// rather than the delete actually being reflected in the library.
+    /// </summary>
+    public ScanResult Scan(string libraryRoot)
+    {
+        var scannedItems = new MediaFileScanner().Scan(libraryRoot).ToList();
+        var removedMissingFileCount = RemoveMissingFiles(scannedItems);
+        return ScanItems(scannedItems) with { RemovedMissingFileCount = removedMissingFileCount };
+    }
+
+    /// <summary>
+    /// Routes anything previously indexed but not found in this scan's walk
+    /// through the same Recycle Bin path a manual delete uses
+    /// (<c>RecycleBinService.DeleteMediaItem</c>, source "MissingOnDisk") —
+    /// there's no file left to move into the trash folder, but that method
+    /// already tolerates that (it only moves the file if `File.Exists`), so
+    /// this still gets the exact same MediaItem/Event/Tag/Edit/etc. cleanup
+    /// a real delete gets, for free, plus a visible DeletedItem record of
+    /// what happened rather than a silent purge.
+    ///
+    /// Guarded: a scan where *most* of the library suddenly appears
+    /// missing is far more likely a transient/broken mount than a genuine
+    /// bulk delete — wiping real metadata (Event clustering, Tags, Edits)
+    /// over that isn't something a 30-day Recycle Bin window meaningfully
+    /// protects against if nobody notices in time, so cleanup is skipped
+    /// entirely (not partially — an all-or-nothing decision per scan)
+    /// rather than risk it.
+    /// </summary>
+    private int RemoveMissingFiles(IReadOnlyCollection<MediaItem> currentlyOnDisk)
+    {
+        var allIndexed = query.GetAllMediaItems();
+        if (allIndexed.Count == 0)
+        {
+            return 0;
+        }
+
+        var currentRelativePaths = new HashSet<string>(
+            currentlyOnDisk.Select(i => i.RelativePath), StringComparer.OrdinalIgnoreCase);
+        var missing = allIndexed.Where(i => !currentRelativePaths.Contains(i.RelativePath)).ToList();
+        if (missing.Count == 0)
+        {
+            return 0;
+        }
+
+        var safeLimit = Math.Max(20, allIndexed.Count / 2);
+        if (missing.Count > safeLimit)
+        {
+            return 0;
+        }
+
+        var recycleBin = new RecycleBinService(database, new RecycleBinRepository(database));
+        foreach (var item in missing)
+        {
+            // A Live Photo pairing means deleting the still-frame photo
+            // already recursively deletes its paired video too (existing
+            // RecycleBinService behavior) — a second call for that same
+            // video, also in `missing`, is a harmless no-op (it just
+            // returns null, already gone).
+            recycleBin.DeleteMediaItem(item.Id, "MissingOnDisk");
+        }
+
+        return missing.Count;
+    }
 
     public ScanResult ScanItems(IEnumerable<MediaItem> scannedItems)
     {
@@ -108,6 +175,7 @@ public sealed class ScanService(LibraryRepository repository, LibraryQueryServic
             NewTripGroupCount: allNewTrips.Count,
             ItemsAddedToExistingEvents: itemsAddedToExisting,
             RemovedAutoTripGroupCount: removedAutoTripGroupCount,
+            RemovedMissingFileCount: 0, // only Scan(libraryRoot) can know this; merged in there via `with`
             NewEvents: allNewEvents
                 .OrderBy(e => e.StartAt)
                 .Select(e => new EventSummary(

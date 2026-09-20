@@ -150,7 +150,7 @@ public class PicasaImportServiceTests
     }
 
     private static void ScanLibrary(LibraryDatabase database, string root) =>
-        new ScanService(new LibraryRepository(database), new LibraryQueryService(database)).Scan(root);
+        new ScanService(new LibraryRepository(database), new LibraryQueryService(database), database).Scan(root);
 
     private static void WithTempLibrary(
         Action<string, LibraryDatabase, LibraryQueryService, PicasaImportRepository, PicasaImportService> test)

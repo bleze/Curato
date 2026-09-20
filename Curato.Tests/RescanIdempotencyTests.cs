@@ -16,7 +16,7 @@ public class RescanIdempotencyTests
     [Fact]
     public void Scanning_the_same_loose_items_twice_does_not_duplicate_events()
     {
-        WithTempLibrary((repository, query) =>
+        WithTempLibrary((repository, query, database) =>
         {
             var rawItems = new[]
             {
@@ -24,8 +24,8 @@ public class RescanIdempotencyTests
                 Item("loose2.jpg", new DateTime(2026, 7, 11, 9, 10, 0)),
             };
 
-            RunScanPass(repository, query, rawItems);
-            RunScanPass(repository, query, rawItems); // scan again, nothing changed
+            RunScanPass(repository, query, database, rawItems);
+            RunScanPass(repository, query, database, rawItems); // scan again, nothing changed
 
             var events = query.GetAllEvents();
             Assert.Single(events); // still just one Event, not two
@@ -35,7 +35,7 @@ public class RescanIdempotencyTests
     [Fact]
     public void Scanning_the_same_adopted_folder_twice_does_not_duplicate_its_event()
     {
-        WithTempLibrary((repository, query) =>
+        WithTempLibrary((repository, query, database) =>
         {
             var rawItems = new[]
             {
@@ -43,8 +43,8 @@ public class RescanIdempotencyTests
                 Item("Family Reunion 2019/pic2.jpg", new DateTime(2019, 6, 1, 22, 0, 0)),
             };
 
-            RunScanPass(repository, query, rawItems);
-            RunScanPass(repository, query, rawItems); // scan again, nothing changed
+            RunScanPass(repository, query, database, rawItems);
+            RunScanPass(repository, query, database, rawItems); // scan again, nothing changed
 
             var events = query.GetAllEvents();
             Assert.Single(events);
@@ -55,20 +55,20 @@ public class RescanIdempotencyTests
     [Fact]
     public void A_new_file_added_to_an_already_adopted_folder_joins_the_existing_event()
     {
-        WithTempLibrary((repository, query) =>
+        WithTempLibrary((repository, query, database) =>
         {
             var firstPass = new[]
             {
                 Item("Family Reunion 2019/pic1.jpg", new DateTime(2019, 6, 1, 10, 0, 0)),
             };
-            RunScanPass(repository, query, firstPass);
+            RunScanPass(repository, query, database, firstPass);
 
             var secondPass = new[]
             {
                 Item("Family Reunion 2019/pic1.jpg", new DateTime(2019, 6, 1, 10, 0, 0)),
                 Item("Family Reunion 2019/pic2.jpg", new DateTime(2019, 6, 1, 22, 0, 0)), // new file
             };
-            RunScanPass(repository, query, secondPass);
+            RunScanPass(repository, query, database, secondPass);
 
             var events = query.GetAllEvents();
             Assert.Single(events); // still one Event for the folder...
@@ -84,20 +84,20 @@ public class RescanIdempotencyTests
         // TakenAt — so a file added in a later scan always landed at the
         // end of the thumb-grid even if it was chronologically the very
         // first photo in the folder.
-        WithTempLibrary((repository, query) =>
+        WithTempLibrary((repository, query, database) =>
         {
             var firstPass = new[]
             {
                 Item("Trip/noon.jpg", new DateTime(2019, 6, 1, 12, 0, 0)),
             };
-            RunScanPass(repository, query, firstPass);
+            RunScanPass(repository, query, database, firstPass);
 
             var secondPass = new[]
             {
                 Item("Trip/noon.jpg", new DateTime(2019, 6, 1, 12, 0, 0)),
                 Item("Trip/morning.jpg", new DateTime(2019, 6, 1, 8, 0, 0)), // taken earlier, added later
             };
-            RunScanPass(repository, query, secondPass);
+            RunScanPass(repository, query, database, secondPass);
 
             var @event = Assert.Single(query.GetAllEvents());
             var orderedRelativePaths = @event.MediaItemIds
@@ -111,14 +111,14 @@ public class RescanIdempotencyTests
     [Fact]
     public void Manually_correcting_TakenAt_re_sorts_its_event_and_updates_the_date_range()
     {
-        WithTempLibrary((repository, query) =>
+        WithTempLibrary((repository, query, database) =>
         {
             var rawItems = new[]
             {
                 Item("Trip/noon.jpg", new DateTime(2019, 6, 1, 12, 0, 0)),
                 Item("Trip/unknown.jpg", new DateTime(2019, 6, 1, 12, 0, 0)), // no real date yet — filesystem fallback
             };
-            RunScanPass(repository, query, rawItems);
+            RunScanPass(repository, query, database, rawItems);
 
             var unknownId = query.GetAllMediaItems().Single(m => m.RelativePath == "Trip/unknown.jpg").Id;
             var corrected = new DateTime(2019, 6, 1, 7, 0, 0); // actually taken before noon.jpg
@@ -140,24 +140,25 @@ public class RescanIdempotencyTests
     [Fact]
     public void Setting_TakenAt_for_an_unknown_MediaItemId_returns_false()
     {
-        WithTempLibrary((repository, _) =>
+        WithTempLibrary((repository, _, _) =>
         {
             Assert.False(repository.SetTakenAt(mediaItemId: 999, DateTime.UtcNow));
         });
     }
 
     /// <summary>Delegates to the real ScanService, so a test failure here means the real endpoint is broken too.</summary>
-    private static void RunScanPass(LibraryRepository repository, LibraryQueryService query, MediaItem[] rawItems) =>
-        new ScanService(repository, query).ScanItems(rawItems);
+    private static void RunScanPass(
+        LibraryRepository repository, LibraryQueryService query, LibraryDatabase database, MediaItem[] rawItems) =>
+        new ScanService(repository, query, database).ScanItems(rawItems);
 
-    private static void WithTempLibrary(Action<LibraryRepository, LibraryQueryService> test)
+    private static void WithTempLibrary(Action<LibraryRepository, LibraryQueryService, LibraryDatabase> test)
     {
         var tempDir = Directory.CreateTempSubdirectory("curato-rescan-test-");
         try
         {
             var database = new LibraryDatabase(tempDir.FullName);
             database.EnsureSchema();
-            test(new LibraryRepository(database), new LibraryQueryService(database));
+            test(new LibraryRepository(database), new LibraryQueryService(database), database);
         }
         finally
         {

@@ -37,7 +37,7 @@ public sealed class ScanController(LibraryOperationGate gate) : ControllerBase
         database.EnsureSchema();
         var query = new LibraryQueryService(database);
 
-        var scanResult = new ScanService(new LibraryRepository(database), query).Scan(request.Path);
+        var scanResult = new ScanService(new LibraryRepository(database), query, database).Scan(request.Path);
         var picasaResult = new PicasaImportService(database, query, new PicasaImportRepository(database)).Import();
 
         return Ok(new ScanResponse(scanResult, picasaResult));

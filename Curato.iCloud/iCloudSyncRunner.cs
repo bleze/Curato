@@ -232,7 +232,7 @@ public sealed class iCloudSyncRunner(
                 "Discarded {Count} re-downloaded file(s) already indexed elsewhere in the library.", redownloadsRemoved);
         }
 
-        var scanResult = new ScanService(new LibraryRepository(database), query).Scan(libraryFolder);
+        var scanResult = new ScanService(new LibraryRepository(database), query, database).Scan(libraryFolder);
 
         return new iCloudSyncResult(Success: true, ErrorMessage: null, itemsDownloaded, scanResult);
     }

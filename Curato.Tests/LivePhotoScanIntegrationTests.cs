@@ -55,7 +55,7 @@ public class LivePhotoScanIntegrationTests
             database.EnsureSchema();
             var repository = new LibraryRepository(database);
             var query = new LibraryQueryService(database);
-            test(repository, query, new ScanService(repository, query));
+            test(repository, query, new ScanService(repository, query, database));
         }
         finally
         {

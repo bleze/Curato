@@ -473,6 +473,17 @@ toggled off by accident.**
   non-null FolderPath, regardless of NamingMode — the "already tracked, don't
   reprocess" check needs to cover both, not just the one it happened to be written for
   first.]
+  [Phase 2 built shape: files deleted directly on disk (outside Curato — Finder/Explorer,
+  an SMB client, etc.) left their MediaItem row behind forever, showing up in the library
+  as a permanently broken "No preview" thumbnail. `ScanService.Scan()` now takes a second
+  pass after walking the folder: any previously-indexed RelativePath missing from the
+  current walk is routed through the existing RecycleBin delete path
+  (`RecycleBinService.DeleteMediaItem(id, "MissingOnDisk")`), which already tolerates a
+  source file that's gone. A safety guard skips this cleanup entirely if more than
+  `max(20, totalIndexed / 2)` items appear missing in one pass — protects against a
+  transient/broken mount (an unmounted NAS share, a drive letter that didn't reconnect)
+  looking identical to the user having deleted everything, which would otherwise wipe out
+  the whole library's records over a filesystem hiccup.]
 
 ### 4a. Getting new files in: upload, not local file access
 

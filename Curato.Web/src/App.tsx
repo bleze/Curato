@@ -57,6 +57,11 @@ function formatRemovedTripsNote(removedAutoTripGroupCount: number): string {
   return ` Removed ${removedAutoTripGroupCount} old auto-generated trip grouping(s) that were never based on real location data.`
 }
 
+function formatRemovedMissingFilesNote(removedMissingFileCount: number): string {
+  if (removedMissingFileCount === 0) return ''
+  return ` Removed ${removedMissingFileCount} item(s) whose file was deleted on disk.`
+}
+
 function App() {
   const [authStatus, setAuthStatus] = useState<AuthStatus | null>(null)
   const [path, setPath] = useState('')
@@ -171,6 +176,7 @@ function App() {
           `${result.scan.newTripGroupCount} trip(s), ` +
           `${result.scan.itemsAddedToExistingEvents} item(s) added to existing events.` +
           formatRemovedTripsNote(result.scan.removedAutoTripGroupCount) +
+          formatRemovedMissingFilesNote(result.scan.removedMissingFileCount) +
           formatPicasaSummary(result.picasaImport),
       )
       const lib = await getLibrary(path)

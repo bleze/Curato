@@ -45,6 +45,8 @@ export interface ScanResult {
   itemsAddedToExistingEvents: number
   /** Leftover auto-formed (time-gap-only) Trips from before that heuristic was disabled, ungrouped this scan. */
   removedAutoTripGroupCount: number
+  /** Previously-indexed items whose file was deleted on disk outside Curato, cleaned up this scan. */
+  removedMissingFileCount: number
 }
 
 export interface AuthStatus {

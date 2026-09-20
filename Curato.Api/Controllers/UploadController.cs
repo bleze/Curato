@@ -81,7 +81,7 @@ public sealed class UploadController(LibraryOperationGate gate) : ControllerBase
         database.EnsureSchema();
         var query = new LibraryQueryService(database);
 
-        var scanResult = new ScanService(new LibraryRepository(database), query).Scan(libraryRoot);
+        var scanResult = new ScanService(new LibraryRepository(database), query, database).Scan(libraryRoot);
         var picasaResult = new PicasaImportService(database, query, new PicasaImportRepository(database)).Import();
 
         return Ok(new UploadResponse(filesSaved, filesSkipped, scanResult, picasaResult));

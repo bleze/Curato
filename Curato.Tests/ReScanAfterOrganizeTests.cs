@@ -27,7 +27,7 @@ public class ReScanAfterOrganizeTests
 
             var query = new LibraryQueryService(database);
             var repository = new LibraryRepository(database);
-            new ScanService(repository, query).Scan(root);
+            new ScanService(repository, query, database).Scan(root);
 
             var beforeOrganize = query.GetAllEvents();
             var @event = Assert.Single(beforeOrganize);
@@ -42,7 +42,7 @@ public class ReScanAfterOrganizeTests
             // The file physically moved — walking the library root again is
             // exactly what a real periodic re-scan (or another iCloud sync
             // pass) does.
-            new ScanService(repository, query).Scan(root);
+            new ScanService(repository, query, database).Scan(root);
 
             var afterRescan = Assert.Single(query.GetAllEvents());
             Assert.Equal(eventId, afterRescan.Id);
