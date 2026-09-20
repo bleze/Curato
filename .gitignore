@@ -1,0 +1,24 @@
+# Obsidian vault config (local editor state, not project content)
+.obsidian/
+
+# .NET
+bin/
+obj/
+*.user
+.vs/
+
+# Node / frontend
+node_modules/
+dist/
+Curato.Web/dist/
+Curato.Web/.vite/
+
+# Local dev/data (never commit a real library or database)
+*.db
+*.db-shm
+*.db-wal
+.curato/
+
+# OS cruft
+.DS_Store
+Thumbs.db
