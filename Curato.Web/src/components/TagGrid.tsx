@@ -66,16 +66,18 @@ export function TagGrid({
             <div
               key={row[0].id}
               data-index={virtualRow.index}
-              ref={virtualizer.measureElement}
+              // No measureElement here at all: every row is a uniform
+              // thumb-row whose height we compute exactly from the
+              // container's real measured width, so there's nothing to
+              // correct. See LibraryGrid's identical reasoning — letting
+              // TanStack Virtual "correct" an already-exact estimate just
+              // introduces sub-pixel drift that desyncs the native
+              // scrollbar's drag handle from the mouse mid-drag.
               style={{
                 position: 'absolute',
                 top: 0,
                 left: 0,
                 width: '100%',
-                // Padding (not margin) so measureElement's border-box
-                // measurement actually includes it — see LibraryGrid's
-                // identical fix for why margin wouldn't work here.
-                paddingBottom: GAP,
                 transform: `translateY(${virtualRow.start}px)`,
               }}
             >

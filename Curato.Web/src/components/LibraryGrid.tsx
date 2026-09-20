@@ -204,24 +204,27 @@ export function LibraryGrid({
             <div
               key={block.key}
               data-index={virtualRow.index}
-              ref={virtualizer.measureElement}
+              // Deliberately NOT measured for thumb-row blocks. We already
+              // compute their height exactly from the container's real
+              // measured width (verified mathematically — rendered thumb
+              // width equals height to the pixel), so there's nothing for
+              // measureElement to correct; letting it "correct" anyway just
+              // introduces sub-pixel rounding noise every time a new row
+              // scrolls into view. That noise is exactly what kept making
+              // the native scrollbar's drag handle drift out from under the
+              // cursor: the browser recomputes the thumb's mouse-to-scrollTop
+              // mapping from the CURRENT scrollHeight on every tick of an
+              // active drag, so even a 1px correction mid-drag is visible.
+              // Headers keep dynamic measurement since their content
+              // (a "Will move to" hint line or not) is genuinely variable,
+              // and there are far too few of them for residual drift there
+              // to matter the way it did across hundreds of thumb rows.
+              ref={block.type === 'thumb-row' ? undefined : virtualizer.measureElement}
               style={{
                 position: 'absolute',
                 top: 0,
                 left: 0,
                 width: '100%',
-                // Padding, not margin: measureElement reads the element's
-                // own border-box (getBoundingClientRect), which excludes
-                // margins entirely — a marginBottom here would be invisible
-                // to it and fix nothing. Padding is what actually reserves
-                // GAP's worth of space in a row's *measured* height; without
-                // it, measureElement reports exactly the row's own content
-                // height, so once the virtualizer switches from the estimate
-                // to that real measurement, consecutive rows end up flush
-                // against each other (the "gap horizontally but not
-                // vertically" bug). Only thumb-rows need this — a header
-                // sitting flush above its own row's images is correct.
-                paddingBottom: block.type === 'thumb-row' ? GAP : 0,
                 transform: `translateY(${virtualRow.start}px)`,
               }}
             >

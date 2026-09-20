@@ -739,7 +739,19 @@ Tracked as a §14 follow-on, not a separate model/phase of its own.
   measureElement reads an item's own border-box, which excludes margin —
   reserving gap-sized space between virtualized rows needs padding on the
   measured element, not margin, or the gap silently disappears once real
-  measurements replace the initial estimate.]
+  measurements replace the initial estimate. A second, more stubborn
+  gotcha in the same area: a native browser scrollbar's drag handle
+  recomputes its mouse-to-scrollTop mapping from the *current* scrollHeight
+  on every tick of an active drag, so even a 1px measureElement correction
+  mid-drag is enough to make the handle visibly desync from the cursor —
+  better estimates only shrink this, they don't eliminate it. The actual
+  fix was to stop measuring at all wherever an estimate can be exact: since
+  thumbnail-row height is already computed deterministically from the
+  container's real measured width, `measureElement` isn't attached to
+  those rows (only to header rows, whose "Will move to" hint line or not
+  makes their height genuinely variable, and which are far too few in a
+  large library for residual drift there to matter the way it did across
+  every thumbnail row).]
 - Server-side thumbnail pipeline: decode + downscale on the server, cache to disk
   (a regenerable cache, keyed by `ContentHash`, separate from the portable `.curato/`
   data per §2), served to any client over HTTP — so a thumbnail is generated once no
