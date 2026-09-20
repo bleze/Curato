@@ -566,6 +566,18 @@ Picasa: existing tagged faces show up immediately with names attached, and the l
 ONNX pipeline only needs to run detection+embedding on (a) new imports going forward and
 (b) faces Picasa never got to — rather than starting from zero.
 
+[Phase 1 built shape: `filters=` (the brightness/contrast/fill-light/etc.
+pipeline string) is deliberately not parsed at all — it's the least
+documented key in an already-reverse-engineered format, and a wrong guess
+there risks fabricating an edit that was never actually applied. Only
+`rotate=`/`crop=`/`faces=`/`star=`/album membership are imported, all built
+on the same `rect64`/`rotate(N)` primitives, which are well enough attested
+to trust. `contacts.xml` and `Picasa2Albums.ini` are looked for anywhere
+under the library root (their real, machine-local paths aren't reachable by
+a self-hosted server) — if absent, faces still import with boxes intact and
+`PersonId = null`. Opt-in via a dedicated `/api/picasa-import` action, never
+run automatically by a scan.]
+
 ## 9. Tags / Albums
 
 A Tag *is* an Album — there's deliberately one mechanism, not two competing concepts.

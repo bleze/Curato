@@ -80,6 +80,63 @@ internal static class Schema
         -- just puts the file back at OriginalRelativePath and lets the next
         -- scan re-discover it, rather than trying to re-create its exact
         -- former Event/Trip membership.
+        -- PLAN.md §9. A Tag *is* an Album — Picasa import (§8) lands star
+        -- ratings and Picasa albums here directly, same mechanism either way.
+        CREATE TABLE IF NOT EXISTS Tag (
+            Id INTEGER PRIMARY KEY AUTOINCREMENT,
+            Name TEXT NOT NULL UNIQUE,
+            IsFavoriteShortcut INTEGER NOT NULL,
+            SortOrder INTEGER NOT NULL
+        );
+
+        CREATE TABLE IF NOT EXISTS MediaItemTag (
+            TagId INTEGER NOT NULL REFERENCES Tag (Id),
+            MediaItemId INTEGER NOT NULL REFERENCES MediaItem (Id),
+            AddedAt TEXT NOT NULL,
+            ManualSortOrder INTEGER NULL,
+            PRIMARY KEY (TagId, MediaItemId)
+        );
+
+        -- PLAN.md §10. Non-destructive; never touches the original file's
+        -- bytes. Picasa import (§8) lands rotate/crop here with Source =
+        -- 'Picasa' — inert metadata until §10's render-time pipeline exists.
+        CREATE TABLE IF NOT EXISTS Edit (
+            Id INTEGER PRIMARY KEY AUTOINCREMENT,
+            MediaItemId INTEGER NOT NULL REFERENCES MediaItem (Id),
+            OperationType TEXT NOT NULL,
+            Parameters TEXT NOT NULL,
+            PipelineOrder INTEGER NOT NULL,
+            Source TEXT NOT NULL
+        );
+
+        -- PLAN.md §14 (built early for Picasa import, §8, to land into).
+        CREATE TABLE IF NOT EXISTS Person (
+            Id INTEGER PRIMARY KEY AUTOINCREMENT,
+            Name TEXT NOT NULL,
+            RepresentativeFaceId INTEGER NULL
+        );
+
+        CREATE TABLE IF NOT EXISTS Face (
+            Id INTEGER PRIMARY KEY AUTOINCREMENT,
+            MediaItemId INTEGER NOT NULL REFERENCES MediaItem (Id),
+            PersonId INTEGER NULL REFERENCES Person (Id),
+            BoundingBoxX INTEGER NOT NULL,
+            BoundingBoxY INTEGER NOT NULL,
+            BoundingBoxWidth INTEGER NOT NULL,
+            BoundingBoxHeight INTEGER NOT NULL,
+            Embedding BLOB NULL,
+            Confidence REAL NULL,
+            Source TEXT NOT NULL,
+            Ignored INTEGER NOT NULL
+        );
+
+        -- Explicit idempotency marker for Picasa import (§8) — a photo whose
+        -- only Picasa data was e.g. `star=yes` leaves no Face/Edit row behind,
+        -- so "already imported" can't be inferred from those tables alone.
+        CREATE TABLE IF NOT EXISTS PicasaImportedMediaItem (
+            MediaItemId INTEGER PRIMARY KEY REFERENCES MediaItem (Id)
+        );
+
         CREATE TABLE IF NOT EXISTS DeletedItem (
             Id INTEGER PRIMARY KEY AUTOINCREMENT,
             OriginalRelativePath TEXT NOT NULL,

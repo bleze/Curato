@@ -5,6 +5,7 @@ import {
   deleteMediaItem,
   getAuthStatus,
   getLibrary,
+  importPicasaData,
   logout,
   organizeLibrary,
   scanLibrary,
@@ -145,6 +146,31 @@ function App() {
     }
   }
 
+  async function handlePicasaImport() {
+    if (!loadedPath) return
+    setBusy(true)
+    setError(null)
+    setStatus('Importing legacy Picasa data…')
+    try {
+      const result = await importPicasaData(loadedPath)
+      if (result.iniFilesFound === 0) {
+        setStatus('No Picasa.ini files found under this library — nothing to import.')
+      } else {
+        setStatus(
+          `Picasa import: ${result.iniFilesFound} Picasa.ini file(s) found, ` +
+            `${result.photosMatched} photo(s) matched, ${result.photosWithNewData} newly imported. ` +
+            `${result.facesImported} face(s) (${result.peopleMatched} named), ` +
+            `${result.editsImported} edit(s), ${result.tagsApplied} tag(s) applied.` +
+            (result.contactsFileFound ? '' : ' No contacts.xml found, so faces have no names yet.'),
+        )
+      }
+    } catch (err) {
+      setError(err instanceof Error ? err.message : String(err))
+    } finally {
+      setBusy(false)
+    }
+  }
+
   async function handleDelete(mediaItemId: number) {
     if (!loadedPath) return
     setError(null)
@@ -243,6 +269,9 @@ function App() {
                 }}
               />
             </label>
+            <button type="button" className="upload-button" onClick={handlePicasaImport} disabled={busy}>
+              Import Picasa data
+            </button>
           </div>
           {library.trips.map((trip) => (
             <section className="trip" key={trip.id}>

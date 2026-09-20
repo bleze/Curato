@@ -164,6 +164,26 @@ export interface UploadResult {
   scan: ScanResult
 }
 
+export interface PicasaImportResult {
+  iniFilesFound: number
+  contactsFileFound: boolean
+  albumsFileFound: boolean
+  photosMatched: number
+  photosWithNewData: number
+  facesImported: number
+  peopleMatched: number
+  editsImported: number
+  tagsApplied: number
+}
+
+export function importPicasaData(path: string): Promise<PicasaImportResult> {
+  return fetch('/api/picasa-import', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ path }),
+  }).then(asJson<PicasaImportResult>)
+}
+
 export function uploadFiles(path: string, files: FileList | File[]): Promise<UploadResult> {
   const form = new FormData()
   form.set('path', path)

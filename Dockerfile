@@ -15,6 +15,7 @@ COPY Curato.slnx Directory.Build.props ./
 COPY Curato.Core/Curato.Core.csproj Curato.Core/
 COPY Curato.Data/Curato.Data.csproj Curato.Data/
 COPY Curato.Media/Curato.Media.csproj Curato.Media/
+COPY Curato.Picasa/Curato.Picasa.csproj Curato.Picasa/
 COPY Curato.Organizer/Curato.Organizer.csproj Curato.Organizer/
 COPY Curato.Vision/Curato.Vision.csproj Curato.Vision/
 COPY Curato.Api/Curato.Api.csproj Curato.Api/
@@ -22,6 +23,7 @@ RUN dotnet restore Curato.Api/Curato.Api.csproj
 COPY Curato.Core/ Curato.Core/
 COPY Curato.Data/ Curato.Data/
 COPY Curato.Media/ Curato.Media/
+COPY Curato.Picasa/ Curato.Picasa/
 COPY Curato.Organizer/ Curato.Organizer/
 COPY Curato.Vision/ Curato.Vision/
 COPY Curato.Api/ Curato.Api/

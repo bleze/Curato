@@ -23,6 +23,7 @@
     <ProjectReference Include="..\Curato.Data\Curato.Data.csproj" />
     <ProjectReference Include="..\Curato.Media\Curato.Media.csproj" />
     <ProjectReference Include="..\Curato.Organizer\Curato.Organizer.csproj" />
+    <ProjectReference Include="..\Curato.Picasa\Curato.Picasa.csproj" />
   </ItemGroup>
 
 </Project>
