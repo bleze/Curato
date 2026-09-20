@@ -1,2 +1,7 @@
-pyicloud>=1.0.0
+# [cli] extra, not just the bare package: pyicloud's own code unconditionally
+# imports `rich` at startup (for its Notes service's rendering/exporter
+# module, even though we never touch Notes) but only declares it as an
+# optional dependency under this extra — a plain `pip install pyicloud`
+# fails at import time with "No module named 'rich'" otherwise.
+pyicloud[cli]>=1.0.0
 icloudpd>=1.20.0
