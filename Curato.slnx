@@ -1,0 +1,9 @@
+<Solution>
+  <Project Path="Curato.Api/Curato.Api.csproj" />
+  <Project Path="Curato.Core/Curato.Core.csproj" />
+  <Project Path="Curato.Data/Curato.Data.csproj" />
+  <Project Path="Curato.Media/Curato.Media.csproj" />
+  <Project Path="Curato.Organizer/Curato.Organizer.csproj" />
+  <Project Path="Curato.Tests/Curato.Tests.csproj" />
+  <Project Path="Curato.Vision/Curato.Vision.csproj" />
+</Solution>

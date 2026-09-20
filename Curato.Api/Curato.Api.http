@@ -1,0 +1,6 @@
+@Curato.Api_HostAddress = http://localhost:5007
+
+GET {{Curato.Api_HostAddress}}/weatherforecast/
+Accept: application/json
+
+###

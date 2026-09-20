@@ -1,0 +1,23 @@
+<Project Sdk="Microsoft.NET.Sdk.Web">
+
+  <PropertyGroup>
+    <TargetFramework>net10.0</TargetFramework>
+    <Nullable>enable</Nullable>
+    <ImplicitUsings>enable</ImplicitUsings>
+    <!-- Single source of truth for the release version (docs/RELEASING.md). -->
+    <Version>0.1.0</Version>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <PackageReference Include="Microsoft.AspNetCore.OpenApi" Version="10.0.12" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <ProjectReference Include="..\Curato.Core\Curato.Core.csproj" />
+    <ProjectReference Include="..\Curato.Data\Curato.Data.csproj" />
+    <ProjectReference Include="..\Curato.Media\Curato.Media.csproj" />
+    <ProjectReference Include="..\Curato.Organizer\Curato.Organizer.csproj" />
+    <ProjectReference Include="..\Curato.Vision\Curato.Vision.csproj" />
+  </ItemGroup>
+
+</Project>
