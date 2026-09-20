@@ -4,28 +4,39 @@ public sealed record LivePhotoPair(long PhotoMediaItemId, long VideoMediaItemId)
 
 /// <summary>
 /// Detects "motion photo" pairs: a still-frame image plus a same-named video
-/// clip sitting side by side in the same folder — the shape Apple's Live
-/// Photos take when exported from iCloud/Photos (a JPEG/HEIC + `.MOV`). The
-/// still frame side matches any <see cref="MediaKind.Photo"/> item — jpg,
-/// heic, png, a RAW format, whatever <c>MediaFileScanner</c> recognizes —
-/// since Apple's format is about the paired *video* file, not the photo
-/// format. This only ever *identifies* which two MediaItems represent one
-/// logical photo; nothing on disk is touched, renamed, or merged, and both
-/// files remain independently tracked, organized, and recoverable.
+/// clip sitting side by side in the same folder. Covers two real sidecar-pair
+/// conventions: Apple Live Photos (JPEG/HEIC + `.MOV`, from iCloud/Photos
+/// export) and Samsung/Google Motion Photos when exported or backed up as a
+/// split `photo.jpg` + `photo.mp4` pair rather than their more common
+/// single-file form (one JPEG with the clip embedded as trailing data plus an
+/// XMP marker — that form has no "double files" problem to solve here at
+/// all, since it's already one file; playing its embedded clip back would be
+/// a separate feature: extracting the trailing MP4 via the XMP offset, not
+/// pairing two MediaItems). The still-frame side matches any
+/// <see cref="MediaKind.Photo"/> item — jpg, heic, png, a RAW format,
+/// whatever <c>MediaFileScanner</c> recognizes. This only ever *identifies*
+/// which two MediaItems represent one logical photo; nothing on disk is
+/// touched, renamed, or merged, and both files remain independently tracked,
+/// organized, and recoverable.
 ///
 /// The sidecar-video extension list is a deliberately narrow, explicit
 /// whitelist rather than "any video with the same name": two genuinely
-/// unrelated files that happen to share a filename (e.g. IMG_0001.JPG and an
-/// unrelated IMG_0001.MP4 from a different export) would otherwise get
-/// wrongly paired and one hidden from the gallery. Every format added here
-/// should be one actually known to be a still+motion sidecar convention, not
-/// just "a video format that exists" — currently only Apple's `.MOV`.
+/// unrelated files that happen to share a filename would otherwise get
+/// wrongly paired and one hidden from the gallery. `.MOV` carries very low
+/// collision risk since it's essentially exclusive to this convention;
+/// `.mp4` is a much more generic, widely-used video format, so its
+/// collision risk is real — a same-folder, same-name-stem coincidence is
+/// still the dominant safeguard, but it's a weaker one for `.mp4` than for
+/// `.MOV`. Worth revisiting (e.g. a stricter tolerance, or requiring a short
+/// DurationMs once video metadata reading exists) if a false pair ever
+/// actually shows up in practice.
 /// </summary>
 public static class LivePhotoPairer
 {
     private static readonly HashSet<string> MotionSidecarExtensions = new(StringComparer.OrdinalIgnoreCase)
     {
-        ".mov" // Apple Live Photos (iCloud/Photos export) — the only convention currently handled.
+        ".mov", // Apple Live Photos (iCloud/Photos export).
+        ".mp4"  // Samsung/Google Motion Photos, when exported/backed up as a split pair.
     };
 
     // Generous enough for filesystem timestamp jitter between the two

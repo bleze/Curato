@@ -149,9 +149,16 @@ web gallery (§11) excludes a paired video from its own tile and shows a
 "LIVE" badge + play toggle on the photo's tile instead. Deleting a Live
 Photo's still frame cascades to recycle its paired video too (§5), so one
 click doesn't leave an orphaned sidecar file behind. The matched sidecar
-extension is a deliberately narrow, named whitelist (currently just Apple's
-`.MOV`) rather than "any video with the same name," to avoid wrongly
-pairing two genuinely unrelated files that happen to share a filename.]
+extension is a deliberately narrow, named whitelist (Apple's `.MOV`, plus
+`.mp4` for Samsung/Google Motion Photos exported/backed up as a split pair)
+rather than "any video with the same name," to avoid wrongly pairing two
+genuinely unrelated files that happen to share a filename — a real but
+smaller risk for `.mp4` specifically, since it's a much more generic video
+format than `.MOV`. Samsung/Google Motion Photos' more common *single-file*
+form (one JPEG with the clip embedded as trailing data + an XMP marker) has
+no "double files" problem to solve at all; playing that embedded clip back
+would be a separate, unbuilt feature — extracting the trailing MP4 via its
+XMP byte offset, not pairing two MediaItems.]
 
 Event                      -- a "moment": one logical shoot, may cross midnight
   Id, StartAt, EndAt, Title, TitleIsAuto,

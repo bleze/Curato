@@ -44,13 +44,30 @@ public class LivePhotoPairerTests
     }
 
     [Fact]
-    public void Does_not_pair_a_video_that_is_not_a_mov()
+    public void Pairs_a_jpg_and_same_named_mp4_for_split_samsung_google_motion_photos()
     {
         var takenAt = new DateTime(2026, 1, 1, 12, 0, 0);
         var items = new[]
         {
             Item(1, "IMG_0001.JPG", MediaKind.Photo, takenAt),
             Item(2, "IMG_0001.MP4", MediaKind.Video, takenAt),
+        };
+
+        var pairs = LivePhotoPairer.FindPairs(items);
+
+        var pair = Assert.Single(pairs);
+        Assert.Equal(1, pair.PhotoMediaItemId);
+        Assert.Equal(2, pair.VideoMediaItemId);
+    }
+
+    [Fact]
+    public void Does_not_pair_a_video_extension_outside_the_known_sidecar_whitelist()
+    {
+        var takenAt = new DateTime(2026, 1, 1, 12, 0, 0);
+        var items = new[]
+        {
+            Item(1, "IMG_0001.JPG", MediaKind.Photo, takenAt),
+            Item(2, "IMG_0001.AVI", MediaKind.Video, takenAt),
         };
 
         Assert.Empty(LivePhotoPairer.FindPairs(items));
