@@ -37,12 +37,49 @@ export interface ScanResult {
   tripGroupCount: number
 }
 
+export interface AuthStatus {
+  needsSetup: boolean
+  isAuthenticated: boolean
+  username: string | null
+}
+
 async function asJson<T>(response: Response): Promise<T> {
   if (!response.ok) {
     const text = await response.text()
     throw new Error(text || `${response.status} ${response.statusText}`)
   }
   return response.json() as Promise<T>
+}
+
+async function expectOk(response: Response): Promise<void> {
+  if (!response.ok) {
+    const text = await response.text()
+    throw new Error(text || `${response.status} ${response.statusText}`)
+  }
+}
+
+export function getAuthStatus(): Promise<AuthStatus> {
+  return fetch('/api/auth/status').then(asJson<AuthStatus>)
+}
+
+export function setupAccount(username: string, password: string): Promise<void> {
+  return fetch('/api/auth/setup', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ username, password }),
+  }).then(expectOk)
+}
+
+export function login(username: string, password: string): Promise<void> {
+  return fetch('/api/auth/login', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ username, password }),
+  }).then(expectOk)
+}
+
+export function logout(): Promise<void> {
+  return fetch('/api/auth/logout', { method: 'POST' }).then(expectOk)
 }
 
 export function scanLibrary(path: string): Promise<ScanResult> {

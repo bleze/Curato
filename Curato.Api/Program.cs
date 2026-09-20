@@ -9,8 +9,12 @@ var builder = WebApplication.CreateBuilder(args);
 // Server-wide config — currently just the single admin account (§15) — lives
 // in its own database, separate from any library's `.curato/library.db`
 // (§2), in the server's persistent data directory (the Docker volume at
-// `/data`, or `./data` for local dev).
-var dataDirectory = builder.Configuration["Curato:DataDirectory"] ?? "./data";
+// `/data`, or a `data` folder next to the app for local dev). Resolved
+// against ContentRootPath, not the process's current working directory —
+// "./data" would otherwise land somewhere different depending on where
+// `dotnet run`/`dotnet Curato.Api.dll` happens to be invoked from.
+var dataDirectory = builder.Configuration["Curato:DataDirectory"]
+    ?? Path.Combine(builder.Environment.ContentRootPath, "data");
 var serverDatabase = new ServerDatabase(dataDirectory);
 serverDatabase.EnsureSchema();
 builder.Services.AddSingleton(serverDatabase);

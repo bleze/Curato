@@ -18,6 +18,7 @@ Curato.Web/.vite/
 *.db-shm
 *.db-wal
 .curato/
+Curato.Api/data/
 
 # OS cruft
 .DS_Store

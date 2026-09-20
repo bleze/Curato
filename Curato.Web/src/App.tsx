@@ -1,16 +1,24 @@
-import { useState } from 'react'
+import { useEffect, useState } from 'react'
 import './App.css'
-import type { LibraryDto } from './api'
-import { getLibrary, scanLibrary } from './api'
+import type { AuthStatus, LibraryDto } from './api'
+import { getAuthStatus, getLibrary, logout, scanLibrary } from './api'
+import { AuthGate } from './components/AuthGate'
 import { EventSection } from './components/EventSection'
 
 function App() {
+  const [authStatus, setAuthStatus] = useState<AuthStatus | null>(null)
   const [path, setPath] = useState('')
   const [library, setLibrary] = useState<LibraryDto | null>(null)
   const [loadedPath, setLoadedPath] = useState<string | null>(null)
   const [status, setStatus] = useState<string | null>(null)
   const [error, setError] = useState<string | null>(null)
   const [busy, setBusy] = useState(false)
+
+  useEffect(() => {
+    getAuthStatus()
+      .then(setAuthStatus)
+      .catch((err) => setError(err instanceof Error ? err.message : String(err)))
+  }, [])
 
   async function handleScan() {
     if (!path.trim()) return
@@ -35,13 +43,42 @@ function App() {
     }
   }
 
+  async function handleLogout() {
+    await logout()
+    setLibrary(null)
+    setLoadedPath(null)
+    setAuthStatus((prev) => (prev ? { ...prev, isAuthenticated: false, username: null } : prev))
+  }
+
+  if (!authStatus) {
+    return (
+      <main className="app-shell">
+        <h1>Curato</h1>
+      </main>
+    )
+  }
+
+  if (authStatus.needsSetup || !authStatus.isAuthenticated) {
+    return (
+      <AuthGate
+        needsSetup={authStatus.needsSetup}
+        onSignedIn={() => getAuthStatus().then(setAuthStatus)}
+      />
+    )
+  }
+
   return (
     <main className="app-shell">
-      <h1>Curato</h1>
-      <p className="tagline">
-        Point this at a folder to scan/organize it (PLAN.md Phase 1). No login yet
-        &mdash; local testing only.
-      </p>
+      <header className="app-header">
+        <h1>Curato</h1>
+        <div className="account">
+          <span>{authStatus.username}</span>
+          <button type="button" onClick={handleLogout}>
+            Sign out
+          </button>
+        </div>
+      </header>
+      <p className="tagline">Point this at a folder to scan/organize it (PLAN.md Phase 1).</p>
 
       <div className="scan-form">
         <input
