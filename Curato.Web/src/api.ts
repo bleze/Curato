@@ -227,6 +227,23 @@ export function importPicasaData(path: string): Promise<PicasaImportResult> {
   }).then(asJson<PicasaImportResult>)
 }
 
+export interface TagDto {
+  id: number
+  name: string
+  isFavoriteShortcut: boolean
+  itemCount: number
+  coverRelativePath: string | null
+}
+
+export function getTags(path: string): Promise<TagDto[]> {
+  return fetch(`/api/tags?path=${encodeURIComponent(path)}`).then(asJson<TagDto[]>)
+}
+
+export function getTagItems(path: string, tagId: number): Promise<MediaItemDto[]> {
+  const params = new URLSearchParams({ path })
+  return fetch(`/api/tags/${tagId}/items?${params.toString()}`).then(asJson<MediaItemDto[]>)
+}
+
 export function uploadFiles(path: string, files: FileList | File[]): Promise<UploadResult> {
   const form = new FormData()
   form.set('path', path)

@@ -75,6 +75,46 @@ public sealed class LibraryQueryService(LibraryDatabase database)
         return trips;
     }
 
+    public IReadOnlyList<Tag> GetAllTags()
+    {
+        using var connection = database.OpenConnection();
+        var tags = new List<Tag>();
+        foreach (var row in connection.Query("SELECT * FROM Tag ORDER BY SortOrder"))
+        {
+            tags.Add(MapTag(row));
+        }
+
+        return tags;
+    }
+
+    public IReadOnlyList<long> GetMediaItemIdsForTag(long tagId)
+    {
+        using var connection = database.OpenConnection();
+        var ids = new List<long>();
+        foreach (var row in connection.Query(
+            "SELECT MediaItemId FROM MediaItemTag WHERE TagId = @TagId", new { TagId = tagId }))
+        {
+            ids.Add((long)row.MediaItemId);
+        }
+
+        return ids;
+    }
+
+    private static Tag MapTag(dynamic row)
+    {
+        string name = row.Name;
+        long isFavoriteShortcut = row.IsFavoriteShortcut;
+        long sortOrder = row.SortOrder;
+
+        return new Tag
+        {
+            Id = (long)row.Id,
+            Name = name,
+            IsFavoriteShortcut = isFavoriteShortcut != 0,
+            SortOrder = (int)sortOrder
+        };
+    }
+
     /// <summary>Every Edit row for the MediaItem at this relative path, for render-time application (§10).</summary>
     public IReadOnlyList<Edit> GetEditsForRelativePath(string relativePath)
     {

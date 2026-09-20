@@ -641,6 +641,14 @@ whatever"), so:
   directly — a Picasa album becomes a Tag with the same name and membership; no
   separate import path needed since it's the same concept end to end.
 
+[Phase 2 built shape: browsing only, via an "Albums" panel — cover
+thumbnail + item count per tag, opening one shows its members in the same
+virtualized grid/Lightbox the main library view uses (a paired Live Photo
+video is hidden the same way, §3). No tagging UI yet (no way to create a
+tag or add/remove an item from one by hand) and no `ManualSortOrder`
+drag-to-reorder — browsing what Picasa import already populated was the
+immediate need; native tagging is later Phase 2/3 scope.]
+
 ## 10. Non-destructive editing
 
 Basic edits (crop, rotate/straighten, brightness/contrast/saturation, fill light,

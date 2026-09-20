@@ -10,6 +10,7 @@ import {
   scanLibrary,
   uploadFiles,
 } from './api'
+import { AlbumsPanel } from './components/AlbumsPanel'
 import { AuthGate } from './components/AuthGate'
 import { DuplicateFinderPanel } from './components/DuplicateFinderPanel'
 import { LibraryGrid } from './components/LibraryGrid'
@@ -56,6 +57,7 @@ function App() {
   const [autoLoading, setAutoLoading] = useState(false)
   const [showRecycleBin, setShowRecycleBin] = useState(false)
   const [showDuplicates, setShowDuplicates] = useState(false)
+  const [showAlbums, setShowAlbums] = useState(false)
 
   useEffect(() => {
     getAuthStatus()
@@ -211,6 +213,11 @@ function App() {
               Find Duplicates
             </button>
           )}
+          {loadedPath && (
+            <button type="button" onClick={() => setShowAlbums(true)}>
+              Albums
+            </button>
+          )}
           <span>{authStatus.username}</span>
           <button type="button" onClick={handleLogout}>
             Sign out
@@ -247,6 +254,14 @@ function App() {
             setShowDuplicates(false)
             getLibrary(loadedPath).then(setLibrary)
           }}
+        />
+      )}
+
+      {showAlbums && loadedPath && (
+        <AlbumsPanel
+          libraryPath={loadedPath}
+          onClose={() => setShowAlbums(false)}
+          onDelete={handleDelete}
         />
       )}
 

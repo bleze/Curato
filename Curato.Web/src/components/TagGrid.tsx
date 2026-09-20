@@ -1,0 +1,132 @@
+import { useVirtualizer } from '@tanstack/react-virtual'
+import { useLayoutEffect, useMemo, useRef, useState } from 'react'
+import type { MediaItemDto } from '../api'
+import { thumbnailUrl } from '../api'
+import { Lightbox } from './Lightbox'
+
+// Mirrors LibraryGrid's sizing — kept in sync manually since the two grids'
+// block shapes differ enough (this one has no trip/event headers) that
+// sharing one component would need more indirection than the duplication
+// it'd save.
+const THUMB_MIN_WIDTH = 120
+const GAP = 6
+
+export function TagGrid({
+  items,
+  libraryPath,
+  onDelete,
+}: {
+  items: MediaItemDto[]
+  libraryPath: string
+  onDelete: (mediaItemId: number) => void
+}) {
+  const scrollRef = useRef<HTMLDivElement>(null)
+  const [containerWidth, setContainerWidth] = useState(0)
+  const [lightbox, setLightbox] = useState<number | null>(null)
+
+  useLayoutEffect(() => {
+    const el = scrollRef.current
+    if (!el) return
+    setContainerWidth(el.getBoundingClientRect().width)
+    const observer = new ResizeObserver((entries) => setContainerWidth(entries[0].contentRect.width))
+    observer.observe(el)
+    return () => observer.disconnect()
+  }, [])
+
+  const columnCount = containerWidth > 0 ? Math.max(1, Math.floor((containerWidth + GAP) / (THUMB_MIN_WIDTH + GAP))) : 4
+  const thumbSize = containerWidth > 0 ? (containerWidth - (columnCount - 1) * GAP) / columnCount : THUMB_MIN_WIDTH
+  const rowHeight = thumbSize + GAP
+
+  const rows = useMemo(() => {
+    const result: MediaItemDto[][] = []
+    for (let i = 0; i < items.length; i += columnCount) {
+      result.push(items.slice(i, i + columnCount))
+    }
+    return result
+  }, [items, columnCount])
+
+  const virtualizer = useVirtualizer({
+    count: rows.length,
+    getScrollElement: () => scrollRef.current,
+    getItemKey: (index) => rows[index]?.[0]?.id ?? index,
+    estimateSize: () => rowHeight,
+    overscan: 6,
+  })
+
+  if (items.length === 0) {
+    return <p>This album is empty.</p>
+  }
+
+  return (
+    <div className="library-scroll" ref={scrollRef}>
+      <div style={{ height: virtualizer.getTotalSize(), position: 'relative', width: '100%' }}>
+        {virtualizer.getVirtualItems().map((virtualRow) => {
+          const row = rows[virtualRow.index]
+          return (
+            <div
+              key={row[0].id}
+              data-index={virtualRow.index}
+              ref={virtualizer.measureElement}
+              style={{
+                position: 'absolute',
+                top: 0,
+                left: 0,
+                width: '100%',
+                transform: `translateY(${virtualRow.start}px)`,
+              }}
+            >
+              <div className="thumb-grid" style={{ gridTemplateColumns: `repeat(${columnCount}, 1fr)` }}>
+                {row.map((item, i) => (
+                  <div className="thumb" key={item.id} title={item.relativePath}>
+                    {item.kind === 'Photo' ? (
+                      <img
+                        src={thumbnailUrl(libraryPath, item.relativePath)}
+                        alt=""
+                        loading="lazy"
+                        onClick={() => setLightbox(virtualRow.index * columnCount + i)}
+                        onError={(e) => {
+                          e.currentTarget.replaceWith(
+                            Object.assign(document.createElement('div'), {
+                              className: 'thumb-fallback',
+                              textContent: 'No preview',
+                            }),
+                          )
+                        }}
+                      />
+                    ) : (
+                      <div
+                        className="thumb-fallback"
+                        onClick={() => setLightbox(virtualRow.index * columnCount + i)}
+                      >
+                        Video
+                      </div>
+                    )}
+                    {item.liveVideoRelativePath && <span className="live-badge">LIVE</span>}
+                    <button
+                      type="button"
+                      className="thumb-delete"
+                      title="Move to Recycle Bin"
+                      onClick={() => onDelete(item.id)}
+                    >
+                      &times;
+                    </button>
+                  </div>
+                ))}
+              </div>
+            </div>
+          )
+        })}
+      </div>
+
+      {lightbox !== null && (
+        <Lightbox
+          items={items}
+          index={lightbox}
+          libraryPath={libraryPath}
+          onClose={() => setLightbox(null)}
+          onNavigate={setLightbox}
+        />
+      )}
+    </div>
+  )
+}
