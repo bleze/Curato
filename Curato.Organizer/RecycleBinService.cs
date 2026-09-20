@@ -30,6 +30,13 @@ public sealed class RecycleBinService(LibraryDatabase database, RecycleBinReposi
 
     private const string RecycleBinFolderName = "RecycleBin";
 
+    /// <summary>
+    /// Deletes one MediaItem — and, if it's the still-frame half of an Apple
+    /// Live Photo pair (§3), its paired .MOV motion clip too, so one click on
+    /// what looks like a single photo doesn't leave an orphaned sidecar file
+    /// behind. The paired video gets its own DeletedItem row (same source),
+    /// independently restorable/purgeable.
+    /// </summary>
     public DeletedItemDto? DeleteMediaItem(long mediaItemId, string source)
     {
         var mediaItem = repository.GetMediaItemPathAndKind(mediaItemId);
@@ -38,7 +45,7 @@ public sealed class RecycleBinService(LibraryDatabase database, RecycleBinReposi
             return null;
         }
 
-        var (id, relativePath, kind) = mediaItem.Value;
+        var (id, relativePath, kind, livePhotoVideoItemId) = mediaItem.Value;
         var libraryRoot = database.LibraryRoot;
         var sourceFullPath = Path.Combine(libraryRoot, relativePath);
 
@@ -52,6 +59,11 @@ public sealed class RecycleBinService(LibraryDatabase database, RecycleBinReposi
         }
 
         repository.RemoveMediaItem(id);
+
+        if (livePhotoVideoItemId is { } videoId)
+        {
+            DeleteMediaItem(videoId, source);
+        }
 
         var deletedAt = DateTime.UtcNow;
         var purgeAt = deletedAt + RetentionPeriod;

@@ -31,7 +31,7 @@ public sealed record ScanResult(
 /// TripGroup isn't retroactively formed once the second folder shows up —
 /// real but narrow enough to leave as a follow-up rather than block on.)
 /// </summary>
-public sealed class ScanService(LibraryRepository repository)
+public sealed class ScanService(LibraryRepository repository, LibraryQueryService query)
 {
     /// <summary>Walks <paramref name="libraryRoot"/> from scratch and indexes whatever's found.</summary>
     public ScanResult Scan(string libraryRoot) => ScanItems(new MediaFileScanner().Scan(libraryRoot));
@@ -85,6 +85,8 @@ public sealed class ScanService(LibraryRepository repository)
         var allNewTrips = newAutoTrips.Concat(newAdoptedTrips).ToList();
         repository.SaveTripGroups(allNewTrips);
 
+        DetectAndPersistLivePhotoPairs();
+
         return new ScanResult(
             MediaItemCount: savedItems.Count,
             NewAutoOrganizedEventCount: newAutoEvents.Count,
@@ -97,5 +99,20 @@ public sealed class ScanService(LibraryRepository repository)
                     e.Id, e.Title, e.NamingMode.ToString(), e.FolderPath,
                     e.StartAt, e.EndAt, e.MediaItemIds.Count))
                 .ToList());
+    }
+
+    /// <summary>
+    /// Re-queries the library's true current state (not <c>savedItems</c>,
+    /// which for already-existing rows are just this pass's freshly-scanned
+    /// objects and don't reflect what's actually stored) so a photo scanned
+    /// in an earlier pass still pairs correctly once its .MOV sidecar shows
+    /// up in a later one, or vice versa.
+    /// </summary>
+    private void DetectAndPersistLivePhotoPairs()
+    {
+        foreach (var pair in LivePhotoPairer.FindPairs(query.GetAllMediaItems()))
+        {
+            repository.SetLivePhotoPair(pair.PhotoMediaItemId, pair.VideoMediaItemId);
+        }
     }
 }

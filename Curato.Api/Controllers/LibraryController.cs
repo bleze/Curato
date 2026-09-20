@@ -18,7 +18,7 @@ namespace Curato.Api.Controllers;
 [Route("api")]
 public sealed class LibraryController : ControllerBase
 {
-    public sealed record MediaItemDto(long Id, string RelativePath, string Kind, DateTime TakenAt);
+    public sealed record MediaItemDto(long Id, string RelativePath, string Kind, DateTime TakenAt, string? LiveVideoRelativePath);
 
     public sealed record EventDto(
         long Id, string Title, string NamingMode, string? FolderPath, string? ProposedFolderPath,
@@ -44,6 +44,16 @@ public sealed class LibraryController : ControllerBase
         var query = new LibraryQueryService(database);
 
         var mediaById = query.GetAllMediaItems().ToDictionary(m => m.Id);
+
+        // Apple Live Photos (JPG+MOV pairs, §3's "no double files" rule):
+        // a video that's paired to some photo is represented by that photo's
+        // tile, never shown as its own — nothing on disk changes, this is
+        // purely which items the grid enumerates.
+        var pairedVideoIds = mediaById.Values
+            .Where(m => m.LivePhotoVideoItemId is not null)
+            .Select(m => m.LivePhotoVideoItemId!.Value)
+            .ToHashSet();
+
         var events = query.GetAllEvents();
         var trips = query.GetAllTripGroups();
         var tripsById = trips.ToDictionary(t => t.Id);
@@ -63,12 +73,18 @@ public sealed class LibraryController : ControllerBase
                 ? null
                 : FolderNameTemplate.RenderTripPath(t);
 
+        MediaItemDto ToMediaItemDto(MediaItem m) => new(
+            m.Id, m.RelativePath, m.Kind.ToString(), m.TakenAt,
+            m.LivePhotoVideoItemId is { } videoId && mediaById.TryGetValue(videoId, out var video)
+                ? video.RelativePath
+                : null);
+
         EventDto ToEventDto(Event e) => new(
             e.Id, e.Title, e.NamingMode.ToString(), e.FolderPath, ProposeEventPath(e), e.StartAt, e.EndAt,
             e.MediaItemIds
-                .Where(mediaById.ContainsKey)
+                .Where(id => mediaById.ContainsKey(id) && !pairedVideoIds.Contains(id))
                 .Select(id => mediaById[id])
-                .Select(m => new MediaItemDto(m.Id, m.RelativePath, m.Kind.ToString(), m.TakenAt))
+                .Select(ToMediaItemDto)
                 .ToList());
 
         var eventsById = events.ToDictionary(e => e.Id);

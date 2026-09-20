@@ -28,7 +28,7 @@ public sealed class ScanController : ControllerBase
 
         var database = new LibraryDatabase(request.Path);
         database.EnsureSchema();
-        var service = new ScanService(new LibraryRepository(database));
+        var service = new ScanService(new LibraryRepository(database), new LibraryQueryService(database));
 
         return Ok(service.Scan(request.Path));
     }

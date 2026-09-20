@@ -57,6 +57,7 @@ export function EventSection({
                 Video
               </div>
             )}
+            {item.liveVideoRelativePath && <span className="live-badge">LIVE</span>}
             <button
               type="button"
               className="thumb-delete"

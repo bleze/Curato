@@ -19,4 +19,12 @@ public sealed class MediaItem
     public int? Height { get; set; }
     public long? DurationMs { get; set; }
     public DateTime ImportedAt { get; set; }
+
+    /// <summary>
+    /// Set on a Photo's row when <see cref="LivePhotoPairer"/> matches it to
+    /// a same-named .MOV motion clip (Apple Live Photos) — the paired
+    /// MediaItem is never hidden or merged, just not shown as its own grid
+    /// tile since this reference represents it instead.
+    /// </summary>
+    public long? LivePhotoVideoItemId { get; set; }
 }

@@ -78,7 +78,7 @@ public sealed class UploadController : ControllerBase
 
         var database = new LibraryDatabase(libraryRoot);
         database.EnsureSchema();
-        var scanService = new ScanService(new LibraryRepository(database));
+        var scanService = new ScanService(new LibraryRepository(database), new LibraryQueryService(database));
         var scanResult = scanService.Scan(libraryRoot);
 
         return Ok(new UploadResponse(filesSaved, filesSkipped, scanResult));

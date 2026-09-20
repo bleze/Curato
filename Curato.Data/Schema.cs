@@ -147,4 +147,16 @@ internal static class Schema
             Source TEXT NOT NULL
         );
         """;
+
+    /// <summary>
+    /// Additive columns for tables that already shipped, applied by
+    /// <see cref="LibraryDatabase.EnsureSchema"/> only when missing (checked
+    /// via `PRAGMA table_info`, since this SQLite build doesn't support
+    /// `ALTER TABLE ... ADD COLUMN IF NOT EXISTS`) — the closest thing this
+    /// project has to a migration list until a real one exists.
+    /// </summary>
+    public static readonly IReadOnlyList<(string Table, string Column, string Definition)> ColumnMigrations =
+    [
+        ("MediaItem", "LivePhotoVideoItemId", "INTEGER NULL REFERENCES MediaItem (Id)")
+    ];
 }

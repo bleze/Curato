@@ -3,6 +3,8 @@ export interface MediaItemDto {
   relativePath: string
   kind: 'Photo' | 'Video'
   takenAt: string
+  /** Set when this is the still frame of an Apple Live Photo — the paired .MOV's relative path. */
+  liveVideoRelativePath: string | null
 }
 
 export interface EventDto {

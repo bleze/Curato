@@ -136,6 +136,15 @@ public sealed class LibraryRepository(LibraryDatabase database)
         transaction.Commit();
     }
 
+    /// <summary>Links a Live Photo's still frame to its motion clip (idempotent — a no-op once already set).</summary>
+    public void SetLivePhotoPair(long photoMediaItemId, long videoMediaItemId)
+    {
+        using var connection = database.OpenConnection();
+        connection.Execute(
+            "UPDATE MediaItem SET LivePhotoVideoItemId = @VideoId WHERE Id = @PhotoId AND LivePhotoVideoItemId IS NULL",
+            new { PhotoId = photoMediaItemId, VideoId = videoMediaItemId });
+    }
+
     /// <summary>Caches a lazily-computed ContentHash (§7's expensive exact-confirmation tier) so it's never recomputed once known.</summary>
     public void SetContentHash(long mediaItemId, string contentHash)
     {

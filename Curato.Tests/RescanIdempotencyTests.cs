@@ -24,8 +24,8 @@ public class RescanIdempotencyTests
                 Item("loose2.jpg", new DateTime(2026, 7, 11, 9, 10, 0)),
             };
 
-            RunScanPass(repository, rawItems);
-            RunScanPass(repository, rawItems); // scan again, nothing changed
+            RunScanPass(repository, query, rawItems);
+            RunScanPass(repository, query, rawItems); // scan again, nothing changed
 
             var events = query.GetAllEvents();
             Assert.Single(events); // still just one Event, not two
@@ -43,8 +43,8 @@ public class RescanIdempotencyTests
                 Item("Family Reunion 2019/pic2.jpg", new DateTime(2019, 6, 1, 22, 0, 0)),
             };
 
-            RunScanPass(repository, rawItems);
-            RunScanPass(repository, rawItems); // scan again, nothing changed
+            RunScanPass(repository, query, rawItems);
+            RunScanPass(repository, query, rawItems); // scan again, nothing changed
 
             var events = query.GetAllEvents();
             Assert.Single(events);
@@ -61,14 +61,14 @@ public class RescanIdempotencyTests
             {
                 Item("Family Reunion 2019/pic1.jpg", new DateTime(2019, 6, 1, 10, 0, 0)),
             };
-            RunScanPass(repository, firstPass);
+            RunScanPass(repository, query, firstPass);
 
             var secondPass = new[]
             {
                 Item("Family Reunion 2019/pic1.jpg", new DateTime(2019, 6, 1, 10, 0, 0)),
                 Item("Family Reunion 2019/pic2.jpg", new DateTime(2019, 6, 1, 22, 0, 0)), // new file
             };
-            RunScanPass(repository, secondPass);
+            RunScanPass(repository, query, secondPass);
 
             var events = query.GetAllEvents();
             Assert.Single(events); // still one Event for the folder...
@@ -77,8 +77,8 @@ public class RescanIdempotencyTests
     }
 
     /// <summary>Delegates to the real ScanService, so a test failure here means the real endpoint is broken too.</summary>
-    private static void RunScanPass(LibraryRepository repository, MediaItem[] rawItems) =>
-        new ScanService(repository).ScanItems(rawItems);
+    private static void RunScanPass(LibraryRepository repository, LibraryQueryService query, MediaItem[] rawItems) =>
+        new ScanService(repository, query).ScanItems(rawItems);
 
     private static void WithTempLibrary(Action<LibraryRepository, LibraryQueryService> test)
     {

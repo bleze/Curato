@@ -12,15 +12,23 @@ namespace Curato.Media;
 /// </summary>
 public sealed class MediaFileScanner
 {
+    // Common consumer + RAW formats, not an exhaustive list of every
+    // container format that exists. RAW/HEIC preview extraction and
+    // BMP/TIFF/WebP/GIF thumbnailing both depend on what SkiaSharp's decoder
+    // actually supports at render time (§1) — being recognized here (indexed,
+    // hashed, clustered, organized) is independent of whether a thumbnail
+    // renders correctly for it yet; a file the thumbnail pipeline can't
+    // decode falls back to "no preview" (MediaController) rather than being
+    // excluded from the library entirely.
     private static readonly HashSet<string> PhotoExtensions = new(StringComparer.OrdinalIgnoreCase)
     {
-        ".jpg", ".jpeg", ".png", ".heic", ".heif",
+        ".jpg", ".jpeg", ".png", ".heic", ".heif", ".bmp", ".tif", ".tiff", ".webp", ".gif",
         ".cr2", ".cr3", ".nef", ".arw", ".dng", ".raf", ".orf", ".rw2"
     };
 
     private static readonly HashSet<string> VideoExtensions = new(StringComparer.OrdinalIgnoreCase)
     {
-        ".mp4", ".mov", ".avi", ".mkv", ".m4v", ".3gp"
+        ".mp4", ".mov", ".avi", ".mkv", ".m4v", ".3gp", ".wmv", ".webm", ".flv", ".mts", ".m2ts"
     };
 
     /// <summary>Whether <paramref name="extension"/> (with leading dot) is a recognized photo/video type.</summary>

@@ -22,6 +22,24 @@ public class RecycleBinServiceTests
     }
 
     [Fact]
+    public void Deleting_a_live_photos_still_frame_also_recycles_its_paired_video()
+    {
+        WithTempLibrary((root, database, repository, service) =>
+        {
+            var photoId = SeedFile(root, database, "IMG_0001.JPG");
+            var videoId = SeedFile(root, database, "IMG_0001.MOV");
+            new LibraryRepository(database).SetLivePhotoPair(photoId, videoId);
+
+            var deleted = service.DeleteMediaItem(photoId, "Manual");
+
+            Assert.NotNull(deleted);
+            Assert.False(File.Exists(Path.Combine(root, "IMG_0001.JPG")));
+            Assert.False(File.Exists(Path.Combine(root, "IMG_0001.MOV")));
+            Assert.Equal(2, service.ListPendingDeletion().Count);
+        });
+    }
+
+    [Fact]
     public void Restoring_puts_the_file_back_at_its_original_path_and_clears_the_bin_entry()
     {
         WithTempLibrary((root, database, repository, service) =>

@@ -1,4 +1,4 @@
-import { useEffect } from 'react'
+import { useEffect, useState } from 'react'
 import type { MediaItemDto } from '../api'
 import { fullImageUrl, rawFileUrl } from '../api'
 
@@ -16,6 +16,11 @@ export function Lightbox({
   onNavigate: (index: number) => void
 }) {
   const item = items[index]
+  const [playingLive, setPlayingLive] = useState(false)
+
+  useEffect(() => {
+    setPlayingLive(false)
+  }, [index])
 
   useEffect(() => {
     function onKeyDown(e: KeyboardEvent) {
@@ -61,12 +66,26 @@ export function Lightbox({
         </button>
       )}
       <div className="lightbox-content" onClick={(e) => e.stopPropagation()}>
-        {item.kind === 'Photo' ? (
-          <img src={fullImageUrl(libraryPath, item.relativePath)} alt="" />
-        ) : (
+        {item.kind === 'Video' ? (
           <video src={rawFileUrl(libraryPath, item.relativePath)} controls autoPlay />
+        ) : item.liveVideoRelativePath && playingLive ? (
+          <video src={rawFileUrl(libraryPath, item.liveVideoRelativePath)} autoPlay loop muted playsInline />
+        ) : (
+          <img src={fullImageUrl(libraryPath, item.relativePath)} alt="" />
         )}
       </div>
+      {item.liveVideoRelativePath && (
+        <button
+          type="button"
+          className="lightbox-live-toggle"
+          onClick={(e) => {
+            e.stopPropagation()
+            setPlayingLive((p) => !p)
+          }}
+        >
+          {playingLive ? '◼ Stop' : '▶ Live'}
+        </button>
+      )}
       <div className="lightbox-caption">
         {item.relativePath} &middot; {index + 1} / {items.length}
       </div>

@@ -32,6 +32,31 @@ public sealed class LibraryDatabase
     {
         using var connection = OpenConnection();
         connection.Execute(Schema.CreateTables);
+
+        foreach (var (table, column, definition) in Schema.ColumnMigrations)
+        {
+            if (!ColumnExists(connection, table, column))
+            {
+                connection.Execute($"ALTER TABLE {table} ADD COLUMN {column} {definition}");
+            }
+        }
+    }
+
+    private static bool ColumnExists(SqliteConnection connection, string table, string column)
+    {
+        using var command = connection.CreateCommand();
+        command.CommandText = $"PRAGMA table_info({table})";
+        using var reader = command.ExecuteReader();
+        var nameOrdinal = reader.GetOrdinal("name");
+        while (reader.Read())
+        {
+            if (string.Equals(reader.GetString(nameOrdinal), column, StringComparison.OrdinalIgnoreCase))
+            {
+                return true;
+            }
+        }
+
+        return false;
     }
 }
 

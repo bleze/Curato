@@ -135,7 +135,23 @@ MediaItem
   Id, FilePath, Kind (Photo/Video),
   FileSizeBytes, QuickHash, ContentHash (nullable, computed lazily),
   TakenAt (UTC, best-effort from EXIF/video/file time), TakenAtSource,
-  Width, Height, DurationMs (video), ImportedAt
+  Width, Height, DurationMs (video), ImportedAt,
+  LivePhotoVideoItemId (nullable, set on a Photo row — see below)
+
+[Phase 1/2 addition: Apple Live Photos (iCloud/Photos export) land as a
+JPG/HEIC + same-named `.MOV` pair, sitting side by side in the source
+folder — without handling, that's two separate gallery tiles for what's
+one logical photo. LivePhotoPairer (Curato.Core) matches same-folder,
+same-filename-stem, close-timestamp Photo+Video pairs after every scan and
+sets LivePhotoVideoItemId on the photo's row; nothing on disk is renamed or
+merged, both files stay independently tracked/organized/recoverable. The
+web gallery (§11) excludes a paired video from its own tile and shows a
+"LIVE" badge + play toggle on the photo's tile instead. Deleting a Live
+Photo's still frame cascades to recycle its paired video too (§5), so one
+click doesn't leave an orphaned sidecar file behind. The matched sidecar
+extension is a deliberately narrow, named whitelist (currently just Apple's
+`.MOV`) rather than "any video with the same name," to avoid wrongly
+pairing two genuinely unrelated files that happen to share a filename.]
 
 Event                      -- a "moment": one logical shoot, may cross midnight
   Id, StartAt, EndAt, Title, TitleIsAuto,

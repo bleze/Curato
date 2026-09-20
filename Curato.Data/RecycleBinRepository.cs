@@ -14,11 +14,11 @@ public sealed record DeletedItemRecord(
 /// </summary>
 public sealed class RecycleBinRepository(LibraryDatabase database)
 {
-    public (long Id, string RelativePath, string Kind)? GetMediaItemPathAndKind(long mediaItemId)
+    public (long Id, string RelativePath, string Kind, long? LivePhotoVideoItemId)? GetMediaItemPathAndKind(long mediaItemId)
     {
         using var connection = database.OpenConnection();
         var row = connection.QuerySingleOrDefault(
-            "SELECT Id, RelativePath, Kind FROM MediaItem WHERE Id = @Id", new { Id = mediaItemId });
+            "SELECT Id, RelativePath, Kind, LivePhotoVideoItemId FROM MediaItem WHERE Id = @Id", new { Id = mediaItemId });
 
         if (row is null)
         {
@@ -27,7 +27,8 @@ public sealed class RecycleBinRepository(LibraryDatabase database)
 
         string relativePath = row.RelativePath;
         string kind = row.Kind;
-        return ((long)row.Id, relativePath, kind);
+        long? livePhotoVideoItemId = row.LivePhotoVideoItemId;
+        return ((long)row.Id, relativePath, kind, livePhotoVideoItemId);
     }
 
     public void RemoveMediaItem(long mediaItemId)
