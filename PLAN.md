@@ -525,6 +525,15 @@ converted JPEG, a screenshot of a screenshot) is a similarity problem, not an id
 one — it needs perceptual hashing (pHash/dHash) and a similarity threshold, not exact
 byte matching. Reasonable to add in Phase 3 once exact-duplicate detection is solid.
 
+[Phase 1 built shape: since a genuine (FileSizeBytes, QuickHash, ContentHash)
+match means byte-identical files, resolution/duration can never actually
+differ between members of a group — those tie-breakers only make sense for
+Phase 3's near-duplicate detection. The "keep" suggestion here uses only the
+one criterion that's meaningful for exact duplicates: whichever copy has the
+earliest ImportedAt (§7's "original import folder", read literally). No
+dedicated nav entry/page yet — it's a toggleable panel alongside the
+Recycle Bin's, consistent with Phase 1's minimal web UI.]
+
 ## 8. Legacy Picasa import (opportunistic, one-time)
 
 You already have `.picasa.ini` files scattered through your existing folder structure

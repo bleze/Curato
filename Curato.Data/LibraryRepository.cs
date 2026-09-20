@@ -136,6 +136,15 @@ public sealed class LibraryRepository(LibraryDatabase database)
         transaction.Commit();
     }
 
+    /// <summary>Caches a lazily-computed ContentHash (§7's expensive exact-confirmation tier) so it's never recomputed once known.</summary>
+    public void SetContentHash(long mediaItemId, string contentHash)
+    {
+        using var connection = database.OpenConnection();
+        connection.Execute(
+            "UPDATE MediaItem SET ContentHash = @ContentHash WHERE Id = @Id",
+            new { Id = mediaItemId, ContentHash = contentHash });
+    }
+
     public void SaveEvents(IReadOnlyList<Event> events)
     {
         using var connection = database.OpenConnection();

@@ -176,6 +176,31 @@ export interface PicasaImportResult {
   tagsApplied: number
 }
 
+export interface DuplicateGroupDto {
+  items: MediaItemDto[]
+  suggestedKeepId: number
+}
+
+export function scanDuplicates(path: string): Promise<DuplicateGroupDto[]> {
+  return fetch('/api/duplicates/scan', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ path }),
+  }).then(asJson<DuplicateGroupDto[]>)
+}
+
+export function resolveDuplicateGroup(
+  path: string,
+  keepMediaItemId: number,
+  removeMediaItemIds: number[],
+): Promise<{ itemsRemoved: number }> {
+  return fetch('/api/duplicates/resolve', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ path, keepMediaItemId, removeMediaItemIds }),
+  }).then(asJson<{ itemsRemoved: number }>)
+}
+
 export function importPicasaData(path: string): Promise<PicasaImportResult> {
   return fetch('/api/picasa-import', {
     method: 'POST',

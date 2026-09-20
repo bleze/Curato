@@ -12,6 +12,7 @@ import {
   uploadFiles,
 } from './api'
 import { AuthGate } from './components/AuthGate'
+import { DuplicateFinderPanel } from './components/DuplicateFinderPanel'
 import { EventSection } from './components/EventSection'
 import { RecycleBinPanel } from './components/RecycleBinPanel'
 
@@ -44,6 +45,7 @@ function App() {
   const [busy, setBusy] = useState(false)
   const [autoLoading, setAutoLoading] = useState(false)
   const [showRecycleBin, setShowRecycleBin] = useState(false)
+  const [showDuplicates, setShowDuplicates] = useState(false)
 
   useEffect(() => {
     getAuthStatus()
@@ -217,6 +219,11 @@ function App() {
               Recycle Bin
             </button>
           )}
+          {loadedPath && (
+            <button type="button" onClick={() => setShowDuplicates(true)}>
+              Find Duplicates
+            </button>
+          )}
           <span>{authStatus.username}</span>
           <button type="button" onClick={handleLogout}>
             Sign out
@@ -244,6 +251,16 @@ function App() {
 
       {showRecycleBin && loadedPath && (
         <RecycleBinPanel libraryPath={loadedPath} onClose={() => setShowRecycleBin(false)} />
+      )}
+
+      {showDuplicates && loadedPath && (
+        <DuplicateFinderPanel
+          libraryPath={loadedPath}
+          onClose={() => {
+            setShowDuplicates(false)
+            getLibrary(loadedPath).then(setLibrary)
+          }}
+        />
       )}
 
       {library && loadedPath && (
