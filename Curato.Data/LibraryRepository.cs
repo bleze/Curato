@@ -108,16 +108,41 @@ public sealed class LibraryRepository(LibraryDatabase database)
         using var connection = database.OpenConnection();
         using var transaction = connection.BeginTransaction();
 
-        var nextSortOrder = connection.ExecuteScalar<int>(
-            "SELECT COALESCE(MAX(SortOrder), -1) + 1 FROM EventMediaItem WHERE EventId = @EventId",
-            new { EventId = eventId }, transaction);
-
         foreach (var item in newItems)
         {
+            // SortOrder is fixed up for every member (old and new) right
+            // after, so its value here is just a temporary placeholder.
             connection.Execute("""
                 INSERT INTO EventMediaItem (EventId, MediaItemId, SortOrder)
-                VALUES (@EventId, @MediaItemId, @SortOrder)
-                """, new { EventId = eventId, MediaItemId = item.Id, SortOrder = nextSortOrder++ }, transaction);
+                VALUES (@EventId, @MediaItemId, 0)
+                """, new { EventId = eventId, MediaItemId = item.Id }, transaction);
+        }
+
+        // Re-sort the *whole* membership (existing + newly-added) by
+        // TakenAt rather than just appending the new ones — otherwise
+        // newly-added items always land at the end of the thumb-grid
+        // regardless of when they were actually taken, breaking
+        // chronological order within the event. TakenAt strings are all
+        // stored via DateTime.ToString("O") (LibraryRepository.ToRow), so
+        // ordinal string ordering matches chronological ordering exactly,
+        // without needing to parse each one back into a DateTime.
+        var members = new List<(long MediaItemId, string TakenAt)>();
+        foreach (var row in connection.Query("""
+            SELECT MediaItem.Id AS MediaItemId, MediaItem.TakenAt FROM EventMediaItem
+            JOIN MediaItem ON MediaItem.Id = EventMediaItem.MediaItemId
+            WHERE EventMediaItem.EventId = @EventId
+            """, new { EventId = eventId }, transaction))
+        {
+            members.Add(((long)row.MediaItemId, (string)row.TakenAt));
+        }
+
+        var sortOrder = 0;
+        foreach (var member in members.OrderBy(m => m.TakenAt, StringComparer.Ordinal))
+        {
+            connection.Execute("""
+                UPDATE EventMediaItem SET SortOrder = @SortOrder
+                WHERE EventId = @EventId AND MediaItemId = @MediaItemId
+                """, new { SortOrder = sortOrder++, EventId = eventId, MediaItemId = member.MediaItemId }, transaction);
         }
 
         var newStartAt = newItems.Min(i => i.TakenAt);

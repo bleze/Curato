@@ -76,6 +76,38 @@ public class RescanIdempotencyTests
         });
     }
 
+    [Fact]
+    public void A_later_added_file_taken_earlier_is_inserted_chronologically_not_appended()
+    {
+        // Regression: AddMediaItemsToEvent used to always append new items
+        // with an ever-increasing SortOrder, regardless of their actual
+        // TakenAt — so a file added in a later scan always landed at the
+        // end of the thumb-grid even if it was chronologically the very
+        // first photo in the folder.
+        WithTempLibrary((repository, query) =>
+        {
+            var firstPass = new[]
+            {
+                Item("Trip/noon.jpg", new DateTime(2019, 6, 1, 12, 0, 0)),
+            };
+            RunScanPass(repository, query, firstPass);
+
+            var secondPass = new[]
+            {
+                Item("Trip/noon.jpg", new DateTime(2019, 6, 1, 12, 0, 0)),
+                Item("Trip/morning.jpg", new DateTime(2019, 6, 1, 8, 0, 0)), // taken earlier, added later
+            };
+            RunScanPass(repository, query, secondPass);
+
+            var @event = Assert.Single(query.GetAllEvents());
+            var orderedRelativePaths = @event.MediaItemIds
+                .Select(id => query.GetAllMediaItems().Single(m => m.Id == id).RelativePath)
+                .ToList();
+
+            Assert.Equal(["Trip/morning.jpg", "Trip/noon.jpg"], orderedRelativePaths);
+        });
+    }
+
     /// <summary>Delegates to the real ScanService, so a test failure here means the real endpoint is broken too.</summary>
     private static void RunScanPass(LibraryRepository repository, LibraryQueryService query, MediaItem[] rawItems) =>
         new ScanService(repository, query).ScanItems(rawItems);
