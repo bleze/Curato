@@ -5,6 +5,25 @@ import { getAuthStatus, getLibrary, logout, organizeLibrary, scanLibrary } from 
 import { AuthGate } from './components/AuthGate'
 import { EventSection } from './components/EventSection'
 
+const LAST_PATH_KEY = 'curato:lastLibraryPath'
+
+function rememberPath(path: string) {
+  try {
+    localStorage.setItem(LAST_PATH_KEY, path)
+  } catch {
+    // Private browsing / blocked storage — losing this is a minor
+    // convenience hit, not worth surfacing to the user.
+  }
+}
+
+function recallPath(): string | null {
+  try {
+    return localStorage.getItem(LAST_PATH_KEY)
+  } catch {
+    return null
+  }
+}
+
 function App() {
   const [authStatus, setAuthStatus] = useState<AuthStatus | null>(null)
   const [path, setPath] = useState('')
@@ -13,12 +32,42 @@ function App() {
   const [status, setStatus] = useState<string | null>(null)
   const [error, setError] = useState<string | null>(null)
   const [busy, setBusy] = useState(false)
+  const [autoLoading, setAutoLoading] = useState(false)
 
   useEffect(() => {
     getAuthStatus()
       .then(setAuthStatus)
       .catch((err) => setError(err instanceof Error ? err.message : String(err)))
   }, [])
+
+  // Once logged in, silently re-load whatever library you last had open —
+  // this is a read-only GET (no re-scan), so it's cheap and never touches
+  // files, and it's why the grid used to show up empty until you retyped
+  // the path and clicked Scan again.
+  useEffect(() => {
+    if (!authStatus?.isAuthenticated) {
+      return
+    }
+
+    const lastPath = recallPath()
+    if (!lastPath) {
+      return
+    }
+
+    setPath(lastPath)
+    setAutoLoading(true)
+    getLibrary(lastPath)
+      .then((lib) => {
+        setLibrary(lib)
+        setLoadedPath(lastPath)
+      })
+      .catch(() => {
+        // The folder may have moved/been unmounted since last time — fall
+        // back to the empty "type a path" state rather than showing an
+        // error for something that just happened automatically.
+      })
+      .finally(() => setAutoLoading(false))
+  }, [authStatus?.isAuthenticated])
 
   async function handleScan() {
     if (!path.trim()) return
@@ -37,6 +86,7 @@ function App() {
       const lib = await getLibrary(path)
       setLibrary(lib)
       setLoadedPath(path)
+      rememberPath(path)
     } catch (err) {
       setError(err instanceof Error ? err.message : String(err))
     } finally {
@@ -113,6 +163,7 @@ function App() {
         </button>
       </div>
 
+      {autoLoading && <p className="status">Loading your library…</p>}
       {status && <p className="status">{status}</p>}
       {error && <p className="error">{error}</p>}
 
