@@ -19,6 +19,14 @@
          SkiaSharp.NativeAssets.Linux.NoDependencies already sets above. -->
     <PackageReference Include="LibHeifSharp" Version="3.2.0" />
     <PackageReference Include="LibHeif.Native.Runtime" Version="1.20.2" />
+    <!-- Video thumbnails (VideoThumbnailGenerator) shell out to a plain
+         `ffmpeg` executable rather than a native binding — the Docker image
+         already installs it via apt-get, so this download path only ever
+         runs for local dev, where nothing installs it automatically.
+         Xabe.FFmpeg.Downloader fetches a portable prebuilt binary from its
+         upstream release on first use and caches it; Xabe.FFmpeg itself is
+         a transitive dependency of the downloader, unused directly here. -->
+    <PackageReference Include="Xabe.FFmpeg.Downloader" Version="6.1.1" />
   </ItemGroup>
 
   <PropertyGroup>

@@ -451,7 +451,10 @@ function ThumbTile({
           e.currentTarget.replaceWith(
             Object.assign(document.createElement('div'), {
               className: 'thumb-fallback',
-              textContent: 'No preview',
+              // A video already shows its own play-icon badge as the "this
+              // is a video" signal — "No preview" text underneath it just
+              // looked cluttered, so only photos get the text explanation.
+              textContent: item.kind === 'Photo' ? 'No preview' : '',
             }),
           )
         }}

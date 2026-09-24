@@ -1107,7 +1107,19 @@ Tracked as a §14 follow-on, not a separate model/phase of its own.
   photo format already got. The frontend now actually requests a thumbnail
   for video items (previously skipped that request entirely) and overlays a
   small play-icon badge so a successfully-thumbnailed video still reads as
-  a video, not a photo.]
+  a video, not a photo — the fallback text ("No preview") is suppressed for
+  videos specifically, since the badge already says "this is a video" and
+  the text underneath it just looked cluttered.
+  [Confirmed live `ffmpeg` isn't actually present everywhere this runs: the
+  Docker image's `apt-get install` only covers that one deployment target,
+  and nothing installs it on a local Windows dev machine, so every video
+  thumbnail failed outright there. `VideoThumbnailGenerator.EnsureFfmpegAvailable`
+  first tries `ffmpeg` as-is (true in Docker, no change in behavior there —
+  no new runtime internet dependency for a deployment that already works
+  offline) and only falls back to downloading a portable build (via
+  `Xabe.FFmpeg.Downloader`, cached after the first request) when that
+  fails — scoped specifically to the local-dev gap, not a general
+  replacement for the Docker image's already-solved, offline-safe install.]
 - Server-side thumbnail pipeline: decode + downscale on the server, cache to disk
   (a regenerable cache, keyed by `ContentHash`, separate from the portable `.curato/`
   data per §2), served to any client over HTTP — so a thumbnail is generated once no

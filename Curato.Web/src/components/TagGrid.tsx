@@ -100,7 +100,7 @@ export function TagGrid({
                         e.currentTarget.replaceWith(
                           Object.assign(document.createElement('div'), {
                             className: 'thumb-fallback',
-                            textContent: 'No preview',
+                            textContent: item.kind === 'Photo' ? 'No preview' : '',
                           }),
                         )
                       }}
