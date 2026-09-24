@@ -47,7 +47,7 @@ public sealed class RecycleBinService(LibraryDatabase database, RecycleBinReposi
             return null;
         }
 
-        var (id, relativePath, kind, livePhotoVideoItemId) = mediaItem.Value;
+        var (id, relativePath, kind, livePhotoVideoItemId, fileSizeBytes, quickHash) = mediaItem.Value;
         var libraryRoot = database.LibraryRoot;
         var sourceFullPath = Path.Combine(libraryRoot, relativePath);
 
@@ -60,7 +60,7 @@ public sealed class RecycleBinService(LibraryDatabase database, RecycleBinReposi
             File.Move(sourceFullPath, trashFullPath);
         }
 
-        var emptiedEvents = repository.RemoveMediaItem(id);
+        var emptiedEvents = repository.RemoveMediaItem(id, fileSizeBytes, quickHash);
         foreach (var emptiedEvent in emptiedEvents)
         {
             FolderCleanup.DeleteIfEmpty(libraryRoot, emptiedEvent.FolderPath);

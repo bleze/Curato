@@ -136,6 +136,29 @@ public class RecycleBinServiceTests
         });
     }
 
+    [Fact]
+    public void Deleting_records_a_permanent_fingerprint_that_survives_purge()
+    {
+        // Regression: an iCloud sync (Curato.iCloud.iCloudSyncRunner) has no
+        // idea a photo was deleted on purpose once its MediaItem row is gone
+        // — checking only the still-pending Recycle Bin closed that gap for
+        // the 30-day retention window, but the exact same re-download could
+        // still slip back in once the item was actually purged. The
+        // fingerprint recorded at delete time must outlive that purge.
+        WithTempLibrary((root, database, repository, service) =>
+        {
+            var mediaItemId = SeedFile(root, database, "photo.jpg");
+            var deleted = service.DeleteMediaItem(mediaItemId, "Manual")!;
+
+            var purged = service.DeletePermanently(deleted.Id);
+
+            Assert.True(purged);
+            Assert.Empty(service.ListPendingDeletion());
+            var fingerprint = Assert.Single(repository.GetAllDeletedFingerprints());
+            Assert.Equal(3, fingerprint.FileSizeBytes); // SeedFile writes [1, 2, 3]
+        });
+    }
+
     private static long SeedFile(string root, LibraryDatabase database, string relativePath)
     {
         var fullPath = Path.Combine(root, relativePath);
@@ -147,6 +170,7 @@ public class RecycleBinServiceTests
             RelativePath = relativePath,
             QuickHash = "irrelevant",
             TakenAt = new DateTime(2026, 1, 1),
+            FileSizeBytes = new FileInfo(fullPath).Length,
         };
         var saved = new LibraryRepository(database).UpsertMediaItems([item]);
         return saved[0].Id;

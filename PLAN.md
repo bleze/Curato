@@ -660,10 +660,31 @@ Photos, Immich):
   [Confirmed live this same check had a second gap: deleting a photo in Curato doesn't
   delete it from iCloud, so the next sync just downloaded it right back — its MediaItem
   row (all this check looked at) is gone the moment something's recycled, so nothing
-  recognized it as already-seen. `RemoveExactRedownloads` now also matches against a file
-  still sitting in the Recycle Bin (not yet purged), recomputing its (size, QuickHash)
-  from the still-present trashed file. Once actually purged, the Recycle Bin's whole point
-  (§5) is that it's really gone, so a re-sync past that point is treated as a new photo.]
+  recognized it as already-seen. Fixed via a new, permanent `DeletedMediaFingerprint`
+  table (§2/§5) — every delete records its (size, QuickHash) there independent of the
+  Recycle Bin's own 30-day retention/purge cycle, so `RemoveExactRedownloads` keeps
+  recognizing "you deleted this on purpose" forever, not just during the recovery
+  window. An earlier version of this fix only checked files still physically sitting in
+  the Recycle Bin (recomputing their hash from the trashed copy), which stopped working
+  the moment an item was actually purged — the permanent table has no such expiry.]
+  [Known gap, deliberately not fixed yet: every one of these checks (both the
+  already-organized-content case above and the deleted-content case) only runs *after*
+  icloudpd has already downloaded the full file over the network — there's no way to
+  skip the download itself. Confirmed live iCloud's own API *does* expose a per-asset
+  `fileChecksum` before download (in `pyicloud_ipd`'s asset version records), but
+  `icloudpd` (the CLI actually invoked here) never surfaces or uses it — its own
+  dedup is purely filename+size against the download destination folder, with no flag
+  to plug in a wider skip-list. Two possible real fixes, both a meaningfully bigger
+  lift than a tweak: (1) stage sparse placeholder files (matching already-known
+  filename+size) in the flat download folder before each sync, exploiting icloudpd's
+  *own* filename+size dedup so it skips the download itself, then clean the
+  placeholders up afterward — relies on icloudpd's undocumented internal dedup
+  behavior and sparse-file support (fine on Windows/NTFS, needs checking on the
+  Linux/Docker deployment target too); or (2) stop shelling out to icloudpd for the
+  asset-listing/selection step and drive `pyicloud_ipd`'s API directly to filter by
+  checksum before downloading anything — loses icloudpd's built-in pagination/Live-
+  Photo/RAW+JPEG handling for that step, or requires reimplementing it. Not started;
+  discuss which direction (if either) before picking one.]
 
   Also confirmed live: a "Sync now" click (a single long-running synchronous request,
   per v1's deliberate no-polling-infra simplification) gave zero visibility into whether

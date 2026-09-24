@@ -161,6 +161,22 @@ internal static class Schema
             PurgeAt TEXT NOT NULL,
             Source TEXT NOT NULL
         );
+
+        -- A permanent record of (size, hash) for anything ever deleted through
+        -- the Recycle Bin — deliberately independent of DeletedItem's own
+        -- 30-day retention/purge cycle, so a background sync (iCloud, PLAN.md
+        -- §4a) can keep recognizing "you deleted this on purpose" and never
+        -- silently bring it back, even long after the Recycle Bin itself has
+        -- forgotten the item existed. Never purged/pruned on its own.
+        CREATE TABLE IF NOT EXISTS DeletedMediaFingerprint (
+            Id INTEGER PRIMARY KEY AUTOINCREMENT,
+            FileSizeBytes INTEGER NOT NULL,
+            QuickHash TEXT NOT NULL,
+            DeletedAt TEXT NOT NULL
+        );
+
+        CREATE INDEX IF NOT EXISTS IX_DeletedMediaFingerprint_Size_Hash
+            ON DeletedMediaFingerprint (FileSizeBytes, QuickHash);
         """;
 
     /// <summary>

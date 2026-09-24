@@ -259,29 +259,22 @@ public sealed class iCloudSyncRunner(
     /// from iCloud, so the very next sync happily re-downloaded it right
     /// back — the item's MediaItem row (all this check used to look at) is
     /// gone the moment something's recycled, so nothing recognized it as
-    /// already-seen. A file still sitting in the Recycle Bin (not yet
-    /// purged) is exactly as "already have this" as a live indexed one, so
-    /// its (size, QuickHash) — recomputed from the still-present trashed
-    /// file — counts too. Once actually purged, the Recycle Bin's whole
-    /// point is that it's really gone (PLAN.md §5); a re-sync after that
-    /// point is treated as a new photo, same as it would be for any other
-    /// tool.
+    /// already-seen. Checking the Recycle Bin's still-present trashed files
+    /// only closed that gap for the 30-day retention window, though — once
+    /// actually purged, the exact same re-download could still slip back in.
+    /// `DeletedMediaFingerprint` (recorded permanently at delete time,
+    /// independent of the Recycle Bin's own purge cycle) fixes that for
+    /// good: a fingerprint recorded once keeps matching forever, so anything
+    /// ever deleted here never silently comes back from a later sync.
     /// </summary>
     private int RemoveExactRedownloads(string libraryFolder, LibraryDatabase database, LibraryQueryService query)
     {
         var existingByHash = new HashSet<(long Size, string Hash)>(
             query.GetAllMediaItems().Select(m => (m.FileSizeBytes, m.QuickHash)));
 
-        foreach (var deletedItem in new RecycleBinRepository(database).GetAllDeletedItems())
+        foreach (var fingerprint in new RecycleBinRepository(database).GetAllDeletedFingerprints())
         {
-            var trashedFullPath = Path.Combine(libraryFolder, deletedItem.TrashRelativePath);
-            if (!File.Exists(trashedFullPath))
-            {
-                continue;
-            }
-
-            var trashedInfo = new FileInfo(trashedFullPath);
-            existingByHash.Add((trashedInfo.Length, QuickHasher.ComputeQuickHash(trashedFullPath, trashedInfo.Length)));
+            existingByHash.Add((fingerprint.FileSizeBytes, fingerprint.QuickHash));
         }
 
         if (existingByHash.Count == 0)

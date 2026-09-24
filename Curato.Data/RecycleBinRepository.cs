@@ -18,11 +18,13 @@ public sealed record EmptiedEvent(long Id, string? FolderPath);
 /// </summary>
 public sealed class RecycleBinRepository(LibraryDatabase database)
 {
-    public (long Id, string RelativePath, string Kind, long? LivePhotoVideoItemId)? GetMediaItemPathAndKind(long mediaItemId)
+    public (long Id, string RelativePath, string Kind, long? LivePhotoVideoItemId, long FileSizeBytes, string QuickHash)?
+        GetMediaItemPathAndKind(long mediaItemId)
     {
         using var connection = database.OpenConnection();
-        var row = connection.QuerySingleOrDefault(
-            "SELECT Id, RelativePath, Kind, LivePhotoVideoItemId FROM MediaItem WHERE Id = @Id", new { Id = mediaItemId });
+        var row = connection.QuerySingleOrDefault("""
+            SELECT Id, RelativePath, Kind, LivePhotoVideoItemId, FileSizeBytes, QuickHash FROM MediaItem WHERE Id = @Id
+            """, new { Id = mediaItemId });
 
         if (row is null)
         {
@@ -32,7 +34,9 @@ public sealed class RecycleBinRepository(LibraryDatabase database)
         string relativePath = row.RelativePath;
         string kind = row.Kind;
         long? livePhotoVideoItemId = row.LivePhotoVideoItemId;
-        return ((long)row.Id, relativePath, kind, livePhotoVideoItemId);
+        long fileSizeBytes = row.FileSizeBytes;
+        string quickHash = row.QuickHash;
+        return ((long)row.Id, relativePath, kind, livePhotoVideoItemId, fileSizeBytes, quickHash);
     }
 
     /// <summary>
@@ -53,8 +57,15 @@ public sealed class RecycleBinRepository(LibraryDatabase database)
     /// like a broken/empty folder. Returns the emptied Events so the caller
     /// (which owns filesystem access, not this class) can also remove their
     /// now-empty on-disk folder.
+    ///
+    /// Also records a permanent (size, hash) fingerprint of what's being
+    /// deleted (<see cref="DeletedMediaFingerprint"/>) — confirmed live that
+    /// a background iCloud sync (PLAN.md §4a) has no way to know "you deleted
+    /// this on purpose" once this MediaItem row is gone, so it just
+    /// re-downloaded the exact same content right back. This fingerprint
+    /// outlives the Recycle Bin's own 30-day retention window on purpose.
     /// </summary>
-    public IReadOnlyList<EmptiedEvent> RemoveMediaItem(long mediaItemId)
+    public IReadOnlyList<EmptiedEvent> RemoveMediaItem(long mediaItemId, long fileSizeBytes, string quickHash)
     {
         using var connection = database.OpenConnection();
         using var transaction = connection.BeginTransaction();
@@ -64,6 +75,12 @@ public sealed class RecycleBinRepository(LibraryDatabase database)
 
         var candidateEventIds = connection.Query<long>(
             "SELECT EventId FROM EventMediaItem WHERE MediaItemId = @Id", new { Id = mediaItemId }, transaction).ToList();
+
+        connection.Execute("""
+            INSERT INTO DeletedMediaFingerprint (FileSizeBytes, QuickHash, DeletedAt)
+            VALUES (@FileSizeBytes, @QuickHash, @DeletedAt)
+            """, new { FileSizeBytes = fileSizeBytes, QuickHash = quickHash, DeletedAt = DateTime.UtcNow.ToString("O") },
+            transaction);
 
         connection.Execute(
             "DELETE FROM EventMediaItem WHERE MediaItemId = @Id", new { Id = mediaItemId }, transaction);
@@ -204,5 +221,20 @@ public sealed class RecycleBinRepository(LibraryDatabase database)
     {
         using var connection = database.OpenConnection();
         connection.Execute("DELETE FROM DeletedItem WHERE Id = @Id", new { Id = id });
+    }
+
+    /// <summary>Every (size, hash) fingerprint ever recorded for a deleted item — see <see cref="RemoveMediaItem"/>.</summary>
+    public IReadOnlyList<(long FileSizeBytes, string QuickHash)> GetAllDeletedFingerprints()
+    {
+        using var connection = database.OpenConnection();
+        var fingerprints = new List<(long, string)>();
+        foreach (var row in connection.Query("SELECT FileSizeBytes, QuickHash FROM DeletedMediaFingerprint"))
+        {
+            long fileSizeBytes = row.FileSizeBytes;
+            string quickHash = row.QuickHash;
+            fingerprints.Add((fileSizeBytes, quickHash));
+        }
+
+        return fingerprints;
     }
 }
