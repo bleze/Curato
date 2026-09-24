@@ -331,6 +331,66 @@ public sealed class LibraryRepository(LibraryDatabase database)
         return tripIds.Count;
     }
 
+    /// <summary>
+    /// Self-heals any Event left with zero members (and, in turn, any
+    /// TripGroup left with zero Events) — normally prevented for a fresh
+    /// delete by <c>RecycleBinRepository.RemoveMediaItem</c>, but that fix
+    /// only guards its own codepath going forward; it never swept up empty
+    /// rows a library's database already had from before it existed.
+    /// Confirmed live as a photo-less "Afternoon" event still sitting in the
+    /// library view. Idempotent, self-healing on every scan exactly like
+    /// <see cref="RemoveAutoFormedTripGroups"/>. Returns the emptied Events
+    /// (with their FolderPath, if any) so the caller can also remove their
+    /// now-empty on-disk folder — same shape as
+    /// <c>RecycleBinRepository.RemoveMediaItem</c> returns for the same
+    /// reason.
+    /// </summary>
+    public IReadOnlyList<EmptiedEvent> RemoveEmptyEvents()
+    {
+        using var connection = database.OpenConnection();
+        using var transaction = connection.BeginTransaction();
+
+        var emptyEvents = new List<(long Id, string? FolderPath)>();
+        foreach (var row in connection.Query("""
+            SELECT Event.Id, Event.FolderPath FROM Event
+            LEFT JOIN EventMediaItem ON EventMediaItem.EventId = Event.Id
+            WHERE EventMediaItem.EventId IS NULL
+            """, transaction: transaction))
+        {
+            long id = row.Id;
+            string? folderPath = row.FolderPath;
+            emptyEvents.Add((id, folderPath));
+        }
+
+        var affectedTripIds = new List<long>();
+        var emptiedEvents = new List<EmptiedEvent>();
+        foreach (var (eventId, folderPath) in emptyEvents)
+        {
+            var tripId = connection.ExecuteScalar<long?>(
+                "SELECT TripGroupId FROM Event WHERE Id = @EventId", new { EventId = eventId }, transaction);
+            if (tripId is { } t)
+            {
+                affectedTripIds.Add(t);
+            }
+
+            connection.Execute("DELETE FROM Event WHERE Id = @EventId", new { EventId = eventId }, transaction);
+            emptiedEvents.Add(new EmptiedEvent(eventId, folderPath));
+        }
+
+        foreach (var tripId in affectedTripIds.Distinct())
+        {
+            var remainingEvents = connection.ExecuteScalar<long>(
+                "SELECT COUNT(*) FROM Event WHERE TripGroupId = @TripId", new { TripId = tripId }, transaction);
+            if (remainingEvents == 0)
+            {
+                connection.Execute("DELETE FROM TripGroup WHERE Id = @TripId", new { TripId = tripId }, transaction);
+            }
+        }
+
+        transaction.Commit();
+        return emptiedEvents;
+    }
+
     /// <summary>Links a Live Photo's still frame to its motion clip (idempotent — a no-op once already set).</summary>
     public void SetLivePhotoPair(long photoMediaItemId, long videoMediaItemId)
     {

@@ -64,6 +64,11 @@ function formatRemovedBareYearTripsNote(removedBareYearTripGroupCount: number): 
   return ` Ungrouped ${removedBareYearTripGroupCount} fictitious year-folder "trip(s)" back into standalone events.`
 }
 
+function formatRemovedEmptyEventsNote(removedEmptyEventCount: number): string {
+  if (removedEmptyEventCount === 0) return ''
+  return ` Removed ${removedEmptyEventCount} empty event(s) left over from an earlier delete.`
+}
+
 function formatRemovedMissingFilesNote(removedMissingFileCount: number): string {
   if (removedMissingFileCount === 0) return ''
   return ` Removed ${removedMissingFileCount} item(s) whose file was deleted on disk.`
@@ -184,6 +189,7 @@ function App() {
           `${result.scan.itemsAddedToExistingEvents} item(s) added to existing events.` +
           formatRemovedTripsNote(result.scan.removedAutoTripGroupCount) +
           formatRemovedBareYearTripsNote(result.scan.removedBareYearTripGroupCount) +
+          formatRemovedEmptyEventsNote(result.scan.removedEmptyEventCount) +
           formatRemovedMissingFilesNote(result.scan.removedMissingFileCount) +
           formatPicasaSummary(result.picasaImport),
       )
@@ -231,6 +237,7 @@ function App() {
           `${result.scan.itemsAddedToExistingEvents} item(s) added to existing events.` +
           formatRemovedTripsNote(result.scan.removedAutoTripGroupCount) +
           formatRemovedBareYearTripsNote(result.scan.removedBareYearTripGroupCount) +
+          formatRemovedEmptyEventsNote(result.scan.removedEmptyEventCount) +
           formatPicasaSummary(result.picasaImport),
       )
       const lib = await getLibrary(loadedPath)

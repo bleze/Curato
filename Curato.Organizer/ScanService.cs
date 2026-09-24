@@ -16,6 +16,7 @@ public sealed record ScanResult(
     int ItemsAddedToExistingEvents,
     int RemovedAutoTripGroupCount,
     int RemovedBareYearTripGroupCount,
+    int RemovedEmptyEventCount,
     int RemovedMissingFileCount,
     IReadOnlyList<EventSummary> NewEvents);
 
@@ -175,6 +176,18 @@ public sealed class ScanService(LibraryRepository repository, LibraryQueryServic
         // above.
         var removedBareYearTripGroupCount = repository.RemoveBareYearAdoptedTripGroups();
 
+        // Self-heals any Event/TripGroup a library's database already had
+        // sitting at zero members — confirmed live as a photo-less
+        // "Afternoon" event still showing in the library view even after
+        // RecycleBinRepository.RemoveMediaItem started preventing new ones;
+        // that fix only guards its own codepath, it never swept up rows a
+        // database already had from before it existed.
+        var emptiedEvents = repository.RemoveEmptyEvents();
+        foreach (var emptiedEvent in emptiedEvents)
+        {
+            FolderCleanup.DeleteIfEmpty(database.LibraryRoot, emptiedEvent.FolderPath);
+        }
+
         DetectAndPersistLivePhotoPairs();
 
         return new ScanResult(
@@ -185,6 +198,7 @@ public sealed class ScanService(LibraryRepository repository, LibraryQueryServic
             ItemsAddedToExistingEvents: itemsAddedToExisting,
             RemovedAutoTripGroupCount: removedAutoTripGroupCount,
             RemovedBareYearTripGroupCount: removedBareYearTripGroupCount,
+            RemovedEmptyEventCount: emptiedEvents.Count,
             RemovedMissingFileCount: 0, // only Scan(libraryRoot) can know this; merged in there via `with`
             NewEvents: allNewEvents
                 .OrderBy(e => e.StartAt)

@@ -47,6 +47,8 @@ export interface ScanResult {
   removedAutoTripGroupCount: number
   /** Leftover fictitious "2019"-style bare-year Trips from before that heuristic was fixed, ungrouped this scan. */
   removedBareYearTripGroupCount: number
+  /** Events left with zero items (e.g. from before RecycleBin deletes started cleaning them up), removed this scan. */
+  removedEmptyEventCount: number
   /** Previously-indexed items whose file was deleted on disk outside Curato, cleaned up this scan. */
   removedMissingFileCount: number
 }

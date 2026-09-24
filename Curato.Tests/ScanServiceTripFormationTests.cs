@@ -44,13 +44,17 @@ public class ScanServiceTripFormationTests
         WithTempLibrary((repository, query, service) =>
         {
             // Simulate what an old scan (before auto-Trip formation was
-            // disabled) already wrote to this library's database.
+            // disabled) already wrote to this library's database — a real
+            // Event needs a real member, or RemoveEmptyEvents' self-heal
+            // (a separate, later fix) would sweep it up too.
+            var savedItem = repository.UpsertMediaItems([Item("day1.jpg", new DateTime(2026, 1, 1))])[0];
             var events = new List<Event>
             {
                 new()
                 {
                     StartAt = new DateTime(2026, 1, 1), EndAt = new DateTime(2026, 1, 1),
-                    Title = "Day 1", TitleIsAuto = true, NamingMode = NamingMode.CuratoManaged
+                    Title = "Day 1", TitleIsAuto = true, NamingMode = NamingMode.CuratoManaged,
+                    MediaItemIds = [savedItem.Id]
                 }
             };
             repository.SaveEvents(events);
@@ -124,18 +128,26 @@ public class ScanServiceTripFormationTests
         {
             // Simulate what a pre-fix scan already wrote to this library's
             // database: two unrelated Adopted Events swept into one bogus
-            // "2019" Trip.
+            // "2019" Trip. Each needs a real member, or RemoveEmptyEvents'
+            // self-heal (a separate, later fix) would sweep it up too.
+            var savedItems = repository.UpsertMediaItems(
+            [
+                Item("2019/Family Reunion/pic1.jpg", new DateTime(2019, 6, 1)),
+                Item("2019/Summer Trip/pic2.jpg", new DateTime(2019, 8, 1)),
+            ]);
             var events = new List<Event>
             {
                 new()
                 {
                     StartAt = new DateTime(2019, 6, 1), EndAt = new DateTime(2019, 6, 1), Title = "Family Reunion",
-                    TitleIsAuto = false, FolderPath = "2019/Family Reunion", NamingMode = NamingMode.Adopted
+                    TitleIsAuto = false, FolderPath = "2019/Family Reunion", NamingMode = NamingMode.Adopted,
+                    MediaItemIds = [savedItems[0].Id]
                 },
                 new()
                 {
                     StartAt = new DateTime(2019, 8, 1), EndAt = new DateTime(2019, 8, 1), Title = "Summer Trip",
-                    TitleIsAuto = false, FolderPath = "2019/Summer Trip", NamingMode = NamingMode.Adopted
+                    TitleIsAuto = false, FolderPath = "2019/Summer Trip", NamingMode = NamingMode.Adopted,
+                    MediaItemIds = [savedItems[1].Id]
                 },
             };
             repository.SaveEvents(events);

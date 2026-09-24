@@ -63,7 +63,7 @@ public sealed class RecycleBinService(LibraryDatabase database, RecycleBinReposi
         var emptiedEvents = repository.RemoveMediaItem(id);
         foreach (var emptiedEvent in emptiedEvents)
         {
-            TryDeleteNowEmptyEventFolder(libraryRoot, emptiedEvent.FolderPath);
+            FolderCleanup.DeleteIfEmpty(libraryRoot, emptiedEvent.FolderPath);
         }
 
         if (livePhotoVideoItemId is { } videoId)
@@ -165,23 +165,4 @@ public sealed class RecycleBinService(LibraryDatabase database, RecycleBinReposi
         }
     }
 
-    /// <summary>
-    /// An Event whose last MediaItem was just deleted no longer exists in the
-    /// DB (<see cref="RecycleBinRepository.RemoveMediaItem"/>) — if it had
-    /// been Organized into its own folder, that folder is now empty on disk
-    /// too and would otherwise sit there forever looking like debris.
-    /// </summary>
-    private static void TryDeleteNowEmptyEventFolder(string libraryRoot, string? eventFolderPath)
-    {
-        if (eventFolderPath is null)
-        {
-            return;
-        }
-
-        var fullPath = Path.Combine(libraryRoot, eventFolderPath);
-        if (Directory.Exists(fullPath) && Directory.GetFileSystemEntries(fullPath).Length == 0)
-        {
-            Directory.Delete(fullPath);
-        }
-    }
 }
