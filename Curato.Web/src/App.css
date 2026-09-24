@@ -9,17 +9,17 @@
 /* Base/secondary button text color: the accent blue used everywhere else
    (Scan, Organize, etc.), on a plain background — the "inverted" look from
    the solid-blue-background primary actions (.scan-form/.auth-form button),
-   which already set their own white text explicitly and so aren't affected
-   by this (a class selector always wins over this plain element one).
-   Fixes secondary buttons (Settings, Recycle Bin, thumbnail delete's ring
-   aside) previously falling back to the browser's plain default text
+   which already set their own on-accent text explicitly and so aren't
+   affected by this (a class selector always wins over this plain element
+   one). Fixes secondary buttons (Settings, Recycle Bin, thumbnail delete's
+   ring aside) previously falling back to the browser's plain default text
    color with no explicit color set at all. */
 button {
-  color: #005fb8;
+  color: var(--accent);
 }
 
 .tagline {
-  color: #666;
+  color: var(--text-muted);
   font-size: 14px;
   margin-top: -8px;
 }
@@ -39,15 +39,15 @@ button {
   align-items: center;
   gap: 10px;
   font-size: 13px;
-  color: #555;
+  color: var(--text-muted);
 }
 
 .account button {
   padding: 5px 12px;
   font-size: 12.5px;
   border-radius: 6px;
-  border: 1px solid #ccc;
-  background: white;
+  border: 1px solid var(--border);
+  background: var(--surface);
   cursor: pointer;
 }
 
@@ -66,8 +66,10 @@ button {
 .auth-form input {
   padding: 9px 12px;
   font-size: 14px;
-  border: 1px solid #ccc;
+  border: 1px solid var(--border);
   border-radius: 6px;
+  background: var(--surface);
+  color: var(--text);
 }
 
 .auth-form button {
@@ -75,13 +77,13 @@ button {
   font-size: 14px;
   border-radius: 6px;
   border: none;
-  background: #005fb8;
-  color: white;
+  background: var(--accent);
+  color: var(--on-accent);
   cursor: pointer;
 }
 
 .auth-form button:disabled {
-  background: #9ab8d6;
+  background: var(--accent-disabled);
   cursor: default;
 }
 
@@ -97,8 +99,8 @@ button {
   gap: 12px;
   margin-bottom: 16px;
   padding: 10px 14px;
-  background: #f5f9fe;
-  border: 1px solid #dce8f5;
+  background: var(--surface-tint);
+  border: 1px solid var(--border-soft);
   border-radius: 8px;
 }
 
@@ -108,20 +110,20 @@ button {
   font-weight: 600;
   border-radius: 6px;
   border: none;
-  background: #005fb8;
-  color: white;
+  background: var(--accent);
+  color: var(--on-accent);
   cursor: pointer;
   white-space: nowrap;
 }
 
 .organize-bar button:disabled {
-  background: #9ab8d6;
+  background: var(--accent-disabled);
   cursor: default;
 }
 
 .organize-hint {
   font-size: 12.5px;
-  color: #4e7ba6;
+  color: var(--text-hint);
   flex: 1;
 }
 
@@ -130,9 +132,9 @@ button {
   font-size: 13px;
   font-weight: 600;
   border-radius: 6px;
-  border: 1px solid #005fb8;
-  color: #005fb8;
-  background: white;
+  border: 1px solid var(--accent);
+  color: var(--accent);
+  background: var(--surface);
   cursor: pointer;
   white-space: nowrap;
 }
@@ -149,8 +151,10 @@ button {
   flex: 1;
   padding: 8px 12px;
   font-size: 14px;
-  border: 1px solid #ccc;
+  border: 1px solid var(--border);
   border-radius: 6px;
+  background: var(--surface);
+  color: var(--text);
 }
 
 .scan-form button {
@@ -158,23 +162,23 @@ button {
   font-size: 14px;
   border-radius: 6px;
   border: none;
-  background: #005fb8;
-  color: white;
+  background: var(--accent);
+  color: var(--on-accent);
   cursor: pointer;
 }
 
 .scan-form button:disabled {
-  background: #9ab8d6;
+  background: var(--accent-disabled);
   cursor: default;
 }
 
 .status {
-  color: #1b7a1b;
+  color: var(--text-success);
   font-size: 14px;
 }
 
 .error {
-  color: #b3261e;
+  color: var(--text-danger);
   font-size: 14px;
   white-space: pre-wrap;
 }
@@ -230,7 +234,7 @@ button {
 }
 
 .library-scroll:focus-visible {
-  outline: 2px solid #005fb8;
+  outline: 2px solid var(--accent);
   outline-offset: -2px;
 }
 
@@ -251,7 +255,7 @@ button {
   bottom: 0;
   left: 50%;
   width: 1px;
-  background: #dce8f5;
+  background: var(--border-soft);
 }
 
 .date-scrubber-tick {
@@ -259,11 +263,15 @@ button {
   left: 4px;
   transform: translateY(-50%);
   font-size: 10px;
-  color: #888;
+  color: var(--text-faint);
   white-space: nowrap;
   pointer-events: none;
 }
 
+/* Deliberately theme-independent (always a dark chip with white text,
+   like a native OS tooltip) rather than following the page's own
+   light/dark tokens — a small floating label reads fine either way and
+   doesn't need to match the surface underneath it. */
 .date-scrubber-tooltip {
   position: absolute;
   right: 22px;
@@ -279,7 +287,7 @@ button {
 
 .trip-header-block {
   padding-top: 20px;
-  border-top: 2px solid #005fb8;
+  border-top: 2px solid var(--accent);
   margin-top: 4px;
 }
 
@@ -291,9 +299,9 @@ button {
 .proposed-path {
   margin: -4px 0 10px;
   font-size: 12px;
-  color: #96700f;
-  background: #fff7e8;
-  border: 1px solid #f4dfa6;
+  color: var(--text-warn);
+  background: var(--surface-warn);
+  border: 1px solid var(--border-warn);
   display: inline-block;
   padding: 3px 8px;
   border-radius: 5px;
@@ -347,7 +355,7 @@ button {
 }
 
 .event-meta {
-  color: #888;
+  color: var(--text-faint);
   font-size: 12.5px;
   flex-shrink: 0;
   white-space: nowrap;
@@ -372,8 +380,8 @@ button {
   font-size: 10px;
   font-weight: 700;
   text-transform: uppercase;
-  background: #eee;
-  color: #666;
+  background: var(--surface-muted);
+  color: var(--text-muted);
   padding: 2px 6px;
   border-radius: 8px;
   vertical-align: middle;
@@ -385,7 +393,7 @@ button {
   flex-shrink: 0;
   background: none;
   border: none;
-  color: #005fb8;
+  color: var(--accent);
   cursor: pointer;
   padding: 3px;
   margin-left: 6px;
@@ -407,6 +415,10 @@ button {
 .title-edit input {
   font: inherit;
   padding: 2px 6px;
+  background: var(--surface);
+  color: var(--text);
+  border: 1px solid var(--border);
+  border-radius: 4px;
 }
 
 .title-edit button {
@@ -425,7 +437,7 @@ button {
   aspect-ratio: 1 / 1;
   border-radius: 6px;
   overflow: hidden;
-  background: #eee;
+  background: var(--thumb-bg);
   transition: transform 0.15s ease, box-shadow 0.15s ease;
 }
 
@@ -435,6 +447,9 @@ button {
   z-index: 2;
 }
 
+/* Deliberately theme-independent (a dark ring over a photo thumbnail, like
+   the play-icon badge below) rather than following the page's tokens —
+   this sits on top of arbitrary image content, not the app's own surface. */
 .thumb-delete {
   position: absolute;
   top: 4px;
@@ -460,8 +475,8 @@ button {
 .recyclebin-panel {
   margin: 16px 0;
   padding: 14px 18px;
-  border: 1px solid #dce8f5;
-  background: #fafcff;
+  border: 1px solid var(--border-soft);
+  background: var(--surface-tint-soft);
   border-radius: 8px;
   max-height: 65vh;
   overflow-y: auto;
@@ -518,13 +533,13 @@ button {
   padding: 5px 12px;
   font-size: 12.5px;
   border-radius: 6px;
-  border: 1px solid #ccc;
-  background: white;
+  border: 1px solid var(--border);
+  background: var(--surface);
   cursor: pointer;
 }
 
 .recyclebin-hint {
-  color: #666;
+  color: var(--text-muted);
   font-size: 12.5px;
   margin: 6px 0 14px;
 }
@@ -543,7 +558,7 @@ button {
 
 .recyclebin-item-path {
   font-size: 11px;
-  color: #666;
+  color: var(--text-muted);
   margin: 0;
   overflow: hidden;
   text-overflow: ellipsis;
@@ -552,14 +567,14 @@ button {
 
 .recyclebin-item-meta {
   font-size: 11px;
-  color: #96700f;
+  color: var(--text-warn);
   margin: 0;
 }
 
 .settings-section {
   margin: 18px 0;
   padding-top: 14px;
-  border-top: 1px solid #dce8f5;
+  border-top: 1px solid var(--border-soft);
 }
 
 .settings-section:first-of-type {
@@ -580,19 +595,28 @@ button {
   flex-wrap: wrap;
 }
 
-.settings-row input[type='text'],
-.settings-row input[type='password'] {
+/* :not([type='checkbox']) rather than listing text/password/number/date
+   individually — confirmed live that only listing text/password left the
+   number/date sync-scope inputs with unstyled native backgrounds, standing
+   out light against the rest of the dark theme. */
+.settings-row input:not([type='checkbox']) {
   padding: 6px 8px;
   font-size: 13px;
-  border: 1px solid #ccc;
+  border: 1px solid var(--border);
   border-radius: 6px;
+  background: var(--surface);
+  color: var(--text);
+}
+
+.settings-row input[type='text'],
+.settings-row input[type='password'] {
   flex: 1;
   min-width: 160px;
 }
 
 .settings-meta {
   font-size: 11px;
-  color: #666;
+  color: var(--text-muted);
   margin: 4px 0 0;
 }
 
@@ -606,14 +630,14 @@ button {
   padding: 4px 6px;
   font-size: 11px;
   border-radius: 5px;
-  border: 1px solid #ccc;
-  background: white;
+  border: 1px solid var(--border);
+  background: var(--surface);
   cursor: pointer;
 }
 
 .recyclebin-item-actions button.danger {
-  border-color: #e0a3a0;
-  color: #b3261e;
+  border-color: var(--border-danger);
+  color: var(--text-danger);
 }
 
 .recyclebin-item-actions button:disabled {
@@ -623,7 +647,7 @@ button {
 
 .duplicate-group {
   padding: 14px 0;
-  border-top: 1px solid #e5edf5;
+  border-top: 1px solid var(--border-softer);
 }
 
 .duplicate-group-items {
@@ -645,8 +669,8 @@ button {
 }
 
 .duplicate-item.is-keep {
-  border-color: #005fb8;
-  background: #f5f9fe;
+  border-color: var(--accent);
+  background: var(--surface-tint);
 }
 
 .duplicate-item .thumb {
@@ -655,7 +679,7 @@ button {
 
 .duplicate-item-path {
   font-size: 11px;
-  color: #666;
+  color: var(--text-muted);
   text-align: center;
   overflow: hidden;
   text-overflow: ellipsis;
@@ -667,9 +691,9 @@ button {
   padding: 6px 14px;
   font-size: 12.5px;
   border-radius: 6px;
-  border: 1px solid #e0a3a0;
-  color: #b3261e;
-  background: white;
+  border: 1px solid var(--border-danger);
+  color: var(--text-danger);
+  background: var(--surface);
   cursor: pointer;
 }
 
@@ -693,7 +717,7 @@ button {
   align-items: center;
   justify-content: center;
   font-size: 11px;
-  color: #999;
+  color: var(--text-placeholder);
   cursor: pointer;
 }
 
@@ -720,6 +744,11 @@ button {
   pointer-events: none;
 }
 
+/* Everything below (.lightbox-*) sits on the fullscreen photo viewer's own
+   always-black overlay, deliberately independent of the page's light/dark
+   theme — a photo/video viewer being black regardless of app theme is the
+   near-universal convention (Photos, Google Photos, etc.), and it's what
+   makes the actual photo the thing your eye is drawn to. */
 .lightbox-live-toggle {
   position: absolute;
   bottom: 56px;

@@ -1,15 +1,16 @@
 :root {
-  --text: #6b6375;
-  --text-h: #08060d;
+  /* Base page fundamentals — the only part of the app that historically
+     responded to OS dark preference at all (a leftover Vite-template
+     scaffold this project never removed). Everything below extends that
+     into a real, deliberate design system App.css actually uses throughout,
+     rather than each component hardcoding its own one-off light-only color
+     (confirmed live: that mismatch made a dark-OS user's Curato look like a
+     dark shell around a pile of stray white buttons/panels). */
   --bg: #fff;
+  --text: #1a1a1f;
+  --text-h: #08060d;
   --border: #e5e4e7;
   --code-bg: #f4f3ec;
-  --accent: #aa3bff;
-  --accent-bg: rgba(170, 59, 255, 0.1);
-  --accent-border: rgba(170, 59, 255, 0.5);
-  --social-bg: rgba(244, 243, 236, 0.5);
-  --shadow:
-    rgba(0, 0, 0, 0.1) 0 10px 15px -3px, rgba(0, 0, 0, 0.05) 0 4px 6px -2px;
 
   --sans: system-ui, 'Segoe UI', Roboto, sans-serif;
   --heading: system-ui, 'Segoe UI', Roboto, sans-serif;
@@ -17,16 +18,13 @@
 
   font: 18px/145% var(--sans);
   letter-spacing: 0.18px;
-  /* The rest of the app (App.css) is 100% hardcoded light-mode colors —
-     confirmed zero `var(--...)` usage and no dark-mode media query
-     anywhere in it, so the dark palette below is unused dead scaffold
-     code, not a real theme. `light dark` was telling browsers this page
-     supports both, which made native form-control defaults (e.g. a
-     <button>'s text color, when nothing else sets one) switch to their
-     dark variant under a dark OS/browser preference — while every
-     button's *background* stayed hardcoded white from App.css. White
-     text on a white background. Light-only until real dark mode exists. */
-  color-scheme: light;
+  /* `light dark` (not just `light`, a previous fix here) is safe again now
+     that App.css actually has real dark values for everything — the
+     earlier bug was native form controls flipping to dark defaults while
+     every background stayed hardcoded white (white-on-white text); with
+     dark backgrounds now real too, native controls matching the OS
+     preference is the correct, coherent behavior. */
+  color-scheme: light dark;
   color: var(--text);
   background: var(--bg);
   font-synthesis: none;
@@ -37,25 +35,66 @@
   @media (max-width: 1024px) {
     font-size: 16px;
   }
+
+  /* App.css's design tokens — every component's color lives here, not
+     hardcoded inline, so light/dark stays consistent as new UI gets added. */
+  --accent: #005fb8;
+  --accent-disabled: #9ab8d6;
+  --on-accent: #fff;
+
+  --surface: #fff;
+  --surface-tint: #f5f9fe;
+  --surface-tint-soft: #fafcff;
+  --surface-muted: #eee;
+  --surface-warn: #fff7e8;
+
+  --text-muted: #666;
+  --text-faint: #888;
+  --text-placeholder: #999;
+  --text-warn: #96700f;
+  --text-hint: #4e7ba6;
+  --text-success: #1b7a1b;
+  --text-danger: #b3261e;
+
+  --border-soft: #dce8f5;
+  --border-softer: #e5edf5;
+  --border-warn: #f4dfa6;
+  --border-danger: #e0a3a0;
+
+  --thumb-bg: #eee;
 }
 
 @media (prefers-color-scheme: dark) {
   :root {
-    --text: #9ca3af;
+    --bg: #15171c;
+    --text: #c7c9cd;
     --text-h: #f3f4f6;
-    --bg: #16171d;
-    --border: #2e303a;
+    --border: #33353c;
     --code-bg: #1f2028;
-    --accent: #c084fc;
-    --accent-bg: rgba(192, 132, 252, 0.15);
-    --accent-border: rgba(192, 132, 252, 0.5);
-    --social-bg: rgba(47, 48, 58, 0.5);
-    --shadow:
-      rgba(0, 0, 0, 0.4) 0 10px 15px -3px, rgba(0, 0, 0, 0.25) 0 4px 6px -2px;
-  }
 
-  #social .button-icon {
-    filter: invert(1) brightness(2);
+    --accent: #4da3ff;
+    --accent-disabled: #3a4a5c;
+
+    --surface: #1e2126;
+    --surface-tint: #16232f;
+    --surface-tint-soft: #171b21;
+    --surface-muted: #282b31;
+    --surface-warn: #2c2415;
+
+    --text-muted: #9aa0a8;
+    --text-faint: #7d838a;
+    --text-placeholder: #6b7178;
+    --text-warn: #d6ac5c;
+    --text-hint: #7fb2df;
+    --text-success: #5cb85c;
+    --text-danger: #e2867e;
+
+    --border-soft: #284359;
+    --border-softer: #2b2e34;
+    --border-warn: #4a3c20;
+    --border-danger: #5c3430;
+
+    --thumb-bg: #282b31;
   }
 }
 
@@ -100,17 +139,13 @@ p {
   margin: 0;
 }
 
-code,
-.counter {
+code {
   font-family: var(--mono);
+  font-size: 15px;
+  line-height: 135%;
   display: inline-flex;
   border-radius: 4px;
   color: var(--text-h);
-}
-
-code {
-  font-size: 15px;
-  line-height: 135%;
   padding: 4px 8px;
   background: var(--code-bg);
 }

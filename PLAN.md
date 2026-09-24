@@ -1120,6 +1120,35 @@ Tracked as a §14 follow-on, not a separate model/phase of its own.
   `Xabe.FFmpeg.Downloader`, cached after the first request) when that
   fails — scoped specifically to the local-dev gap, not a general
   replacement for the Docker image's already-solved, offline-safe install.]
+- Real light/dark theme, not a browser extension papering over a half-finished
+  one: `index.css` had a leftover Vite-template scaffold that flipped the page's
+  outer background/text dark under `prefers-color-scheme: dark`, but every actual
+  component's styling (App.css — buttons, panels, badges, the whole UI) was 100%
+  hardcoded light-only literals with zero awareness of that preference. On a
+  dark-OS machine this produced a genuinely broken-looking mix: a dark shell
+  around stray white buttons/cards. [Confirmed live via a cross-browser
+  comparison that surfaced the gap: Chrome (with a user-installed "Darker"
+  extension repainting the page) looked coherently dark, while Brave — with no
+  such extension, i.e. Curato's actual, unmasked design — showed the real,
+  inconsistent mix. Verified by checking `getComputedStyle` on an "obviously
+  broken-looking" button: it correctly resolved to the intentionally-white
+  values, proving the *paint* mismatch belonged to the extension, not a Curato
+  bug, before starting any design work. Fixed by building a real design-token
+  system instead of one-off literals: `index.css`'s `:root` now defines every
+  color App.css uses (`--accent`, `--surface*`, `--text*`, `--border*`, etc.)
+  with both light and dark values, switched via the same
+  `prefers-color-scheme: dark` media query the outer shell already used —
+  every hardcoded color in App.css was replaced with the matching token.
+  `color-scheme` was widened back from `light` to `light dark` now that dark
+  values are real everywhere (the earlier `light`-only fix existed specifically
+  because native form controls could flip dark while every background stayed
+  hardcoded white — moot now that backgrounds are theme-aware too). Deliberately
+  exempted: the Lightbox's fullscreen viewer chrome and small image-overlay
+  elements (delete button, live-photo badge, play-icon badge, the date-scrubber
+  tooltip) — these sit on top of arbitrary photo content or an always-black
+  overlay, not the app's own surface, so they intentionally stay fixed
+  dark/white regardless of theme, matching how virtually every photo viewer
+  (Google Photos, Apple Photos, etc.) keeps its viewer chrome constant.]
 - Server-side thumbnail pipeline: decode + downscale on the server, cache to disk
   (a regenerable cache, keyed by `ContentHash`, separate from the portable `.curato/`
   data per §2), served to any client over HTTP — so a thumbnail is generated once no
