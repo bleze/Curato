@@ -199,6 +199,15 @@ button {
   overflow-y: auto;
   overflow-x: hidden;
   padding-bottom: 48px;
+  /* A hovered .thumb scales up (transform: scale(1.08)) around its own
+     center, so it grows a few px past its own box on every side —
+     confirmed live that the leftmost column's tiles visibly got clipped by
+     this container's own overflow-x:hidden edge, since nothing reserved
+     room for that growth to bleed into. contentRect (ResizeObserver, used
+     for column-count/thumbSize math) already excludes padding, so this
+     doesn't need any compensating change elsewhere. */
+  padding-left: 10px;
+  padding-top: 4px;
 }
 
 /* LibraryGrid only (reserves room for its date scrubber, and the real
@@ -294,9 +303,16 @@ button {
   margin-top: 20px;
 }
 
+/* margin-bottom does nothing here on purpose — LibraryGrid.tsx's blocks are
+   all `position: absolute`, placed purely by summing estimateSize()'s JS
+   return values, not normal document flow, so a CSS margin between two
+   virtualized siblings is silently ignored. The gap below a header (both
+   for breathing room and so a hovered thumbnail's scale-up transform has
+   room to grow into without visually overlapping the "Will move to" pill)
+   is baked into EVENT_HEADER_HEIGHT itself instead — confirmed live after
+   this margin was bumped to 20px with literally no visible change. */
 .event-header {
   padding-top: 16px;
-  margin-bottom: 8px;
 }
 
 .event-header-row {

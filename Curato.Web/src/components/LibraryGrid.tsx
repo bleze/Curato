@@ -14,8 +14,8 @@ const GAP = 6
 // These are exact, not generous guesses — see the getItemKey/estimateSize
 // comment below for why headers are never remeasured against reality once
 // rendered (that's the scrollbar drag-handle desync bug's real remaining
-// cause). Two different estimate-vs-reality mismatches have already come
-// from this file guessing wrong here, both confirmed live:
+// cause). Several estimate-vs-reality mismatches have already come from
+// this file guessing wrong here, all confirmed live:
 // (1) an under-filled EVENT_HEADER_HEIGHT left a dead gap below every
 //     non-Organized event's header, and (2) a title or "Will move to" hint
 //     that wrapped to a second line made the reserved slot too SHORT,
@@ -29,7 +29,20 @@ const GAP = 6
 //     vertical space, not wasted) rather than cramming it into the same row
 //     — its own container is wide enough that this hasn't needed the same
 //     right-aligned same-row treatment .event-header got.
-const EVENT_HEADER_HEIGHT = 50
+// (3) The visual gap under a header has to live *inside* this number, not
+//     in CSS margin — every block here is `position: absolute`, placed by
+//     summing estimateSize()'s return values, not normal document flow, so
+//     a margin between two virtualized siblings is silently ignored
+//     (confirmed live: bumping .event-header's margin-bottom from 8px to
+//     20px changed nothing on screen). EVENT_HEADER_CONTENT_HEIGHT is the
+//     header's real measured height (padding-top + its one text row, no
+//     wrap possible per (2) above); EVENT_HEADER_GAP is genuine breathing
+//     room added on top of that, big enough that a hovered thumbnail's
+//     `transform: scale(1.08)` (App.css) has room to grow into without
+//     visually overlapping the "Will move to" pill above it.
+const EVENT_HEADER_CONTENT_HEIGHT = 50
+const EVENT_HEADER_GAP = 11
+const EVENT_HEADER_HEIGHT = EVENT_HEADER_CONTENT_HEIGHT + EVENT_HEADER_GAP
 const TRIP_HEADER_HEIGHT = 84
 const PROPOSED_PATH_HEIGHT = 54
 
