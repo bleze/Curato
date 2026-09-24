@@ -82,21 +82,26 @@ public sealed class MediaController : ControllerBase
             return NotFound();
         }
 
+        var isVideo = MediaFileScanner.IsVideoExtension(Path.GetExtension(fullPath));
+
         try
         {
             var database = new LibraryDatabase(libraryPath);
             database.EnsureSchema();
-            var edits = new LibraryQueryService(database).GetEditsForRelativePath(relativePath);
+            // Edits (§10) never apply to video yet — same as /raw above.
+            var edits = isVideo ? [] : new LibraryQueryService(database).GetEditsForRelativePath(relativePath);
 
             var jpegBytes = ThumbnailCache.GetOrGenerate(
                 root, relativePath, new FileInfo(fullPath), maxDimension, edits,
-                () => ThumbnailGenerator.GenerateJpeg(fullPath, maxDimension, edits));
+                () => isVideo
+                    ? VideoThumbnailGenerator.GenerateJpeg(fullPath, maxDimension)
+                    : ThumbnailGenerator.GenerateJpeg(fullPath, maxDimension, edits));
             return File(jpegBytes, "image/jpeg");
         }
         catch (Exception) when (!System.Diagnostics.Debugger.IsAttached)
         {
-            // Formats Skia can't decode yet (RAW/HEIC/video — §1) or a
-            // corrupt file both land here; no image rather than a 500.
+            // Formats Skia/ffmpeg can't decode (RAW, an unsupported codec) or
+            // a corrupt file both land here; no image rather than a 500.
             return NotFound();
         }
     }

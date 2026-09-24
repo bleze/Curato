@@ -1064,6 +1064,50 @@ Tracked as a §14 follow-on, not a separate model/phase of its own.
   width starts at `null` and the component renders an empty (but ref'd, so
   still measurable) scroll container until `ResizeObserver`'s own first
   callback — the one guaranteed to be correct — actually fires.]
+  [Confirmed live the "deliberately generous" header estimate above traded
+  the overlap bug for a new, visible one: `.event-header`'s
+  `PROPOSED_PATH_HEIGHT` addition assumed the "Will move to" hint rendered
+  as its own stacked line, but it actually rendered as a same-row flex item
+  (baseline-aligned, so the row's real height was just its tallest item, not
+  additive) — reserving 132px for content that only rendered ~57-65px tall,
+  a large dead gap under every non-Organized event's header. Rather than
+  keep guessing a buffer for arbitrary-length content, the real fix was
+  removing the arbitrary length: `.editable-title-text` and `.proposed-path`
+  (moved back onto the same row as the title, right-aligned via
+  `margin-left: auto`, full text still available as a native tooltip) are
+  now both forced to a single line via `text-overflow: ellipsis` instead of
+  being left to wrap. A header's actual rendered height is now a true
+  constant instead of a function of title/path length, so `EVENT_HEADER_HEIGHT`
+  could shrink from a padded guess (78) to the exact measured value (50) —
+  eliminating the gap instead of just resizing it, with no risk of the
+  under-estimate/overlap failure mode either, since nothing can wrap anymore.]
+  [A second, unrelated bug hiding in the same area: `DateScrubber`'s rail
+  (the year-jump strip at the right edge) sat at a hardcoded `right: 0`,
+  which is exactly where the real native scrollbar also renders — confirmed
+  live by measuring both elements' actual pixel bounds, they occupied the
+  identical strip. Every drag on what looked like the scrollbar was actually
+  captured by DateScrubber's "jump to nearest year marker" handler instead,
+  which only supports a handful of discrete positions and could never reach
+  the true bottom of a year's content — reported as "you cannot scroll to
+  the bottom." Fixed by measuring the browser's actual scrollbar width live
+  (`offsetWidth - clientWidth`, 0 on some platforms/overlay scrollbars,
+  ~15-17px on Windows) and shifting the rail to sit just to its left,
+  giving the real scrollbar its own untouched, fully draggable strip.]
+- Video thumbnails: a video's grid/viewer tile was never anything but a static
+  "Video" placeholder — the frontend didn't even attempt to load one, since
+  nothing on the server could generate one yet. [Phase 2 built shape:
+  `Curato.Media.VideoThumbnailGenerator` shells out to `ffmpeg` (already
+  present in the Docker image for exactly this, per its own install
+  comment) to grab a single frame ~0.5s into the clip — same reasoning as
+  icloudpd/pyicloud_ipd (§4a): a mature external tool already does this
+  well, no reason to reimplement video demuxing in-process. `MediaController`
+  branches to it for video extensions instead of `ThumbnailGenerator`
+  (SkiaSharp can't decode video containers at all); an undecodable video
+  or a corrupt file both degrade to the same "no preview" fallback a bad
+  photo format already got. The frontend now actually requests a thumbnail
+  for video items (previously skipped that request entirely) and overlays a
+  small play-icon badge so a successfully-thumbnailed video still reads as
+  a video, not a photo.]
 - Server-side thumbnail pipeline: decode + downscale on the server, cache to disk
   (a regenerable cache, keyed by `ContentHash`, separate from the portable `.curato/`
   data per §2), served to any client over HTTP — so a thumbnail is generated once no

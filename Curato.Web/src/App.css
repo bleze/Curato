@@ -201,16 +201,19 @@ button {
   padding-bottom: 48px;
 }
 
-/* LibraryGrid only (reserves room for its date scrubber) — deliberately not
-   part of the base .library-scroll rule above, since TagGrid shares that
-   class but has no scrubber: this padding was previously applied there too,
+/* LibraryGrid only (reserves room for its date scrubber, and the real
+   scrollbar rendered just to the scrubber's right) — deliberately not part
+   of the base .library-scroll rule above, since TagGrid shares that class
+   but has no scrubber: this padding was previously applied there too,
    wasting width AND (since JS measured the padded border-box directly)
    causing the same computed-thumbnail-size-too-wide bug this class was
-   trying to avoid for its own case. This value is duplicated as
-   SCRUBBER_RESERVED_WIDTH in LibraryGrid.tsx, which subtracts it back out
-   of its own width measurement — update both together if it changes. */
+   trying to avoid for its own case. The actual value is set inline from
+   LibraryGrid.tsx's live-measured scrollGutter (scrollbar width +
+   DateScrubber's own width) rather than a fixed number here — the two used
+   to just assume 18px covered both, which happened to be wrong on this
+   machine's scrollbar and caused DateScrubber to sit exactly on top of it. */
 .library-scroll-with-scrubber {
-  padding-right: 18px;
+  padding-right: 16px;
 }
 
 .library-scroll:focus {
@@ -292,21 +295,60 @@ button {
 }
 
 .event-header {
-  display: flex;
-  align-items: baseline;
-  gap: 10px;
   padding-top: 16px;
   margin-bottom: 8px;
 }
 
+.event-header-row {
+  display: flex;
+  align-items: baseline;
+  gap: 10px;
+  min-width: 0;
+}
+
 .event-header h3 {
+  display: flex;
+  align-items: baseline;
+  gap: 4px;
   margin: 0;
   font-size: 15px;
+  min-width: 0;
+  flex-shrink: 1;
+  overflow: hidden;
+}
+
+/* Truncates instead of wrapping — the title's own row height has to stay
+   exactly one line always (LibraryGrid.tsx never remeasures a header
+   against its real DOM height, to avoid reintroducing the scrollbar
+   drag-handle desync bug), so a title long enough to wrap would either
+   overflow its reserved slot or force a taller estimate that leaves a gap
+   under every shorter, more common title. */
+.editable-title-text {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  min-width: 0;
 }
 
 .event-meta {
   color: #888;
   font-size: 12.5px;
+  flex-shrink: 0;
+  white-space: nowrap;
+}
+
+/* Same-row, pushed to the far right rather than stacked on its own line —
+   a stacked line reserved a whole extra estimated row height for content
+   that's usually much shorter, leaving a visible gap under the header.
+   Truncates for the same never-wrap reason as .editable-title-text above;
+   the full path is still available as a native tooltip (title attribute). */
+.event-header-row .proposed-path {
+  margin: 0 0 0 auto;
+  flex-shrink: 1;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
 
 .badge {
@@ -324,6 +366,7 @@ button {
 .title-rename-button {
   display: inline-flex;
   align-items: center;
+  flex-shrink: 0;
   background: none;
   border: none;
   color: #005fb8;
@@ -649,6 +692,15 @@ button {
   background: rgba(0, 0, 0, 0.55);
   padding: 2px 5px;
   border-radius: 4px;
+  pointer-events: none;
+}
+
+.video-play-badge {
+  position: absolute;
+  top: 50%;
+  left: 50%;
+  transform: translate(-50%, -50%);
+  cursor: pointer;
   pointer-events: none;
 }
 

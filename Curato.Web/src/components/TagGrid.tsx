@@ -91,27 +91,26 @@ export function TagGrid({
               <div className="thumb-grid" style={{ gridTemplateColumns: `repeat(${columnCount}, 1fr)` }}>
                 {row.map((item, i) => (
                   <div className="thumb" key={item.id} title={item.relativePath}>
-                    {item.kind === 'Photo' ? (
-                      <img
-                        src={thumbnailUrl(libraryPath, item.relativePath)}
-                        alt=""
-                        loading="lazy"
-                        onClick={() => setLightbox(virtualRow.index * columnCount + i)}
-                        onError={(e) => {
-                          e.currentTarget.replaceWith(
-                            Object.assign(document.createElement('div'), {
-                              className: 'thumb-fallback',
-                              textContent: 'No preview',
-                            }),
-                          )
-                        }}
-                      />
-                    ) : (
-                      <div
-                        className="thumb-fallback"
-                        onClick={() => setLightbox(virtualRow.index * columnCount + i)}
-                      >
-                        Video
+                    <img
+                      src={thumbnailUrl(libraryPath, item.relativePath)}
+                      alt=""
+                      loading="lazy"
+                      onClick={() => setLightbox(virtualRow.index * columnCount + i)}
+                      onError={(e) => {
+                        e.currentTarget.replaceWith(
+                          Object.assign(document.createElement('div'), {
+                            className: 'thumb-fallback',
+                            textContent: 'No preview',
+                          }),
+                        )
+                      }}
+                    />
+                    {item.kind === 'Video' && (
+                      <div className="video-play-badge" aria-hidden="true">
+                        <svg viewBox="0 0 24 24" width="32" height="32">
+                          <circle cx="12" cy="12" r="11" fill="rgba(0,0,0,0.55)" />
+                          <path d="M9.5 7.5v9l7-4.5z" fill="white" />
+                        </svg>
                       </div>
                     )}
                     {item.liveVideoRelativePath && <span className="live-badge">LIVE</span>}

@@ -17,9 +17,12 @@ export interface DateMarker {
 export function DateScrubber({
   markers,
   onJump,
+  rightOffset,
 }: {
   markers: DateMarker[]
   onJump: (blockIndex: number) => void
+  /** Shifts the rail left of the real scrollbar (measured live) so the two never occupy the same pixels — see LibraryGrid.tsx. */
+  rightOffset: number
 }) {
   const railRef = useRef<HTMLDivElement>(null)
   const [hover, setHover] = useState<{ y: number; label: string } | null>(null)
@@ -54,7 +57,7 @@ export function DateScrubber({
   }
 
   return (
-    <div className="date-scrubber" ref={railRef} onMouseDown={handleMouseDown}>
+    <div className="date-scrubber" ref={railRef} onMouseDown={handleMouseDown} style={{ right: rightOffset }}>
       {markers
         .filter((m) => m.isMajor)
         .map((m) => (

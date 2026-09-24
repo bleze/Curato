@@ -11,14 +11,25 @@ import { Lightbox } from './Lightbox'
 // letting the browser lay out an unbounded number of rows at once.
 const THUMB_MIN_WIDTH = 120
 const GAP = 6
-// These are deliberately generous, worst-case estimates rather than
-// tightly-measured ones — see the getItemKey/estimateSize comment below for
-// why headers are no longer remeasured against reality at all. Title text
-// (h3, arbitrary length) and the "Will move to" hint (a folder path,
-// arbitrary length) can each wrap to a second line at narrower column
-// counts, so the estimate has to comfortably cover a 2-line wrap for both,
-// not just the common single-line case.
-const EVENT_HEADER_HEIGHT = 78
+// These are exact, not generous guesses — see the getItemKey/estimateSize
+// comment below for why headers are never remeasured against reality once
+// rendered (that's the scrollbar drag-handle desync bug's real remaining
+// cause). Two different estimate-vs-reality mismatches have already come
+// from this file guessing wrong here, both confirmed live:
+// (1) an under-filled EVENT_HEADER_HEIGHT left a dead gap below every
+//     non-Organized event's header, and (2) a title or "Will move to" hint
+//     that wrapped to a second line made the reserved slot too SHORT,
+//     which is worse — it corrupts the next block's position, not just
+//     wastes space. Rather than keep guessing a buffer, .editable-title-text
+//     and .proposed-path (App.css) are both forced to a single line via
+//     `text-overflow: ellipsis` — the actual rendered height of a header is
+//     now a true constant, not a function of arbitrary-length content, so
+//     these numbers can be tight instead of generous. TripGroup headers
+//     still stack `.proposed-path` on its own line below the title (real
+//     vertical space, not wasted) rather than cramming it into the same row
+//     — its own container is wide enough that this hasn't needed the same
+//     right-aligned same-row treatment .event-header got.
+const EVENT_HEADER_HEIGHT = 50
 const TRIP_HEADER_HEIGHT = 84
 const PROPOSED_PATH_HEIGHT = 54
 
@@ -143,6 +154,19 @@ export function LibraryGrid({
   // removes the wrong state entirely rather than needing to find and patch
   // every path that could produce it.
   const [containerWidth, setContainerWidth] = useState<number | null>(null)
+  // The DateScrubber rail used to sit at a hardcoded `right: 0`, which is
+  // exactly where the real native scrollbar also renders — confirmed live
+  // (measuring both elements' actual pixel bounds) that they occupied the
+  // identical strip, so every drag on what looked like the scrollbar was
+  // actually captured by DateScrubber's "jump to nearest year marker"
+  // handler instead. That handler only supports a handful of discrete
+  // marker positions, so it could never reach the true bottom of a year's
+  // content — reported as "you cannot scroll to the bottom." Measuring the
+  // browser's actual scrollbar width (0 on some platforms/overlay
+  // scrollbars, ~15-17px on Windows) and shifting the rail to sit just to
+  // its left gives the real scrollbar its own untouched, fully draggable
+  // strip.
+  const [scrollbarWidth, setScrollbarWidth] = useState(0)
   const [lightbox, setLightbox] = useState<{ items: MediaItemDto[]; index: number } | null>(null)
 
   useLayoutEffect(() => {
@@ -157,10 +181,19 @@ export function LibraryGrid({
     // this view. ResizeObserver's own first callback is the only
     // measurement used now, since it's the one that's actually guaranteed
     // correct (content-box, padding and scrollbar both already excluded).
-    const observer = new ResizeObserver((entries) => setContainerWidth(entries[0].contentRect.width))
+    const observer = new ResizeObserver((entries) => {
+      setContainerWidth(entries[0].contentRect.width)
+      setScrollbarWidth(el.offsetWidth - el.clientWidth)
+    })
     observer.observe(el)
     return () => observer.disconnect()
   }, [])
+
+  // Kept in sync with .date-scrubber's own CSS width (App.css) — the total
+  // gutter this view reserves so thumbnails never render underneath either
+  // the scrubber rail or the real scrollbar next to it.
+  const DATE_SCRUBBER_WIDTH = 16
+  const scrollGutter = scrollbarWidth + DATE_SCRUBBER_WIDTH
 
   const columnCount = containerWidth !== null ? Math.max(1, Math.floor((containerWidth + GAP) / (THUMB_MIN_WIDTH + GAP))) : 1
   const thumbSize = containerWidth !== null ? (containerWidth - (columnCount - 1) * GAP) / columnCount : THUMB_MIN_WIDTH
@@ -188,7 +221,7 @@ export function LibraryGrid({
         return TRIP_HEADER_HEIGHT + (block.trip.proposedFolderPath ? PROPOSED_PATH_HEIGHT : 0)
       }
       if (block.type === 'event-header') {
-        return EVENT_HEADER_HEIGHT + (block.event.proposedFolderPath ? PROPOSED_PATH_HEIGHT : 0)
+        return EVENT_HEADER_HEIGHT
       }
       return rowHeight
     },
@@ -201,7 +234,12 @@ export function LibraryGrid({
   if (containerWidth === null) {
     return (
       <div className="library-scroll-wrapper">
-        <div className="library-scroll library-scroll-with-scrubber" ref={scrollRef} tabIndex={0} />
+        <div
+          className="library-scroll library-scroll-with-scrubber"
+          ref={scrollRef}
+          tabIndex={0}
+          style={{ paddingRight: scrollGutter }}
+        />
       </div>
     )
   }
@@ -212,7 +250,12 @@ export function LibraryGrid({
 
   return (
     <div className="library-scroll-wrapper">
-      <div className="library-scroll library-scroll-with-scrubber" ref={scrollRef} tabIndex={0}>
+      <div
+        className="library-scroll library-scroll-with-scrubber"
+        ref={scrollRef}
+        tabIndex={0}
+        style={{ paddingRight: scrollGutter }}
+      >
       <div style={{ height: virtualizer.getTotalSize(), position: 'relative', width: '100%' }}>
         {virtualizer.getVirtualItems().map((virtualRow) => {
           const block = blocks[virtualRow.index]
@@ -250,20 +293,24 @@ export function LibraryGrid({
 
               {block.type === 'event-header' && (
                 <header className="event-header">
-                  <h3>
-                    <EditableTitle
-                      title={block.event.title}
-                      onRename={(title) => onRenameEvent(block.event.id, title)}
-                    />
-                  </h3>
-                  <span className="event-meta">
-                    {formatRange(block.event.startAt, block.event.endAt)} &middot;{' '}
-                    {block.event.items.length} items
-                    {block.event.namingMode === 'Adopted' && <span className="badge">Adopted</span>}
-                  </span>
-                  {block.event.proposedFolderPath && (
-                    <p className="proposed-path">Will move to: {block.event.proposedFolderPath}</p>
-                  )}
+                  <div className="event-header-row">
+                    <h3>
+                      <EditableTitle
+                        title={block.event.title}
+                        onRename={(title) => onRenameEvent(block.event.id, title)}
+                      />
+                    </h3>
+                    <span className="event-meta">
+                      {formatRange(block.event.startAt, block.event.endAt)} &middot;{' '}
+                      {block.event.items.length} items
+                      {block.event.namingMode === 'Adopted' && <span className="badge">Adopted</span>}
+                    </span>
+                    {block.event.proposedFolderPath && (
+                      <p className="proposed-path" title={`Will move to: ${block.event.proposedFolderPath}`}>
+                        Will move to: {block.event.proposedFolderPath}
+                      </p>
+                    )}
+                  </div>
                 </header>
               )}
 
@@ -289,6 +336,7 @@ export function LibraryGrid({
       <DateScrubber
         markers={dateMarkers}
         onJump={(blockIndex) => virtualizer.scrollToIndex(blockIndex, { align: 'start' })}
+        rightOffset={scrollbarWidth}
       />
 
       {lightbox && (
@@ -318,7 +366,9 @@ function EditableTitle({ title, onRename }: { title: string; onRename: (newTitle
   if (!editing) {
     return (
       <>
-        {title}
+        <span className="editable-title-text" title={title}>
+          {title}
+        </span>
         <button
           type="button"
           className="title-rename-button"
@@ -379,24 +429,26 @@ function ThumbTile({
 }) {
   return (
     <div className="thumb" title={item.relativePath}>
-      {item.kind === 'Photo' ? (
-        <img
-          src={thumbnailUrl(libraryPath, item.relativePath)}
-          alt=""
-          loading="lazy"
-          onClick={onOpen}
-          onError={(e) => {
-            e.currentTarget.replaceWith(
-              Object.assign(document.createElement('div'), {
-                className: 'thumb-fallback',
-                textContent: 'No preview',
-              }),
-            )
-          }}
-        />
-      ) : (
-        <div className="thumb-fallback" onClick={onOpen}>
-          Video
+      <img
+        src={thumbnailUrl(libraryPath, item.relativePath)}
+        alt=""
+        loading="lazy"
+        onClick={onOpen}
+        onError={(e) => {
+          e.currentTarget.replaceWith(
+            Object.assign(document.createElement('div'), {
+              className: 'thumb-fallback',
+              textContent: 'No preview',
+            }),
+          )
+        }}
+      />
+      {item.kind === 'Video' && (
+        <div className="video-play-badge" aria-hidden="true">
+          <svg viewBox="0 0 24 24" width="32" height="32">
+            <circle cx="12" cy="12" r="11" fill="rgba(0,0,0,0.55)" />
+            <path d="M9.5 7.5v9l7-4.5z" fill="white" />
+          </svg>
         </div>
       )}
       {item.liveVideoRelativePath && <span className="live-badge">LIVE</span>}
