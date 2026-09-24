@@ -225,7 +225,7 @@ public sealed class iCloudSyncRunner(
         database.EnsureSchema();
         var query = new LibraryQueryService(database);
 
-        var redownloadsRemoved = RemoveExactRedownloads(libraryFolder, query);
+        var redownloadsRemoved = RemoveExactRedownloads(libraryFolder, database, query);
         if (redownloadsRemoved > 0)
         {
             logger.LogInformation(
@@ -254,11 +254,36 @@ public sealed class iCloudSyncRunner(
     /// content already organized under some other path, so it's deleted
     /// immediately rather than ever reaching ScanService, where it would
     /// otherwise get indexed as a second, cluttering copy.
+    ///
+    /// Also confirmed live: deleting a photo in Curato doesn't delete it
+    /// from iCloud, so the very next sync happily re-downloaded it right
+    /// back — the item's MediaItem row (all this check used to look at) is
+    /// gone the moment something's recycled, so nothing recognized it as
+    /// already-seen. A file still sitting in the Recycle Bin (not yet
+    /// purged) is exactly as "already have this" as a live indexed one, so
+    /// its (size, QuickHash) — recomputed from the still-present trashed
+    /// file — counts too. Once actually purged, the Recycle Bin's whole
+    /// point is that it's really gone (PLAN.md §5); a re-sync after that
+    /// point is treated as a new photo, same as it would be for any other
+    /// tool.
     /// </summary>
-    private int RemoveExactRedownloads(string libraryFolder, LibraryQueryService query)
+    private int RemoveExactRedownloads(string libraryFolder, LibraryDatabase database, LibraryQueryService query)
     {
         var existingByHash = new HashSet<(long Size, string Hash)>(
             query.GetAllMediaItems().Select(m => (m.FileSizeBytes, m.QuickHash)));
+
+        foreach (var deletedItem in new RecycleBinRepository(database).GetAllDeletedItems())
+        {
+            var trashedFullPath = Path.Combine(libraryFolder, deletedItem.TrashRelativePath);
+            if (!File.Exists(trashedFullPath))
+            {
+                continue;
+            }
+
+            var trashedInfo = new FileInfo(trashedFullPath);
+            existingByHash.Add((trashedInfo.Length, QuickHasher.ComputeQuickHash(trashedFullPath, trashedInfo.Length)));
+        }
+
         if (existingByHash.Count == 0)
         {
             return 0;
