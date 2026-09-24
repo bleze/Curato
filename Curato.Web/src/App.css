@@ -322,15 +322,20 @@ button {
 }
 
 .title-rename-button {
+  display: inline-flex;
+  align-items: center;
   background: none;
   border: none;
   color: #005fb8;
-  font-size: 11px;
   cursor: pointer;
-  padding: 0;
-  margin-left: 8px;
-  text-decoration: underline;
+  padding: 3px;
+  margin-left: 6px;
   vertical-align: middle;
+  opacity: 0.6;
+}
+
+.title-rename-button:hover {
+  opacity: 1;
 }
 
 .title-edit {
