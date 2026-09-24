@@ -657,6 +657,13 @@ Photos, Immich):
   matches an already-indexed `MediaItem` anywhere else in the library — i.e. a
   byte-identical re-download of content already organized under some other path — is
   deleted immediately rather than ever reaching the scan/cluster pipeline as a duplicate.
+  [Confirmed live this same check had a second gap: deleting a photo in Curato doesn't
+  delete it from iCloud, so the next sync just downloaded it right back — its MediaItem
+  row (all this check looked at) is gone the moment something's recycled, so nothing
+  recognized it as already-seen. `RemoveExactRedownloads` now also matches against a file
+  still sitting in the Recycle Bin (not yet purged), recomputing its (size, QuickHash)
+  from the still-present trashed file. Once actually purged, the Recycle Bin's whole point
+  (§5) is that it's really gone, so a re-sync past that point is treated as a new photo.]
 
   Also confirmed live: a "Sync now" click (a single long-running synchronous request,
   per v1's deliberate no-polling-infra simplification) gave zero visibility into whether
@@ -752,6 +759,11 @@ enforce a Curato-specific retention policy, neither of which an OS-level trash c
   turn, removes its TripGroup too if that leaves the TripGroup with no Events left), and
   `RecycleBinService` deletes that Event's now-empty on-disk folder if it had been
   Organized into one.]
+  [Confirmed live that fix only guarded new deletes going forward: a library's database
+  could already have an Event stuck at zero members from before it existed, and nothing
+  ever swept those up — reported as a photo-less "Afternoon" Event still showing up
+  after upgrading. `LibraryRepository.RemoveEmptyEvents` now self-heals this on every
+  scan, same pattern as the CuratoManaged/bare-year Trip self-heals below.]
 
 ## 6. Auto Backup
 
