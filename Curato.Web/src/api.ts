@@ -189,11 +189,18 @@ export interface ScanApiResponse {
   picasaImport: PicasaImportResult
 }
 
-export function scanLibrary(path: string): Promise<ScanApiResponse> {
+// `signal` lets Cancel abort the client's wait for a response — the scan
+// itself has no server-side cancellation support (ScanService.Scan is a
+// single synchronous walk with nothing to check a token against), so an
+// aborted scan keeps running to completion on the server; Cancel only stops
+// this tab from waiting on it. Safe either way since re-scanning is
+// idempotent (ScanService's own docs).
+export function scanLibrary(path: string, signal?: AbortSignal): Promise<ScanApiResponse> {
   return fetch('/api/scan', {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify({ path }),
+    signal,
   }).then(asJson<ScanApiResponse>)
 }
 

@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react'
+import { useEffect, useRef, useState } from 'react'
 import './App.css'
 import type { AuthStatus, LibraryDto, PicasaImportResult } from './api'
 import {
@@ -96,6 +96,8 @@ function App() {
   const [status, setStatus] = useState<string | null>(null)
   const [error, setError] = useState<string | null>(null)
   const [busy, setBusy] = useState(false)
+  const [scanning, setScanning] = useState(false)
+  const scanAbortRef = useRef<AbortController | null>(null)
   const [autoLoading, setAutoLoading] = useState(false)
   const [showRecycleBin, setShowRecycleBin] = useState(false)
   const [showDuplicates, setShowDuplicates] = useState(false)
@@ -190,11 +192,14 @@ function App() {
 
   async function handleScan() {
     if (!path.trim()) return
+    const controller = new AbortController()
+    scanAbortRef.current = controller
     setBusy(true)
+    setScanning(true)
     setError(null)
     setStatus('Scanning…')
     try {
-      const result = await scanLibrary(path)
+      const result = await scanLibrary(path, controller.signal)
       setStatus(
         `${result.scan.mediaItemCount} items total \u2014 new this scan: ` +
           `${result.scan.newAutoOrganizedEventCount} auto-organized event(s), ` +
@@ -212,10 +217,25 @@ function App() {
       setLoadedPath(path)
       rememberPath(path)
     } catch (err) {
-      setError(err instanceof Error ? err.message : String(err))
+      if (err instanceof DOMException && err.name === 'AbortError') {
+        // The server has no way to actually stop mid-walk (ScanService.Scan
+        // is one synchronous pass with nothing to check a token against) —
+        // this only stops the tab from waiting on it. Safe either way since
+        // re-scanning is idempotent, so whatever the server finishes with
+        // just gets picked up cleanly next time.
+        setStatus('Scan cancelled — it may still be finishing on the server in the background.')
+      } else {
+        setError(err instanceof Error ? err.message : String(err))
+      }
     } finally {
       setBusy(false)
+      setScanning(false)
+      scanAbortRef.current = null
     }
+  }
+
+  function handleCancelScan() {
+    scanAbortRef.current?.abort()
   }
 
   async function handleOrganize() {
@@ -396,6 +416,18 @@ function App() {
           </button>
         </div>
       </header>
+
+      {scanning && (
+        <div className="scan-progress-bar">
+          <span className="scan-progress-label">Scanning…</span>
+          <div className="scan-progress-track">
+            <div className="scan-progress-fill" />
+          </div>
+          <button type="button" onClick={handleCancelScan}>
+            Cancel
+          </button>
+        </div>
+      )}
 
       {!loadedPath && !autoLoading && (
         <p className="tagline">No library folder configured yet — open Settings to point Curato at your photos.</p>

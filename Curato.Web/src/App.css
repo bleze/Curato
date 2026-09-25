@@ -163,6 +163,67 @@ button {
   flex: 1;
 }
 
+/* Same band styling as .organize-bar, at the same spot in the layout, for
+   the other long-running library-wide operation. A real percentage isn't
+   possible here — the total file count isn't known until the scan's own
+   directory walk finishes, which is the same work the bar would need to
+   already be done to report progress on — so this is a continuous,
+   indeterminate "working" indicator rather than a filling one. */
+.scan-progress-bar {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  margin-bottom: 16px;
+  padding: 10px 14px;
+  background: var(--surface-tint);
+  border: 1px solid var(--border-soft);
+  border-radius: 8px;
+}
+
+.scan-progress-label {
+  font-size: 12.5px;
+  color: var(--text-hint);
+  white-space: nowrap;
+}
+
+.scan-progress-track {
+  flex: 1;
+  height: 6px;
+  border-radius: 3px;
+  background: var(--surface);
+  overflow: hidden;
+  position: relative;
+}
+
+.scan-progress-fill {
+  position: absolute;
+  top: 0;
+  bottom: 0;
+  width: 35%;
+  border-radius: 3px;
+  background: var(--accent);
+  animation: scan-progress-slide 1.1s ease-in-out infinite;
+}
+
+@keyframes scan-progress-slide {
+  0% {
+    left: -35%;
+  }
+  100% {
+    left: 100%;
+  }
+}
+
+.scan-progress-bar button {
+  padding: 5px 12px;
+  font-size: 12.5px;
+  border-radius: 6px;
+  border: 1px solid var(--border);
+  background: var(--surface);
+  cursor: pointer;
+  white-space: nowrap;
+}
+
 /* Lives in the .account toolbar now, alongside plain-looking buttons
    (Recycle Bin, Find Duplicates, ...) rather than as the one prominent
    action in a highlighted .organize-bar — styled to match .account button
