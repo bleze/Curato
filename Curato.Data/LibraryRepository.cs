@@ -7,6 +7,8 @@ namespace Curato.Data;
 
 public enum MoveMediaItemResult { Success, MediaItemNotFound, TargetEventNotFound, SourceEventOrganized, TargetEventOrganized }
 
+public enum CreateTripGroupResult { Success, NoEventsGiven, EventNotFound, EventAlreadyInATrip }
+
 /// <summary>
 /// First, minimal persistence slice for Phase 1: save a scan's MediaItems and
 /// the Events/TripGroups clustered from them. Re-scanning the same folder is
@@ -27,10 +29,10 @@ public sealed class LibraryRepository(LibraryDatabase database)
             connection.Execute("""
                 INSERT INTO MediaItem
                     (RelativePath, Kind, FileSizeBytes, QuickHash, ContentHash,
-                     TakenAt, TakenAtSource, Width, Height, DurationMs, ImportedAt)
+                     TakenAt, TakenAtSource, Width, Height, DurationMs, ImportedAt, Latitude, Longitude)
                 VALUES
                     (@RelativePath, @Kind, @FileSizeBytes, @QuickHash, @ContentHash,
-                     @TakenAt, @TakenAtSource, @Width, @Height, @DurationMs, @ImportedAt)
+                     @TakenAt, @TakenAtSource, @Width, @Height, @DurationMs, @ImportedAt, @Latitude, @Longitude)
                 ON CONFLICT (RelativePath) DO NOTHING
                 """, ToRow(item), transaction);
 
@@ -435,41 +437,6 @@ public sealed class LibraryRepository(LibraryDatabase database)
         DateTime.Parse(value, null, System.Globalization.DateTimeStyles.RoundtripKind);
 
     /// <summary>
-    /// Un-does auto-formed (NamingMode = CuratoManaged) TripGroups: their
-    /// member Events are ungrouped (TripGroupId set back to null, becoming
-    /// standalone Events again — no file or MediaItem is touched) and the
-    /// TripGroup row itself is deleted. Adopted TripGroups (real folder
-    /// structure the user made themselves) are never touched. Idempotent —
-    /// a no-op once none are left. Cleans up what auto-Trip formation
-    /// already wrote to existing libraries before it was disabled (see
-    /// ScanService); running this on every scan means an existing library
-    /// self-heals the next time it's scanned, with no separate migration
-    /// step to remember.
-    /// </summary>
-    public int RemoveAutoFormedTripGroups()
-    {
-        using var connection = database.OpenConnection();
-        using var transaction = connection.BeginTransaction();
-
-        var tripIds = new List<long>();
-        foreach (var row in connection.Query(
-            "SELECT Id FROM TripGroup WHERE NamingMode = 'CuratoManaged'", transaction: transaction))
-        {
-            tripIds.Add((long)row.Id);
-        }
-
-        foreach (var tripId in tripIds)
-        {
-            connection.Execute(
-                "UPDATE Event SET TripGroupId = NULL WHERE TripGroupId = @TripId", new { TripId = tripId }, transaction);
-            connection.Execute("DELETE FROM TripGroup WHERE Id = @TripId", new { TripId = tripId }, transaction);
-        }
-
-        transaction.Commit();
-        return tripIds.Count;
-    }
-
-    /// <summary>
     /// Manual title edit (PLAN.md §3/§4). Also flips TitleIsAuto off so a
     /// later re-scan/re-cluster never silently overwrites a name the user
     /// chose. Renaming an already-Organized Event's on-disk folder to match
@@ -496,6 +463,114 @@ public sealed class LibraryRepository(LibraryDatabase database)
     }
 
     /// <summary>
+    /// Manually groups a set of standalone Events into a new TripGroup — the
+    /// escape hatch for "these clearly belong together" whenever GPS-gated
+    /// auto-formation (see ScanService) doesn't apply: no GPS data on the
+    /// photos, or a real trip close enough to home that the distance gate
+    /// doesn't recognize it. Unlike <see cref="MoveMediaItemToEvent"/>, this
+    /// never touches a file — grouping is purely a TripGroupId assignment, an
+    /// Event keeps its own FolderPath (or lack of one) exactly as it was — so
+    /// Adopted or already-Organized Events can join a manual Trip just as
+    /// freely as untouched loose ones.
+    /// </summary>
+    public (CreateTripGroupResult Result, TripGroup? TripGroup) CreateTripGroup(IReadOnlyList<long> eventIds)
+    {
+        if (eventIds.Count == 0)
+        {
+            return (CreateTripGroupResult.NoEventsGiven, null);
+        }
+
+        using var connection = database.OpenConnection();
+        using var transaction = connection.BeginTransaction();
+
+        var startAts = new List<string>();
+        var endAts = new List<string>();
+        foreach (var eventId in eventIds)
+        {
+            var row = connection.QuerySingleOrDefault(
+                "SELECT StartAt, EndAt, TripGroupId FROM Event WHERE Id = @Id", new { Id = eventId }, transaction);
+
+            if (row is null)
+            {
+                transaction.Rollback();
+                return (CreateTripGroupResult.EventNotFound, null);
+            }
+
+            if (row.TripGroupId is not null)
+            {
+                transaction.Rollback();
+                return (CreateTripGroupResult.EventAlreadyInATrip, null);
+            }
+
+            startAts.Add((string)row.StartAt);
+            endAts.Add((string)row.EndAt);
+        }
+
+        var startDate = DateOnly.FromDateTime(ParseDateTime(startAts.Min(StringComparer.Ordinal)!));
+        var endDate = DateOnly.FromDateTime(ParseDateTime(endAts.Max(StringComparer.Ordinal)!));
+        var title = $"{startDate:yyyy-MM-dd} to {endDate:yyyy-MM-dd}";
+
+        var tripId = connection.ExecuteScalar<long>("""
+            INSERT INTO TripGroup (StartDate, EndDate, Title, TitleIsAuto, FolderPath, NamingMode)
+            VALUES (@StartDate, @EndDate, @Title, 1, NULL, @NamingMode)
+            RETURNING Id
+            """, new
+        {
+            StartDate = startDate.ToString("O"),
+            EndDate = endDate.ToString("O"),
+            Title = title,
+            NamingMode = nameof(Curato.Core.NamingMode.CuratoManaged)
+        }, transaction);
+
+        foreach (var eventId in eventIds)
+        {
+            connection.Execute(
+                "UPDATE Event SET TripGroupId = @TripId WHERE Id = @EventId",
+                new { TripId = tripId, EventId = eventId }, transaction);
+        }
+
+        transaction.Commit();
+
+        return (CreateTripGroupResult.Success, new TripGroup
+        {
+            Id = tripId,
+            StartDate = startDate,
+            EndDate = endDate,
+            Title = title,
+            TitleIsAuto = true,
+            NamingMode = Curato.Core.NamingMode.CuratoManaged,
+            EventIds = eventIds.ToList()
+        });
+    }
+
+    /// <summary>
+    /// Undoes a manually- or automatically-formed TripGroup: member Events
+    /// are ungrouped back to standalone (TripGroupId set to null — no file or
+    /// MediaItem is touched) and the TripGroup row is deleted. Returns false
+    /// if the id doesn't exist.
+    /// </summary>
+    public bool UngroupTripGroup(long tripGroupId)
+    {
+        using var connection = database.OpenConnection();
+        using var transaction = connection.BeginTransaction();
+
+        var exists = connection.ExecuteScalar<long?>(
+            "SELECT Id FROM TripGroup WHERE Id = @Id", new { Id = tripGroupId }, transaction);
+        if (exists is null)
+        {
+            transaction.Rollback();
+            return false;
+        }
+
+        connection.Execute(
+            "UPDATE Event SET TripGroupId = NULL WHERE TripGroupId = @TripId", new { TripId = tripGroupId }, transaction);
+        connection.Execute("DELETE FROM TripGroup WHERE Id = @TripId", new { TripId = tripGroupId }, transaction);
+
+        transaction.Commit();
+        return true;
+    }
+
+    /// <summary>
     /// Un-does bare-year Adopted TripGroups (e.g. a "2019" trip wrapping
     /// every unrelated event that happened to live under a top-level
     /// `2019/` folder) written before <c>AdoptedFolderPlanner.PlanTrips</c>
@@ -504,8 +579,9 @@ public sealed class LibraryRepository(LibraryDatabase database)
     /// Their member Events are ungrouped back to standalone (no file or
     /// MediaItem is touched) and the TripGroup row is deleted. Only ever
     /// matches a Title that's *exactly* a 4-digit year — a real Adopted trip
-    /// like "2019 Summer Vacation" is untouched. Idempotent, self-healing on
-    /// every scan exactly like <see cref="RemoveAutoFormedTripGroups"/>.
+    /// like "2019 Summer Vacation" is untouched. Idempotent, self-healing —
+    /// running this on every scan means an existing library heals the next
+    /// time it's scanned, with no separate migration step to remember.
     /// </summary>
     public int RemoveBareYearAdoptedTripGroups()
     {
@@ -675,7 +751,9 @@ public sealed class LibraryRepository(LibraryDatabase database)
         item.Width,
         item.Height,
         item.DurationMs,
-        ImportedAt = item.ImportedAt.ToString("O")
+        ImportedAt = item.ImportedAt.ToString("O"),
+        item.Latitude,
+        item.Longitude
     };
 
     private static object ToRow(Event @event) => new

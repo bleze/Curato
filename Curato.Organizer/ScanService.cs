@@ -14,7 +14,6 @@ public sealed record ScanResult(
     int NewAdoptedEventCount,
     int NewTripGroupCount,
     int ItemsAddedToExistingEvents,
-    int RemovedAutoTripGroupCount,
     int RemovedBareYearTripGroupCount,
     int RemovedEmptyEventCount,
     int RemovedMissingFileCount,
@@ -35,8 +34,18 @@ public sealed record ScanResult(
 /// TripGroup isn't retroactively formed once the second folder shows up —
 /// real but narrow enough to leave as a follow-up rather than block on.)
 /// </summary>
-public sealed class ScanService(LibraryRepository repository, LibraryQueryService query, LibraryDatabase database)
+public sealed class ScanService(
+    LibraryRepository repository, LibraryQueryService query, LibraryDatabase database, INominatimClient? nominatimClient = null)
 {
+    // Self-constructed (not required in the constructor) so the ~25 existing
+    // call sites across controllers/tests don't need updating — matches how
+    // this method already self-constructs a fresh MediaFileScanner below.
+    // Only actually invoked (see FormGpsAwareTrips) when a candidate Trip's
+    // gate check finds a real away-from-home location to name itself after,
+    // which no existing test's fixtures ever trigger, so `nominatimClient`
+    // only matters to tests that specifically exercise GPS-based formation.
+    private readonly ReverseGeocoder geocoder = new(database, nominatimClient ?? new NominatimClient());
+
     /// <summary>
     /// Walks <paramref name="libraryRoot"/> from scratch, indexes whatever's
     /// found, and — confirmed live as a real gap, not just a hypothetical —
@@ -150,23 +159,10 @@ public sealed class ScanService(LibraryRepository repository, LibraryQueryServic
         var allNewEvents = newAutoEvents.Concat(newAdoptedEvents).ToList();
         repository.SaveEvents(allNewEvents); // assigns real Ids, needed before trip-grouping
 
-        // Auto-Trip formation (TripClusterer, purely time-gap-based) is
-        // deliberately not wired in here: with no location signal at all, it
-        // has no way to tell "a real trip away from home" apart from just an
-        // ordinary run of days with photos on them, and for anyone who takes
-        // photos close to daily, that's most of their library — TripClusterer
-        // itself stays (correct for what it does, and a reasonable building
-        // block once GPS-based detection, PLAN.md §12, actually lands), just
-        // not used to auto-create Trips a user never asked for. Adopted
-        // Trips are unaffected: those come from folder structure the user
-        // already made themselves, never a time-based guess.
-        var allNewTrips = AdoptedFolderPlanner.PlanTrips(newAdoptedEvents);
+        var adoptedTrips = AdoptedFolderPlanner.PlanTrips(newAdoptedEvents);
+        var gpsTrips = FormGpsAwareTrips(newAutoEvents, savedItems);
+        var allNewTrips = adoptedTrips.Concat(gpsTrips).ToList();
         repository.SaveTripGroups(allNewTrips);
-
-        // Self-heals a library scanned before auto-Trip formation was
-        // disabled: any leftover CuratoManaged TripGroup from the old
-        // time-gap heuristic is ungrouped back into standalone Events.
-        var removedAutoTripGroupCount = repository.RemoveAutoFormedTripGroups();
 
         // Self-heals a library scanned before PlanTrips started excluding
         // bare-year parent folders: a "2019" Trip wrapping every unrelated
@@ -196,7 +192,6 @@ public sealed class ScanService(LibraryRepository repository, LibraryQueryServic
             NewAdoptedEventCount: newAdoptedEvents.Count,
             NewTripGroupCount: allNewTrips.Count,
             ItemsAddedToExistingEvents: itemsAddedToExisting,
-            RemovedAutoTripGroupCount: removedAutoTripGroupCount,
             RemovedBareYearTripGroupCount: removedBareYearTripGroupCount,
             RemovedEmptyEventCount: emptiedEvents.Count,
             RemovedMissingFileCount: 0, // only Scan(libraryRoot) can know this; merged in there via `with`
@@ -206,6 +201,52 @@ public sealed class ScanService(LibraryRepository repository, LibraryQueryServic
                     e.Id, e.Title, e.NamingMode.ToString(), e.FolderPath,
                     e.StartAt, e.EndAt, e.MediaItemIds.Count))
                 .ToList());
+    }
+
+    /// <summary>
+    /// GPS-aware auto-Trip formation (PLAN.md §3 Step 2/§12): TripClusterer's
+    /// pure time-gap grouping can't tell a real trip away from home apart
+    /// from an ordinary run of days with photos on them on its own — that's
+    /// exactly why this was disabled before GPS extraction existed. Gated on
+    /// at least one member Event's representative location actually being far
+    /// (<see cref="GpsTripGate.AwayFromHomeThresholdKm"/>) from wherever this
+    /// library's photos are usually taken; a qualifying Trip is titled after
+    /// that away-from-home place (e.g. "Mallorca") when reverse-geocoding
+    /// succeeds, falling back to the plain date-range title otherwise. A
+    /// library with no GPS data anywhere never has a home location, so the
+    /// gate never passes and behavior is unchanged (zero auto-formed Trips).
+    /// <paramref name="newAutoEvents"/> must already have real ids (saved).
+    /// </summary>
+    private IReadOnlyList<TripGroup> FormGpsAwareTrips(IReadOnlyList<Event> newAutoEvents, IReadOnlyList<MediaItem> savedItems)
+    {
+        var homeLocation = GpsTripGate.DetectHomeLocation(query.GetAllMediaItems());
+        if (homeLocation is null)
+        {
+            return [];
+        }
+
+        var itemsById = savedItems.ToDictionary(i => i.Id);
+        var eventLocations = newAutoEvents.ToDictionary(
+            e => e.Id, e => GpsTripGate.RepresentativeLocation(e, itemsById));
+
+        var qualifyingTrips = new TripClusterer()
+            .Cluster(newAutoEvents)
+            .Where(trip => trip.EventIds.Any(id => GpsTripGate.IsAwayFromHome(homeLocation, eventLocations[id])))
+            .ToList();
+
+        foreach (var trip in qualifyingTrips)
+        {
+            var awayLocation = trip.EventIds
+                .Select(id => eventLocations[id])
+                .FirstOrDefault(location => GpsTripGate.IsAwayFromHome(homeLocation, location));
+
+            if (awayLocation is { } location && geocoder.Resolve(location.Lat, location.Lon) is { } placeName)
+            {
+                trip.Title = placeName;
+            }
+        }
+
+        return qualifyingTrips;
     }
 
     /// <summary>

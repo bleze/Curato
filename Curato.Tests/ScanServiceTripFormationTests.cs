@@ -6,23 +6,46 @@ namespace Curato.Tests;
 
 public class ScanServiceTripFormationTests
 {
-    private static MediaItem Item(string relativePath, DateTime takenAt) => new()
+    // "Home" for these tests — Copenhagen. Anything within
+    // GpsTripGate.AwayFromHomeThresholdKm (50km) of this is "everyday life
+    // nearby"; anything farther is a real trip.
+    private const double HomeLat = 55.6761;
+    private const double HomeLon = 12.5683;
+    private const double FarAwayLat = 41.3874; // Rome — genuinely another country
+    private const double FarAwayLon = 12.4939;
+
+    private sealed class FakeNominatimClient(string? response = "Rome, Italy") : INominatimClient
+    {
+        public int CallCount;
+        public string? Response { get; set; } = response;
+
+        public string? ReverseGeocode(double latitude, double longitude)
+        {
+            CallCount++;
+            return Response;
+        }
+    }
+
+    private static MediaItem Item(string relativePath, DateTime takenAt, double? lat = null, double? lon = null) => new()
     {
         RelativePath = relativePath,
         QuickHash = "irrelevant",
-        TakenAt = takenAt
+        TakenAt = takenAt,
+        Latitude = lat,
+        Longitude = lon
     };
 
     [Fact]
-    public void Loose_items_spanning_several_days_with_small_gaps_never_auto_form_a_trip()
+    public void Loose_items_spanning_several_days_with_small_gaps_never_auto_form_a_trip_without_gps()
     {
-        // Regression: TripClusterer (purely time-gap-based, no location
-        // signal) used to be wired into every scan, which meant anyone who
-        // takes photos close to daily got their entire library merged into
-        // sprawling, meaningless "trips" — every consecutive day's Event was
-        // well under the old 36-hour gap threshold from the next. Disabled
-        // per explicit product decision until real GPS-based detection
-        // exists (PLAN.md §12); this test locks that in.
+        // TripClusterer (purely time-gap-based) can't tell "a real trip away
+        // from home" apart from an ordinary run of days with photos on them
+        // without a location signal — anyone who takes photos close to daily
+        // would otherwise get their entire library merged into sprawling,
+        // meaningless "trips" (every consecutive day's Event is well under
+        // the 36-hour gap threshold from the next). With no GPS data at all,
+        // GpsTripGate never has a home location to compare against, so the
+        // gate never passes and this stays exactly as it always has.
         WithTempLibrary((repository, query, service) =>
         {
             var items = new List<MediaItem>();
@@ -39,41 +62,67 @@ public class ScanServiceTripFormationTests
     }
 
     [Fact]
-    public void A_leftover_auto_formed_trip_from_before_the_fix_is_removed_on_the_next_scan()
+    public void Events_with_a_far_away_gps_location_auto_form_a_trip_named_after_the_place()
     {
-        WithTempLibrary((repository, query, service) =>
+        WithGpsAwareLibrary((repository, query, service, client) =>
         {
-            // Simulate what an old scan (before auto-Trip formation was
-            // disabled) already wrote to this library's database — a real
-            // Event needs a real member, or RemoveEmptyEvents' self-heal
-            // (a separate, later fix) would sweep it up too.
-            var savedItem = repository.UpsertMediaItems([Item("day1.jpg", new DateTime(2026, 1, 1))])[0];
-            var events = new List<Event>
+            var items = new List<MediaItem>
             {
-                new()
-                {
-                    StartAt = new DateTime(2026, 1, 1), EndAt = new DateTime(2026, 1, 1),
-                    Title = "Day 1", TitleIsAuto = true, NamingMode = NamingMode.CuratoManaged,
-                    MediaItemIds = [savedItem.Id]
-                }
+                // Plenty of ordinary nearby days — never a trip on their own.
+                Item("home1.jpg", new DateTime(2026, 1, 1, 9, 0, 0), HomeLat, HomeLon),
+                Item("home2.jpg", new DateTime(2026, 1, 2, 9, 0, 0), HomeLat, HomeLon),
+                // A real trip: two consecutive far-away days.
+                Item("rome1.jpg", new DateTime(2026, 2, 1, 9, 0, 0), FarAwayLat, FarAwayLon),
+                Item("rome2.jpg", new DateTime(2026, 2, 2, 9, 0, 0), FarAwayLat, FarAwayLon),
             };
-            repository.SaveEvents(events);
-            repository.SaveTripGroups(
-            [
-                new TripGroup
-                {
-                    StartDate = new DateOnly(2026, 1, 1), EndDate = new DateOnly(2026, 1, 1),
-                    Title = "Old bogus trip", TitleIsAuto = true, NamingMode = NamingMode.CuratoManaged,
-                    EventIds = [events[0].Id]
-                }
-            ]);
-            Assert.Single(query.GetAllTripGroups());
 
-            service.ScanItems([]); // any scan pass triggers the self-heal
+            service.ScanItems(items);
+
+            var trip = Assert.Single(query.GetAllTripGroups());
+            Assert.Equal("Rome, Italy", trip.Title);
+            Assert.Equal(2, trip.EventIds.Count);
+            Assert.Equal(1, client.CallCount);
+
+            // The two nearby days never joined the trip and stayed standalone.
+            var standaloneEvents = query.GetAllEvents().Where(e => e.TripGroupId is null);
+            Assert.Equal(2, standaloneEvents.Count());
+        });
+    }
+
+    [Fact]
+    public void Events_all_close_to_home_never_form_a_trip_even_with_gps_data()
+    {
+        WithGpsAwareLibrary((repository, query, service, client) =>
+        {
+            var items = new List<MediaItem>();
+            for (var day = 0; day < 5; day++)
+            {
+                items.Add(Item($"IMG_{day:D2}.jpg", new DateTime(2026, 1, 1).AddDays(day).AddHours(12), HomeLat, HomeLon));
+            }
+
+            service.ScanItems(items);
 
             Assert.Empty(query.GetAllTripGroups());
-            var survivingEvent = Assert.Single(query.GetAllEvents());
-            Assert.Null(survivingEvent.TripGroupId);
+            Assert.Equal(0, client.CallCount); // never even asked to geocode — nothing was away from home
+        });
+    }
+
+    [Fact]
+    public void A_far_away_event_with_no_neighbors_never_forms_a_trip_alone()
+    {
+        // TripClusterer's own MinSpanDays=2 rule still applies — one far-away
+        // day by itself isn't "a trip," GPS or not.
+        WithGpsAwareLibrary((repository, query, service, _) =>
+        {
+            var items = new List<MediaItem>
+            {
+                Item("home1.jpg", new DateTime(2026, 1, 1, 9, 0, 0), HomeLat, HomeLon),
+                Item("rome1.jpg", new DateTime(2026, 2, 1, 9, 0, 0), FarAwayLat, FarAwayLon),
+            };
+
+            service.ScanItems(items);
+
+            Assert.Empty(query.GetAllTripGroups());
         });
     }
 
@@ -181,6 +230,29 @@ public class ScanServiceTripFormationTests
             var repository = new LibraryRepository(database);
             var query = new LibraryQueryService(database);
             test(repository, query, new ScanService(repository, query, database));
+        }
+        finally
+        {
+            Microsoft.Data.Sqlite.SqliteConnection.ClearAllPools();
+            Directory.Delete(tempDir.FullName, recursive: true);
+        }
+    }
+
+    /// <summary>Same as <see cref="WithTempLibrary"/> but wires a fake
+    /// (never-hits-the-network) Nominatim client into the ScanService under
+    /// test, and hands it back so a test can assert on how many times it was
+    /// actually called.</summary>
+    private static void WithGpsAwareLibrary(Action<LibraryRepository, LibraryQueryService, ScanService, FakeNominatimClient> test)
+    {
+        var tempDir = Directory.CreateTempSubdirectory("curato-gpstriptest-");
+        try
+        {
+            var database = new LibraryDatabase(tempDir.FullName);
+            database.EnsureSchema();
+            var repository = new LibraryRepository(database);
+            var query = new LibraryQueryService(database);
+            var client = new FakeNominatimClient();
+            test(repository, query, new ScanService(repository, query, database, client), client);
         }
         finally
         {

@@ -19,15 +19,17 @@ namespace Curato.Api.Controllers;
 [Route("api")]
 public sealed class LibraryController(LibraryOperationGate gate) : ControllerBase
 {
-    public sealed record MediaItemDto(long Id, string RelativePath, string Kind, DateTime TakenAt, string TakenAtSource, string? LiveVideoRelativePath);
+    public sealed record MediaItemDto(
+        long Id, string RelativePath, string Kind, DateTime TakenAt, string TakenAtSource,
+        string? LiveVideoRelativePath, string? Location);
 
     public sealed record EventDto(
         long Id, string Title, string NamingMode, string? FolderPath, string? ProposedFolderPath,
-        DateTime StartAt, DateTime EndAt, IReadOnlyList<MediaItemDto> Items);
+        DateTime StartAt, DateTime EndAt, string? Location, long? TripGroupId, IReadOnlyList<MediaItemDto> Items);
 
     public sealed record TripGroupDto(
         long Id, string Title, string NamingMode, string? FolderPath, string? ProposedFolderPath,
-        DateOnly StartDate, DateOnly EndDate, IReadOnlyList<EventDto> Events);
+        DateOnly StartDate, DateOnly EndDate, string? Location, IReadOnlyList<EventDto> Events);
 
     public sealed record LibraryDto(
         IReadOnlyList<TripGroupDto> Trips, IReadOnlyList<EventDto> StandaloneEvents);
@@ -43,8 +45,33 @@ public sealed class LibraryController(LibraryOperationGate gate) : ControllerBas
         var database = new LibraryDatabase(path);
         database.EnsureSchema();
         var query = new LibraryQueryService(database);
+        var geocoder = new ReverseGeocoder(database, new NominatimClient());
 
         var mediaById = query.GetAllMediaItems().ToDictionary(m => m.Id);
+
+        // Memoizes Resolve() per ~1km bucket for the lifetime of this one
+        // request — ReverseGeocoder's own GeocodeCache table already avoids a
+        // real network call for anything resolved by a past request, but
+        // this avoids redundant round-trips to that cache within a single
+        // library view that might reference the same place hundreds of times
+        // (every photo from the same trip).
+        var locationCache = new Dictionary<(double, double), string?>();
+        string? ResolveLocation((double Lat, double Lon)? location)
+        {
+            if (location is not { } loc)
+            {
+                return null;
+            }
+
+            var bucket = (Math.Round(loc.Lat, 2), Math.Round(loc.Lon, 2));
+            if (!locationCache.TryGetValue(bucket, out var placeName))
+            {
+                placeName = geocoder.Resolve(loc.Lat, loc.Lon);
+                locationCache[bucket] = placeName;
+            }
+
+            return placeName;
+        }
 
         // Apple Live Photos (JPG+MOV pairs, §3's "no double files" rule):
         // a video that's paired to some photo is represented by that photo's
@@ -78,10 +105,12 @@ public sealed class LibraryController(LibraryOperationGate gate) : ControllerBas
             m.Id, m.RelativePath, m.Kind.ToString(), m.TakenAt, m.TakenAtSource.ToString(),
             m.LivePhotoVideoItemId is { } videoId && mediaById.TryGetValue(videoId, out var video)
                 ? video.RelativePath
-                : null);
+                : null,
+            ResolveLocation(m.Latitude is { } lat && m.Longitude is { } lon ? (lat, lon) : null));
 
         EventDto ToEventDto(Event e) => new(
             e.Id, e.Title, e.NamingMode.ToString(), e.FolderPath, ProposeEventPath(e), e.StartAt, e.EndAt,
+            ResolveLocation(GpsTripGate.RepresentativeLocation(e, mediaById)), e.TripGroupId,
             e.MediaItemIds
                 .Where(id => mediaById.ContainsKey(id) && !pairedVideoIds.Contains(id))
                 .Select(id => mediaById[id])
@@ -90,13 +119,31 @@ public sealed class LibraryController(LibraryOperationGate gate) : ControllerBas
 
         var eventsById = events.ToDictionary(e => e.Id);
         var tripDtos = trips
-            .Select(t => new TripGroupDto(
-                t.Id, t.Title, t.NamingMode.ToString(), t.FolderPath, ProposeTripPath(t), t.StartDate, t.EndDate,
-                t.EventIds
+            .Select(t =>
+            {
+                var eventDtos = t.EventIds
                     .Where(eventsById.ContainsKey)
                     .Select(id => ToEventDto(eventsById[id]))
                     .OrderBy(e => e.StartAt)
-                    .ToList()))
+                    .ToList();
+
+                // A Trip's own location is the average of whichever member
+                // Events actually resolved one — a multi-country trip still
+                // gets *a* representative point rather than none at all.
+                var eventLocations = t.EventIds
+                    .Where(eventsById.ContainsKey)
+                    .Select(id => GpsTripGate.RepresentativeLocation(eventsById[id], mediaById))
+                    .Where(loc => loc is not null)
+                    .Select(loc => loc!.Value)
+                    .ToList();
+                var tripLocation = eventLocations.Count == 0
+                    ? null
+                    : ResolveLocation((eventLocations.Average(l => l.Lat), eventLocations.Average(l => l.Lon)));
+
+                return new TripGroupDto(
+                    t.Id, t.Title, t.NamingMode.ToString(), t.FolderPath, ProposeTripPath(t), t.StartDate, t.EndDate,
+                    tripLocation, eventDtos);
+            })
             .OrderBy(t => t.StartDate)
             .ToList();
 
@@ -155,6 +202,85 @@ public sealed class LibraryController(LibraryOperationGate gate) : ControllerBas
         database.EnsureSchema();
         new LibraryRepository(database).RotateMediaItem(request.MediaItemId, request.DeltaDegrees);
         return NoContent();
+    }
+
+    public sealed record MoveMediaItemToEventRequest(string Path, long MediaItemId, long? TargetEventId);
+
+    /// <summary>
+    /// The Lightbox's "Move to Event" picker — manually fixes a wrong
+    /// grouping (e.g. a since-corrected timestamp that no longer matches its
+    /// Event's other members). See LibraryRepository.MoveMediaItemToEvent for
+    /// why this refuses to touch either side once it has a real FolderPath.
+    /// </summary>
+    [HttpPost("media-items/move-to-event")]
+    public IActionResult MoveMediaItemToEvent([FromBody] MoveMediaItemToEventRequest request)
+    {
+        if (!Directory.Exists(request.Path))
+        {
+            return NotFound($"Folder not found: {request.Path}");
+        }
+
+        var database = new LibraryDatabase(request.Path);
+        database.EnsureSchema();
+        var result = new LibraryRepository(database).MoveMediaItemToEvent(request.MediaItemId, request.TargetEventId);
+
+        return result switch
+        {
+            MoveMediaItemResult.Success => NoContent(),
+            MoveMediaItemResult.MediaItemNotFound => NotFound($"No MediaItem with id {request.MediaItemId}"),
+            MoveMediaItemResult.TargetEventNotFound => NotFound($"No Event with id {request.TargetEventId}"),
+            MoveMediaItemResult.SourceEventOrganized => Conflict("This item's current Event has already been organized into a real folder — moving it here would desync the database from what's actually on disk."),
+            MoveMediaItemResult.TargetEventOrganized => Conflict("That Event has already been organized into a real folder — moving a file into it isn't supported here."),
+            _ => StatusCode(500)
+        };
+    }
+
+    public sealed record CreateTripGroupRequest(string Path, IReadOnlyList<long> EventIds);
+
+    /// <summary>
+    /// Manually groups a range of Events into a Trip — the escape hatch for
+    /// whenever GPS-gated auto-formation (ScanService) doesn't apply. See
+    /// LibraryRepository.CreateTripGroup.
+    /// </summary>
+    [HttpPost("trips")]
+    public IActionResult CreateTripGroup([FromBody] CreateTripGroupRequest request)
+    {
+        if (!Directory.Exists(request.Path))
+        {
+            return NotFound($"Folder not found: {request.Path}");
+        }
+
+        var database = new LibraryDatabase(request.Path);
+        database.EnsureSchema();
+        var (result, trip) = new LibraryRepository(database).CreateTripGroup(request.EventIds);
+
+        return result switch
+        {
+            CreateTripGroupResult.Success => Ok(trip),
+            CreateTripGroupResult.NoEventsGiven => BadRequest("Select at least one Event to group into a Trip."),
+            CreateTripGroupResult.EventNotFound => NotFound("One of the selected Events no longer exists."),
+            CreateTripGroupResult.EventAlreadyInATrip => Conflict("One of the selected Events already belongs to a Trip — ungroup it first."),
+            _ => StatusCode(500)
+        };
+    }
+
+    public sealed record UngroupTripRequest(string Path);
+
+    /// <summary>Undoes a manually- or automatically-formed Trip — see LibraryRepository.UngroupTripGroup.</summary>
+    [HttpPost("trips/{tripGroupId:long}/ungroup")]
+    public IActionResult UngroupTripGroup(long tripGroupId, [FromBody] UngroupTripRequest request)
+    {
+        if (!Directory.Exists(request.Path))
+        {
+            return NotFound($"Folder not found: {request.Path}");
+        }
+
+        var database = new LibraryDatabase(request.Path);
+        database.EnsureSchema();
+
+        return new LibraryRepository(database).UngroupTripGroup(tripGroupId)
+            ? NoContent()
+            : NotFound($"No TripGroup with id {tripGroupId}");
     }
 
     public sealed record RenameEventRequest(string Path, long EventId, string Title);

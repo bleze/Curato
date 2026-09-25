@@ -177,6 +177,20 @@ internal static class Schema
 
         CREATE INDEX IF NOT EXISTS IX_DeletedMediaFingerprint_Size_Hash
             ON DeletedMediaFingerprint (FileSizeBytes, QuickHash);
+
+        -- Reverse-geocoding results (PLAN.md §12, scoped down: place names
+        -- only, no map yet), keyed by coordinates rounded to ~2 decimal
+        -- places (~1km buckets) so photos taken at "the same place" over and
+        -- over — the common case for a personal library — share one lookup
+        -- forever rather than re-querying Nominatim per photo. See
+        -- ReverseGeocoder (Curato.Media).
+        CREATE TABLE IF NOT EXISTS GeocodeCache (
+            LatBucket REAL NOT NULL,
+            LonBucket REAL NOT NULL,
+            PlaceName TEXT NOT NULL,
+            ResolvedAt TEXT NOT NULL,
+            PRIMARY KEY (LatBucket, LonBucket)
+        );
         """;
 
     /// <summary>
@@ -193,6 +207,8 @@ internal static class Schema
         // would delete the *photo* if its video were ever removed on its
         // own — the photo is a perfectly good standalone item and should
         // survive losing its motion-clip pairing, not disappear with it.
-        ("MediaItem", "LivePhotoVideoItemId", "INTEGER NULL REFERENCES MediaItem (Id) ON DELETE SET NULL")
+        ("MediaItem", "LivePhotoVideoItemId", "INTEGER NULL REFERENCES MediaItem (Id) ON DELETE SET NULL"),
+        ("MediaItem", "Latitude", "REAL NULL"),
+        ("MediaItem", "Longitude", "REAL NULL")
     ];
 }

@@ -86,6 +86,8 @@ public sealed class MediaFileScanner
             ? ReadPhotoTakenAt(filePath, info)
             : ReadVideoTakenAt(filePath, info);
 
+        var (latitude, longitude) = kind == MediaKind.Photo ? ReadGpsLocation(filePath) : (null, null);
+
         return new MediaItem
         {
             RelativePath = relativePath,
@@ -94,8 +96,36 @@ public sealed class MediaFileScanner
             QuickHash = QuickHasher.ComputeQuickHash(filePath, info.Length),
             TakenAt = takenAt,
             TakenAtSource = source,
+            Latitude = latitude,
+            Longitude = longitude,
             ImportedAt = DateTime.UtcNow
         };
+    }
+
+    /// <summary>
+    /// EXIF GPS only — confirmed against the installed MetadataExtractor
+    /// build that its QuickTime support exposes no GPS/ISO6709 location tag
+    /// at all, so video never gets its own coordinates here. A Live Photo's
+    /// paired video (<see cref="MediaItem.LivePhotoVideoItemId"/>) is treated
+    /// as sharing its still-frame photo's location wherever a location is
+    /// displayed, rather than duplicating the column for a value that's
+    /// always derivable from the pairing.
+    /// </summary>
+    private static (double? Latitude, double? Longitude) ReadGpsLocation(string filePath)
+    {
+        try
+        {
+            var directories = ImageMetadataReader.ReadMetadata(filePath);
+            var gps = directories.OfType<GpsDirectory>().FirstOrDefault();
+            var location = gps?.GetGeoLocation();
+            return location is not { IsZero: false } loc
+                ? (null, null)
+                : (loc.Latitude, loc.Longitude);
+        }
+        catch (ImageProcessingException)
+        {
+            return (null, null);
+        }
     }
 
     private static (DateTime TakenAt, TakenAtSource Source) ReadPhotoTakenAt(string filePath, FileInfo info)

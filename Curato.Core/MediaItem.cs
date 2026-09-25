@@ -21,6 +21,16 @@ public sealed class MediaItem
     public DateTime ImportedAt { get; set; }
 
     /// <summary>
+    /// GPS EXIF coordinates, when present (photos only — see
+    /// <see cref="Curato.Media.MediaFileScanner"/>'s doc comment on why video
+    /// never carries its own). Powers location-aware Trip formation and the
+    /// location text shown next to dates (PLAN.md §12, scoped down from the
+    /// full Map view).
+    /// </summary>
+    public double? Latitude { get; set; }
+    public double? Longitude { get; set; }
+
+    /// <summary>
     /// Set on a Photo's row when <see cref="LivePhotoPairer"/> matches it to
     /// a same-named .MOV motion clip (Apple Live Photos) — the paired
     /// MediaItem is never hidden or merged, just not shown as its own grid

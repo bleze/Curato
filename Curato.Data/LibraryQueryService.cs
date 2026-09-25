@@ -167,6 +167,8 @@ public sealed class LibraryQueryService(LibraryDatabase database)
         long? durationMs = row.DurationMs;
         string importedAt = row.ImportedAt;
         long? livePhotoVideoItemId = row.LivePhotoVideoItemId;
+        double? latitude = row.Latitude;
+        double? longitude = row.Longitude;
 
         return new MediaItem
         {
@@ -182,7 +184,9 @@ public sealed class LibraryQueryService(LibraryDatabase database)
             Height = (int?)height,
             DurationMs = durationMs,
             ImportedAt = ParseDateTime(importedAt),
-            LivePhotoVideoItemId = livePhotoVideoItemId
+            LivePhotoVideoItemId = livePhotoVideoItemId,
+            Latitude = latitude,
+            Longitude = longitude
         };
     }
 
