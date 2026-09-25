@@ -219,7 +219,7 @@ export function LibraryGrid({
   onCreateTripGroup,
   onUngroupTripGroup,
   onMergeEventsInto,
-  onRemoveEventFromTrip,
+  onRemoveEventsFromTrip,
 }: {
   library: LibraryDto
   libraryPath: string
@@ -232,7 +232,7 @@ export function LibraryGrid({
   onCreateTripGroup: (eventIds: number[]) => void
   onUngroupTripGroup: (tripGroupId: number) => void
   onMergeEventsInto: (sourceEventIds: number[], targetEventId: number) => void
-  onRemoveEventFromTrip: (eventId: number) => void
+  onRemoveEventsFromTrip: (eventIds: number[]) => void
 }) {
   const scrollRef = useRef<HTMLDivElement>(null)
   // null = not yet measured. Deliberately never guess a fallback column
@@ -334,7 +334,14 @@ export function LibraryGrid({
     () => [
       ...library.standaloneEvents,
       ...library.trips.flatMap((t) => t.events),
-    ].map((e) => ({ id: e.id, title: e.title, startAt: e.startAt, endAt: e.endAt, isOrganized: e.folderPath !== null })),
+    ].map((e) => ({
+      id: e.id,
+      title: e.title,
+      startAt: e.startAt,
+      endAt: e.endAt,
+      isOrganized: e.folderPath !== null,
+      tripGroupId: e.tripGroupId,
+    })),
     [library],
   )
 
@@ -540,24 +547,13 @@ export function LibraryGrid({
               {block.type === 'event-header' && (
                 <header className={`event-header ${block.closesTripAbove ? 'event-header-after-trip' : ''}`}>
                   <div className="event-header-row">
-                    {block.event.tripGroupId === null ? (
-                      <input
-                        type="checkbox"
-                        className="event-select-checkbox"
-                        title="Select to group with other Events into a Trip"
-                        checked={selectedEventIds.has(block.event.id)}
-                        onChange={() => toggleEventSelected(block.event.id)}
-                      />
-                    ) : (
-                      <button
-                        type="button"
-                        className="event-remove-from-trip-btn"
-                        title="Remove from this Trip — it becomes a standalone Event again (no file is moved)"
-                        onClick={() => onRemoveEventFromTrip(block.event.id)}
-                      >
-                        Remove from Trip
-                      </button>
-                    )}
+                    <input
+                      type="checkbox"
+                      className="event-select-checkbox"
+                      title="Select for Trip grouping, merging, or removing from a Trip"
+                      checked={selectedEventIds.has(block.event.id)}
+                      onChange={() => toggleEventSelected(block.event.id)}
+                    />
                     <h3>
                       <EditableTitle
                         title={block.event.title}
@@ -632,15 +628,30 @@ export function LibraryGrid({
           >
             Merge into another Event
           </button>
-          {selectedEventIds.size >= 2 && (
+          {selectedEventIds.size >= 2 &&
+            [...selectedEventIds].every((id) => allEventSummaries.find((e) => e.id === id)?.tripGroupId == null) && (
+              <button
+                type="button"
+                onClick={() => {
+                  onCreateTripGroup([...selectedEventIds])
+                  setSelectedEventIds(new Set())
+                }}
+              >
+                Group into Trip
+              </button>
+            )}
+          {[...selectedEventIds].some((id) => allEventSummaries.find((e) => e.id === id)?.tripGroupId != null) && (
             <button
               type="button"
               onClick={() => {
-                onCreateTripGroup([...selectedEventIds])
+                const idsInATrip = [...selectedEventIds].filter(
+                  (id) => allEventSummaries.find((e) => e.id === id)?.tripGroupId != null,
+                )
+                onRemoveEventsFromTrip(idsInATrip)
                 setSelectedEventIds(new Set())
               }}
             >
-              Group into Trip
+              Remove from Trip
             </button>
           )}
           <button type="button" onClick={() => setSelectedEventIds(new Set())}>

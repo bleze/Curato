@@ -371,11 +371,15 @@ function App() {
     }
   }
 
-  async function handleRemoveEventFromTrip(eventId: number) {
+  // Sequential, not fired-off-in-parallel — same reasoning as
+  // handleMergeEventsInto just below.
+  async function handleRemoveEventsFromTrip(eventIds: number[]) {
     if (!loadedPath) return
     setError(null)
     try {
-      await removeEventFromTrip(loadedPath, eventId)
+      for (const eventId of eventIds) {
+        await removeEventFromTrip(loadedPath, eventId)
+      }
       const lib = await getLibrary(loadedPath)
       setLibrary(lib)
     } catch (err) {
@@ -557,7 +561,7 @@ function App() {
             onCreateTripGroup={handleCreateTripGroup}
             onUngroupTripGroup={handleUngroupTripGroup}
             onMergeEventsInto={handleMergeEventsInto}
-            onRemoveEventFromTrip={handleRemoveEventFromTrip}
+            onRemoveEventsFromTrip={handleRemoveEventsFromTrip}
           />
         </div>
       )}

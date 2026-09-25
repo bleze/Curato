@@ -5,6 +5,8 @@ export interface EventSummary {
   endAt: string
   /** Already organized into a real on-disk folder — refused as a move/merge target (see LibraryRepository.MoveMediaItemToEvent/MergeEventInto). */
   isOrganized: boolean
+  /** Non-null when already grouped into a Trip — unused by the picker itself, but shared with LibraryGrid's selection-bar logic (e.g. offering "Remove from Trip" only when the selection includes one). */
+  tripGroupId: number | null
 }
 
 /** 0 when referenceMs falls inside [startAt, endAt]; otherwise the gap to whichever boundary is closer. */
