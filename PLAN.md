@@ -65,6 +65,21 @@ already written as plain .NET business logic independent of any UI; what changes
   orientation tag as purely informational, and libheif's own decode already returns
   pixels in the correct display orientation using the container's own transform —
   applying EXIF rotation on top would rotate/mirror an already-correct image twice.]
+  [Confirmed live decoding a real ~12MP iPhone HEIC via libheif took 200-400ms per file
+  — all just to immediately downscale the result to a 320px grid thumbnail — and that
+  cost is what made scrolling to a not-yet-thumbnailed part of a large library feel slow
+  (dozens of cold requests landing at once). `HeicDecoder` now decodes the file's own
+  embedded preview image instead, when one exists and is large enough for what was
+  asked (`HeifImageHandle.GetThumbnailImageIds`/`GetThumbnailImage` — most HEIC files
+  from an iPhone embed one specifically for this kind of use) — measured 25-40x faster
+  for files that have one (400ms → ~10ms), falling back to the full-resolution decode
+  for anything that doesn't or whose embedded preview is too small. Deliberately opt-in,
+  not automatic: `ThumbnailGenerator` only allows it when there's no Crop edit to apply,
+  since a Crop's rectangle (EditRenderer) is computed against the original file's
+  full-resolution pixel coordinates and would cut out the wrong region entirely against
+  the smaller embedded image; the full-size viewer render (`/api/media/full`) also never
+  gets it in practice, since an embedded preview is essentially always smaller than the
+  viewer's own max dimension.]
 - **RAW support** (DSLR files, confirmed in scope, **preview-based, not full RAW
   development**): every common RAW format (CR2/CR3, NEF, ARW, DNG, ...) embeds a
   full-size JPEG preview — Curato reads EXIF plus that embedded preview for
@@ -458,6 +473,16 @@ never renames an *Adopted* folder, matching this section's "Adopted archives kee
 whatever structure they already had" rule — that folder is real, pre-existing structure
 the user made themselves outside Curato, not something Curato's naming template owns;
 editing an Adopted item's title only ever corrects how Curato displays it.]
+[A title is never rejected for containing characters that aren't valid in a folder
+name — first tried the opposite (reject up front), but the database itself has no such
+restriction, and a CuratoManaged Event/Trip might not even have a folder yet to be
+invalid for. `Curato.Core.FolderNameSanitizer` instead silently converts whatever isn't
+safe on Windows (the most restrictive deployment target — replacing invalid characters,
+trimming a trailing dot/space, suffixing a reserved device name like `CON`) at the one
+place `FolderNameTemplate` actually turns a title into a real folder segment — a title
+with a "/" or "?" in it just gets a slightly different (still recognizable) folder name
+instead of being an error the user has to work around, and the database always keeps
+the title verbatim regardless of what ends up on disk.]
 
 ## 4. File organizer
 

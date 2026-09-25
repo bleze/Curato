@@ -61,11 +61,17 @@ button {
 }
 
 .auth-logo {
-  border-radius: 10px;
+  border-radius: 16px;
 }
 
+/* margin-top only — the base h1 rule's 32px margin-bottom has to survive
+   this override, or the tagline right below (which pulls itself up with
+   its own negative margin-top, tuned for the app header's tighter layout)
+   ends up overlapping the title's descenders instead of sitting under it.
+   Confirmed live: the 3-value shorthand `margin: 12px 0 0` zeroes out
+   *every* other side, including that bottom margin, not just top. */
 .auth-shell h1 {
-  margin: 12px 0 0;
+  margin-top: 12px;
 }
 
 .auth-form {

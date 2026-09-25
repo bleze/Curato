@@ -24,7 +24,12 @@ public static class ThumbnailGenerator
 {
     public static byte[] GenerateJpeg(string filePath, int maxDimension = 320, IReadOnlyList<Edit>? edits = null)
     {
-        using var original = DecodeSource(filePath, out var encodedOrigin);
+        // A Crop edit's rectangle is computed against the original file's
+        // full-resolution pixel coordinates — safe to use a HEIC's smaller
+        // embedded thumbnail image only when there's no Crop to apply on
+        // top of it (see HeicDecoder for why this matters at all).
+        var hasCropEdit = edits?.Any(e => e.OperationType == EditOperationType.Crop) ?? false;
+        using var original = DecodeSource(filePath, maxDimension, allowEmbeddedThumbnail: !hasCropEdit, out var encodedOrigin);
 
         var edited = edits is { Count: > 0 } ? EditRenderer.Apply(original, edits) : original;
         try
@@ -79,7 +84,7 @@ public static class ThumbnailGenerator
         }
     }
 
-    private static SKBitmap DecodeSource(string filePath, out SKEncodedOrigin encodedOrigin)
+    private static SKBitmap DecodeSource(string filePath, int maxDimension, bool allowEmbeddedThumbnail, out SKEncodedOrigin encodedOrigin)
     {
         var extension = Path.GetExtension(filePath);
         if (extension.Equals(".heic", StringComparison.OrdinalIgnoreCase) ||
@@ -89,7 +94,7 @@ public static class ThumbnailGenerator
             // file has no rotation" — libheif's own decode already applies
             // the container's orientation transform (see HeicDecoder).
             encodedOrigin = SKEncodedOrigin.TopLeft;
-            return HeicDecoder.Decode(filePath);
+            return HeicDecoder.Decode(filePath, maxDimension, allowEmbeddedThumbnail);
         }
 
         using var input = File.OpenRead(filePath);

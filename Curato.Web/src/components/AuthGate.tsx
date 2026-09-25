@@ -28,7 +28,7 @@ export function AuthGate({ needsSetup, onSignedIn }: { needsSetup: boolean; onSi
 
   return (
     <main className="app-shell auth-shell">
-      <img src="/favicon.svg" alt="" className="auth-logo" width={48} height={48} />
+      <img src="/favicon.svg" alt="" className="auth-logo" width={88} height={88} />
       <h1>Curato</h1>
       <p className="tagline">
         {needsSetup
