@@ -906,9 +906,16 @@ button {
   background: var(--accent);
 }
 
+/* Fixed height (not just max-height) so switching tabs never resizes the
+   dialog — sized to comfortably fit the tallest tab's content (iCloud,
+   connected + syncing, with every optional status line showing at once).
+   overflow-y still covers the rare case a tab's content grows past it, and
+   flexes down on short viewports since modal-dialog's own max-height wins. */
 .modal-body {
+  height: 420px;
   padding: 14px 18px;
   overflow-y: auto;
+  box-sizing: border-box;
 }
 
 .modal-footer {
