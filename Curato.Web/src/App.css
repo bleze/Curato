@@ -912,7 +912,7 @@ button {
    overflow-y still covers the rare case a tab's content grows past it, and
    flexes down on short viewports since modal-dialog's own max-height wins. */
 .modal-body {
-  height: 420px;
+  height: 363px;
   padding: 14px 18px;
   overflow-y: auto;
   box-sizing: border-box;
@@ -1070,7 +1070,8 @@ button {
    individually — confirmed live that only listing text/password left the
    number/date sync-scope inputs with unstyled native backgrounds, standing
    out light against the rest of the dark theme. */
-.settings-row input:not([type='checkbox']) {
+.settings-row input:not([type='checkbox']),
+.settings-field input:not([type='checkbox']) {
   padding: 6px 8px;
   font-size: 13px;
   border: 1px solid var(--border);
@@ -1080,7 +1081,9 @@ button {
 }
 
 .settings-row input[type='text'],
-.settings-row input[type='password'] {
+.settings-row input[type='password'],
+.settings-field input[type='text'],
+.settings-field input[type='password'] {
   flex: 1;
   min-width: 160px;
 }
@@ -1125,6 +1128,65 @@ button {
 .recyclebin-item-actions {
   display: flex;
   gap: 6px;
+}
+
+.icloud-header {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 12px;
+}
+
+.icloud-account {
+  margin: 0 0 4px;
+  font-size: 13.5px;
+}
+
+.icloud-sync-row {
+  margin-top: 10px;
+}
+
+.settings-subsection {
+  margin-top: 12px;
+  padding-top: 10px;
+  border-top: 1px solid var(--border-soft);
+}
+
+.settings-subheading {
+  margin: 0 0 8px;
+  font-size: 11.5px;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  color: var(--text-muted);
+}
+
+.settings-field {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  margin-bottom: 8px;
+}
+
+.settings-field:last-of-type {
+  margin-bottom: 0;
+}
+
+.settings-field label {
+  flex: 0 0 170px;
+  font-size: 12.5px;
+  color: var(--text-muted);
+}
+
+.settings-field-control {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex: 1;
+}
+
+.settings-field > input:not([type='checkbox']) {
+  flex: 1;
 }
 
 .recyclebin-item-actions button {

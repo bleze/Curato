@@ -310,126 +310,151 @@ export function SettingsPanel({
           {activeTab === 'icloud' && (
             <section className="settings-section">
               {!libraryFolder ? (
-          <p className="recyclebin-hint">Set a library folder above first.</p>
-        ) : status?.connected ? (
-          <>
-            <p>
-              Connected as <strong>{status.appleUsername}</strong>
-            </p>
-            <p className="settings-meta">
-              {status.lastSyncAt
-                ? `Last synced ${new Date(status.lastSyncAt).toLocaleString()} — ${status.lastSyncItemCount ?? 0} item(s) (${status.lastSyncStatus})`
-                : 'Never synced yet — the first sync may take a while.'}
-            </p>
-            {status.lastSyncStatus === 'Error' && status.lastSyncMessage && (
-              <p className="error">{status.lastSyncMessage}</p>
-            )}
-            {syncing && (
-              <p className="settings-meta" title="icloudpd's most recent output line, updating live">
-                {status.currentActivity ? `Working: ${status.currentActivity}` : 'Starting…'}
-              </p>
-            )}
-            <div className="settings-row">
-              <button type="button" onClick={handleSyncNow} disabled={busy}>
-                {busy ? 'Syncing…' : 'Sync now'}
-              </button>
-              <label>
-                <input
-                  type="checkbox"
-                  checked={status.enabled ?? false}
-                  onChange={handleToggleEnabled}
-                  disabled={busy}
-                />{' '}
-                Auto-sync every {Math.round((status.intervalMinutes ?? 360) / 60)}h
-              </label>
-              <button type="button" onClick={handleDisconnect} disabled={busy}>
-                Disconnect
-              </button>
-            </div>
-            <div className="settings-row">
-              <label>
-                Only sync photos from the last{' '}
-                <input
-                  type="number"
-                  min={1}
-                  value={lookbackInput}
-                  onChange={(e) => setLookbackInput(e.target.value)}
-                  disabled={!!sinceDateInput}
-                  style={{ width: '70px' }}
-                />{' '}
-                day(s)
-              </label>
-            </div>
-            <div className="settings-row">
-              <label>
-                or since a specific date:{' '}
-                <input
-                  type="date"
-                  value={sinceDateInput}
-                  onChange={(e) => setSinceDateInput(e.target.value)}
-                />
-              </label>
-              {sinceDateInput && (
-                <button type="button" onClick={handleClearSinceDate} disabled={busy}>
-                  Clear (use days instead)
-                </button>
+                <p className="recyclebin-hint">Set a library folder above first.</p>
+              ) : status?.connected ? (
+                <>
+                  <div className="icloud-header">
+                    <div>
+                      <p className="icloud-account">
+                        Connected as <strong>{status.appleUsername}</strong>
+                      </p>
+                      <p className="settings-meta">
+                        {status.lastSyncAt
+                          ? `Last synced ${new Date(status.lastSyncAt).toLocaleString()} — ${status.lastSyncItemCount ?? 0} item(s) (${status.lastSyncStatus})`
+                          : 'Never synced yet — the first sync may take a while.'}
+                      </p>
+                    </div>
+                    <button type="button" className="modal-footer-cancel" onClick={handleDisconnect} disabled={busy}>
+                      Disconnect
+                    </button>
+                  </div>
+
+                  {status.lastSyncStatus === 'Error' && status.lastSyncMessage && (
+                    <p className="error">{status.lastSyncMessage}</p>
+                  )}
+                  {syncing && (
+                    <p className="settings-meta" title="icloudpd's most recent output line, updating live">
+                      {status.currentActivity ? `Working: ${status.currentActivity}` : 'Starting…'}
+                    </p>
+                  )}
+
+                  <div className="settings-row icloud-sync-row">
+                    <button type="button" onClick={handleSyncNow} disabled={busy}>
+                      {busy ? 'Syncing…' : 'Sync now'}
+                    </button>
+                    <label className="settings-checkbox-row">
+                      <input
+                        type="checkbox"
+                        checked={status.enabled ?? false}
+                        onChange={handleToggleEnabled}
+                        disabled={busy}
+                      />
+                      Auto-sync every {Math.round((status.intervalMinutes ?? 360) / 60)}h
+                    </label>
+                  </div>
+
+                  <div className="settings-subsection">
+                    <h3 className="settings-subheading">Sync scope</h3>
+
+                    <div className="settings-field">
+                      <label htmlFor="icloud-lookback-days">Sync from the last</label>
+                      <div className="settings-field-control">
+                        <input
+                          id="icloud-lookback-days"
+                          type="number"
+                          min={1}
+                          value={lookbackInput}
+                          onChange={(e) => setLookbackInput(e.target.value)}
+                          disabled={!!sinceDateInput}
+                          style={{ width: '70px' }}
+                        />
+                        <span>day(s)</span>
+                      </div>
+                    </div>
+
+                    <div className="settings-field">
+                      <label htmlFor="icloud-since-date">Or since a date</label>
+                      <div className="settings-field-control">
+                        <input
+                          id="icloud-since-date"
+                          type="date"
+                          value={sinceDateInput}
+                          onChange={(e) => setSinceDateInput(e.target.value)}
+                        />
+                        {sinceDateInput && (
+                          <button type="button" onClick={handleClearSinceDate} disabled={busy}>
+                            Clear
+                          </button>
+                        )}
+                      </div>
+                    </div>
+
+                    <div className="settings-field">
+                      <label htmlFor="icloud-max-files">Max files per sync</label>
+                      <div className="settings-field-control">
+                        <input
+                          id="icloud-max-files"
+                          type="number"
+                          min={1}
+                          value={recentCapInput}
+                          onChange={(e) => setRecentCapInput(e.target.value)}
+                          style={{ width: '90px' }}
+                        />
+                      </div>
+                    </div>
+
+                    <p className="settings-meta">
+                      The specific date wins over "last N days" when both are set. "Max files" caps how many
+                      recently-added items are even considered per sync. Changes here apply when you Save below.
+                    </p>
+                  </div>
+                </>
+              ) : awaitingCode ? (
+                <>
+                  <div className="settings-field">
+                    <label htmlFor="icloud-code">Verification code</label>
+                    <input
+                      id="icloud-code"
+                      type="text"
+                      value={code}
+                      onChange={(e) => setCode(e.target.value)}
+                      autoFocus
+                    />
+                  </div>
+                  <div className="settings-row">
+                    <button type="button" onClick={handleICloudVerify} disabled={busy || !code.trim()}>
+                      Verify
+                    </button>
+                    <button type="button" onClick={handleCancelLogin} disabled={busy}>
+                      Start over
+                    </button>
+                  </div>
+                </>
+              ) : (
+                <>
+                  <div className="settings-field">
+                    <label htmlFor="icloud-username">Apple ID</label>
+                    <input
+                      id="icloud-username"
+                      type="text"
+                      value={username}
+                      onChange={(e) => setUsername(e.target.value)}
+                    />
+                  </div>
+                  <div className="settings-field">
+                    <label htmlFor="icloud-password">Password</label>
+                    <input
+                      id="icloud-password"
+                      type="password"
+                      value={password}
+                      onChange={(e) => setPassword(e.target.value)}
+                    />
+                  </div>
+                  <button type="button" onClick={handleICloudLogin} disabled={busy || !username.trim() || !password}>
+                    Connect
+                  </button>
+                </>
               )}
-            </div>
-            <div className="settings-row">
-              <label>
-                Max files to check per sync:{' '}
-                <input
-                  type="number"
-                  min={1}
-                  value={recentCapInput}
-                  onChange={(e) => setRecentCapInput(e.target.value)}
-                  style={{ width: '90px' }}
-                />
-              </label>
-            </div>
-            <p className="settings-meta">
-              The date setting applies to every sync, not just the first (the specific date wins over "last N days"
-              when both are set) — widen it if you want more history, but a never-yet-synced account otherwise won't
-              pull years of backlog by surprise. "Max files to check" is a separate performance ceiling: raise it if
-              your date range covers more than that many recently-added items, since anything beyond the cap won't
-              even be considered. Changes here apply when you Save below.
-            </p>
-          </>
-        ) : awaitingCode ? (
-          <div className="settings-row">
-            <input
-              type="text"
-              placeholder="6-digit code"
-              value={code}
-              onChange={(e) => setCode(e.target.value)}
-              autoFocus
-            />
-            <button type="button" onClick={handleICloudVerify} disabled={busy || !code.trim()}>
-              Verify
-            </button>
-            <button type="button" onClick={handleCancelLogin} disabled={busy}>
-              Start over
-            </button>
-          </div>
-        ) : (
-          <div className="settings-row">
-            <input
-              type="text"
-              placeholder="Apple ID"
-              value={username}
-              onChange={(e) => setUsername(e.target.value)}
-            />
-            <input
-              type="password"
-              placeholder="Password"
-              value={password}
-              onChange={(e) => setPassword(e.target.value)}
-            />
-            <button type="button" onClick={handleICloudLogin} disabled={busy || !username.trim() || !password}>
-              Connect
-            </button>
-          </div>
-        )}
             </section>
           )}
 
