@@ -28,12 +28,14 @@ export function AuthGate({ needsSetup, onSignedIn }: { needsSetup: boolean; onSi
 
   return (
     <main className="app-shell auth-shell">
-      <img src="/favicon.svg" alt="" className="auth-logo" width={88} height={88} />
-      <h1>Curato</h1>
+      <div className="auth-brand">
+        <img src="/favicon.svg" alt="" className="auth-logo" width={64} height={64} />
+        <h1>Curato</h1>
+      </div>
       <p className="tagline">
         {needsSetup
           ? 'Create the admin account (one-time setup — PLAN.md §15).'
-          : 'Sign in to continue'}
+          : 'Your photos, organized — self-hosted and always yours.'}
       </p>
       <form className="auth-form" onSubmit={handleSubmit}>
         <input

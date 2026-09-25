@@ -74,6 +74,20 @@ function formatRemovedMissingFilesNote(removedMissingFileCount: number): string 
   return ` Removed ${removedMissingFileCount} item(s) whose file was deleted on disk.`
 }
 
+// proposedFolderPath (set on an Event/TripGroup) is exactly the dry-run
+// preview Organize would act on — the same field LibraryGrid already reads
+// to show each "Will move to: ..." pill. Nothing carrying one means a real
+// Organize run right now would move zero files, so the bar offering to run
+// it has nothing to offer.
+function hasPendingOrganize(library: LibraryDto): boolean {
+  return (
+    library.standaloneEvents.some((event) => event.proposedFolderPath !== null) ||
+    library.trips.some(
+      (trip) => trip.proposedFolderPath !== null || trip.events.some((event) => event.proposedFolderPath !== null),
+    )
+  )
+}
+
 function App() {
   const [authStatus, setAuthStatus] = useState<AuthStatus | null>(null)
   const [path, setPath] = useState('')
@@ -350,6 +364,29 @@ function App() {
               Albums
             </button>
           )}
+          {loadedPath && (
+            <label className="upload-button">
+              {busy ? 'Working…' : 'Add photos'}
+              <input
+                type="file"
+                accept="image/*,video/*"
+                multiple
+                disabled={busy}
+                onChange={(e) => {
+                  handleUpload(e.target.files)
+                  e.target.value = ''
+                }}
+              />
+            </label>
+          )}
+          <button
+            type="button"
+            onClick={handleScan}
+            disabled={busy || !path.trim()}
+            title={path ? `Re-scan ${path} for new/changed files` : 'Set a library folder in Settings first'}
+          >
+            {busy ? 'Scanning…' : 'Scan'}
+          </button>
           <button type="button" onClick={() => setShowSettings(true)}>
             Settings
           </button>
@@ -359,20 +396,10 @@ function App() {
           </button>
         </div>
       </header>
-      <p className="tagline">Point this at a folder to scan/organize it (PLAN.md Phase 1).</p>
 
-      <div className="scan-form">
-        <input
-          type="text"
-          placeholder="C:/Photos or /volume1/Photos"
-          value={path}
-          onChange={(e) => setPath(e.target.value)}
-          onKeyDown={(e) => e.key === 'Enter' && handleScan()}
-        />
-        <button type="button" onClick={handleScan} disabled={busy || !path.trim()}>
-          {busy ? 'Scanning\u2026' : 'Scan'}
-        </button>
-      </div>
+      {!loadedPath && !autoLoading && (
+        <p className="tagline">No library folder configured yet — open Settings to point Curato at your photos.</p>
+      )}
 
       {autoLoading && <p className="status">Loading your library…</p>}
       {status && <p className="status">{status}</p>}
@@ -412,28 +439,17 @@ function App() {
 
       {library && loadedPath && (
         <div className="library">
-          <div className="organize-bar">
-            <button type="button" onClick={handleOrganize} disabled={busy}>
-              {busy ? 'Working…' : 'Organize'}
-            </button>
-            <span className="organize-hint">
-              Moves newly auto-organized items into their dated folders. Adopted folders are
-              never touched.
-            </span>
-            <label className="upload-button">
-              {busy ? 'Working…' : 'Add photos'}
-              <input
-                type="file"
-                accept="image/*,video/*"
-                multiple
-                disabled={busy}
-                onChange={(e) => {
-                  handleUpload(e.target.files)
-                  e.target.value = ''
-                }}
-              />
-            </label>
-          </div>
+          {hasPendingOrganize(library) && (
+            <div className="organize-bar">
+              <button type="button" onClick={handleOrganize} disabled={busy}>
+                {busy ? 'Working…' : 'Organize'}
+              </button>
+              <span className="organize-hint">
+                Moves newly auto-organized items into their dated folders. Adopted folders are
+                never touched.
+              </span>
+            </div>
+          )}
           <LibraryGrid
             library={library}
             libraryPath={loadedPath}

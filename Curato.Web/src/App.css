@@ -7,8 +7,8 @@
 }
 
 /* Base/secondary button text color: the accent blue used everywhere else
-   (Scan, Organize, etc.), on a plain background — the "inverted" look from
-   the solid-blue-background primary actions (.scan-form/.auth-form button),
+   (Organize, etc.), on a plain background — the "inverted" look from the
+   solid-blue-background primary actions (.organize-bar/.auth-form button),
    which already set their own on-accent text explicitly and so aren't
    affected by this (a class selector always wins over this plain element
    one). Fixes secondary buttons (Settings, Recycle Bin, thumbnail delete's
@@ -70,18 +70,21 @@ button {
   text-align: center;
 }
 
-.auth-logo {
-  border-radius: 16px;
+/* Logo sits next to the title now, not stacked above it — a single flex
+   row, vertically centered, rather than the column layout .auth-shell uses
+   for the rest of the screen. */
+.auth-brand {
+  display: flex;
+  align-items: center;
+  gap: 16px;
 }
 
-/* margin-top only — the base h1 rule's 32px margin-bottom has to survive
-   this override, or the tagline right below (which pulls itself up with
-   its own negative margin-top, tuned for the app header's tighter layout)
-   ends up overlapping the title's descenders instead of sitting under it.
-   Confirmed live: the 3-value shorthand `margin: 12px 0 0` zeroes out
-   *every* other side, including that bottom margin, not just top. */
-.auth-shell h1 {
-  margin-top: 12px;
+.auth-logo {
+  border-radius: 14px;
+}
+
+.auth-brand h1 {
+  margin: 0;
 }
 
 .auth-form {
@@ -126,12 +129,6 @@ button {
   cursor: default;
 }
 
-.scan-form {
-  display: flex;
-  gap: 8px;
-  margin: 16px 0;
-}
-
 .organize-bar {
   display: flex;
   align-items: center;
@@ -166,12 +163,15 @@ button {
   flex: 1;
 }
 
+/* Lives in the .account toolbar now, alongside plain-looking buttons
+   (Recycle Bin, Find Duplicates, ...) rather than as the one prominent
+   action in a highlighted .organize-bar — styled to match .account button
+   instead of standing out as its own bespoke CTA. */
 .upload-button {
-  padding: 7px 16px;
-  font-size: 13px;
-  font-weight: 600;
+  padding: 5px 12px;
+  font-size: 12.5px;
   border-radius: 6px;
-  border: 1px solid var(--accent);
+  border: 1px solid var(--border);
   color: var(--accent);
   background: var(--surface);
   cursor: pointer;
@@ -184,31 +184,6 @@ button {
   height: 1px;
   overflow: hidden;
   clip: rect(0, 0, 0, 0);
-}
-
-.scan-form input {
-  flex: 1;
-  padding: 8px 12px;
-  font-size: 14px;
-  border: 1px solid var(--border);
-  border-radius: 6px;
-  background: var(--surface);
-  color: var(--text);
-}
-
-.scan-form button {
-  padding: 8px 18px;
-  font-size: 14px;
-  border-radius: 6px;
-  border: none;
-  background: var(--accent);
-  color: var(--on-accent);
-  cursor: pointer;
-}
-
-.scan-form button:disabled {
-  background: var(--accent-disabled);
-  cursor: default;
 }
 
 .status {
