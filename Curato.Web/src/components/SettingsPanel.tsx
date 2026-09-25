@@ -285,7 +285,6 @@ export function SettingsPanel({
                   onChange={(e) => setLibraryFolderInput(e.target.value)}
                 />
               </div>
-              {libraryFolder && <p className="settings-meta">Current: {libraryFolder}</p>}
             </section>
           )}
 
