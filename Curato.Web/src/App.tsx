@@ -1,10 +1,11 @@
 import { useEffect, useRef, useState } from 'react'
 import './App.css'
-import type { AuthStatus, LibraryDto, PicasaImportResult } from './api'
+import type { AuthStatus, FavoriteCategoryDto, LibraryDto, PicasaImportResult } from './api'
 import {
   createTripGroup,
   deleteMediaItem,
   getAuthStatus,
+  getFavoriteCategories,
   getLibrary,
   getLibraryFolder,
   logout,
@@ -15,6 +16,7 @@ import {
   renameEvent,
   renameTripGroup,
   scanLibrary,
+  setMediaItemFavoriteCategory,
   setTakenAt,
   ungroupTripGroup,
   uploadFiles,
@@ -90,15 +92,19 @@ function App() {
   const [path, setPath] = useState('')
   const [library, setLibrary] = useState<LibraryDto | null>(null)
   const [loadedPath, setLoadedPath] = useState<string | null>(null)
+  const [favoriteCategories, setFavoriteCategories] = useState<FavoriteCategoryDto[]>([])
   const [status, setStatus] = useState<string | null>(null)
   const [error, setError] = useState<string | null>(null)
   const [busy, setBusy] = useState(false)
   const [scanning, setScanning] = useState(false)
   const scanAbortRef = useRef<AbortController | null>(null)
   const [autoLoading, setAutoLoading] = useState(false)
-  const [showRecycleBin, setShowRecycleBin] = useState(false)
+  // Library/Albums/Recycle Bin are mutually-exclusive views of the same main
+  // content area (a toolbar toggle, not stacked dismissable panels) — Find
+  // Duplicates and Settings stay real overlays below since they're one-off
+  // tools/actions, not browsable views of the library's contents.
+  const [activeView, setActiveView] = useState<'library' | 'albums' | 'recycleBin'>('library')
   const [showDuplicates, setShowDuplicates] = useState(false)
-  const [showAlbums, setShowAlbums] = useState(false)
   const [showSettings, setShowSettings] = useState(false)
 
   useEffect(() => {
@@ -144,6 +150,36 @@ function App() {
       .finally(() => setAutoLoading(false))
   }, [authStatus?.isAuthenticated])
 
+  // Favorite categories change rarely compared to the library itself, so
+  // this only re-fetches when the open library actually changes, not on
+  // every library mutation — Settings calls onFavoriteCategoriesChanged
+  // directly after an add/delete instead, the same pattern
+  // refreshLibraryIfCurrentlyOpen below uses for Settings-triggered syncs.
+  useEffect(() => {
+    if (!loadedPath) {
+      setFavoriteCategories([])
+      return
+    }
+
+    getFavoriteCategories(loadedPath)
+      .then(setFavoriteCategories)
+      .catch(() => {
+        // Best-effort — the star button just hides itself with zero categories.
+      })
+  }, [loadedPath])
+
+  function refreshFavoriteCategoriesIfCurrentlyOpen(path: string) {
+    if (!loadedPath || loadedPath.toLowerCase() !== path.toLowerCase()) {
+      return
+    }
+
+    getFavoriteCategories(path)
+      .then(setFavoriteCategories)
+      .catch(() => {
+        // Best-effort, same reasoning as refreshLibraryIfCurrentlyOpen below.
+      })
+  }
+
   // Silently re-fetches the currently-open library if it's the one that
   // just changed — for after a Settings-triggered "Sync now" completes.
   // Confirmed live this was needed: a sync run from Settings updates the
@@ -180,6 +216,7 @@ function App() {
       setPath(pathToOpen)
       rememberPath(pathToOpen)
       setShowSettings(false)
+      setActiveView('library')
     } catch (err) {
       setError(err instanceof Error ? err.message : String(err))
     } finally {
@@ -347,6 +384,18 @@ function App() {
     }
   }
 
+  async function handleSetFavoriteCategory(mediaItemId: number, tagId: number | null) {
+    if (!loadedPath) return
+    setError(null)
+    try {
+      await setMediaItemFavoriteCategory(loadedPath, mediaItemId, tagId)
+      const lib = await getLibrary(loadedPath)
+      setLibrary(lib)
+    } catch (err) {
+      setError(err instanceof Error ? err.message : String(err))
+    }
+  }
+
   async function handleCreateTripGroup(eventIds: number[]) {
     if (!loadedPath) return
     setError(null)
@@ -437,18 +486,33 @@ function App() {
         </div>
         <div className="account">
           {loadedPath && (
-            <button type="button" onClick={() => setShowRecycleBin(true)}>
-              Recycle Bin
-            </button>
+            <div className="view-switcher">
+              <button
+                type="button"
+                className={activeView === 'library' ? 'is-active' : ''}
+                onClick={() => setActiveView('library')}
+              >
+                Library
+              </button>
+              <button
+                type="button"
+                className={activeView === 'albums' ? 'is-active' : ''}
+                onClick={() => setActiveView('albums')}
+              >
+                Albums
+              </button>
+              <button
+                type="button"
+                className={activeView === 'recycleBin' ? 'is-active' : ''}
+                onClick={() => setActiveView('recycleBin')}
+              >
+                Recycle Bin
+              </button>
+            </div>
           )}
           {loadedPath && (
             <button type="button" onClick={() => setShowDuplicates(true)}>
               Find Duplicates
-            </button>
-          )}
-          {loadedPath && (
-            <button type="button" onClick={() => setShowAlbums(true)}>
-              Albums
             </button>
           )}
           {loadedPath && (
@@ -504,10 +568,6 @@ function App() {
       {status && <p className="status">{status}</p>}
       {error && <p className="error">{error}</p>}
 
-      {showRecycleBin && loadedPath && (
-        <RecycleBinPanel libraryPath={loadedPath} onClose={() => setShowRecycleBin(false)} />
-      )}
-
       {showDuplicates && loadedPath && (
         <DuplicateFinderPanel
           libraryPath={loadedPath}
@@ -518,25 +578,33 @@ function App() {
         />
       )}
 
-      {showAlbums && loadedPath && (
-        <AlbumsPanel
-          libraryPath={loadedPath}
-          onClose={() => setShowAlbums(false)}
-          onDelete={handleDelete}
-          onTakenAtChanged={handleTakenAtChanged}
-          onRotated={handleRotated}
-        />
-      )}
-
       {showSettings && (
         <SettingsPanel
           onClose={() => setShowSettings(false)}
           onOpenLibrary={handleOpenLibrary}
           onLibraryContentChanged={refreshLibraryIfCurrentlyOpen}
+          onFavoriteCategoriesChanged={refreshFavoriteCategoriesIfCurrentlyOpen}
         />
       )}
 
-      {library && loadedPath && (
+      {loadedPath && activeView === 'recycleBin' && (
+        <div className="library">
+          <RecycleBinPanel libraryPath={loadedPath} />
+        </div>
+      )}
+
+      {loadedPath && activeView === 'albums' && (
+        <div className="library">
+          <AlbumsPanel
+            libraryPath={loadedPath}
+            onDelete={handleDelete}
+            onTakenAtChanged={handleTakenAtChanged}
+            onRotated={handleRotated}
+          />
+        </div>
+      )}
+
+      {library && loadedPath && activeView === 'library' && (
         <div className="library">
           {hasPendingOrganize(library) && (
             <div className="organize-bar">
@@ -552,6 +620,7 @@ function App() {
           <LibraryGrid
             library={library}
             libraryPath={loadedPath}
+            favoriteCategories={favoriteCategories}
             onDelete={handleDelete}
             onTakenAtChanged={handleTakenAtChanged}
             onRotated={handleRotated}
@@ -562,6 +631,7 @@ function App() {
             onUngroupTripGroup={handleUngroupTripGroup}
             onMergeEventsInto={handleMergeEventsInto}
             onRemoveEventsFromTrip={handleRemoveEventsFromTrip}
+            onSetFavoriteCategory={handleSetFavoriteCategory}
           />
         </div>
       )}

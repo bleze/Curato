@@ -1,6 +1,9 @@
 import { useEffect, useState } from 'react'
-import type { iCloudSyncStatus } from '../api'
+import type { FavoriteCategoryDto, iCloudSyncStatus } from '../api'
 import {
+  createFavoriteCategory,
+  deleteFavoriteCategory,
+  getFavoriteCategories,
   getHomeLocation,
   getICloudSyncStatus,
   getLibraryFolder,
@@ -21,12 +24,14 @@ export function SettingsPanel({
   onClose,
   onOpenLibrary,
   onLibraryContentChanged,
+  onFavoriteCategoriesChanged,
 }: {
   onClose: () => void
   onOpenLibrary: (path: string) => void
   onLibraryContentChanged: (path: string) => void
+  onFavoriteCategoriesChanged: (path: string) => void
 }) {
-  const [activeTab, setActiveTab] = useState<'library' | 'home' | 'icloud' | 'display'>('library')
+  const [activeTab, setActiveTab] = useState<'library' | 'home' | 'icloud' | 'display' | 'favorites'>('library')
   const use24Hour = useUse24HourTime()
   const thumbMinWidth = useThumbMinWidth()
   const [libraryFolder, setLibraryFolderValue] = useState<string | null>(null)
@@ -46,10 +51,20 @@ export function SettingsPanel({
   const [recentCapInput, setRecentCapInput] = useState('')
   const [syncing, setSyncing] = useState(false)
 
+  const [favoriteCategories, setFavoriteCategoriesValue] = useState<FavoriteCategoryDto[]>([])
+  const [newCategoryName, setNewCategoryName] = useState('')
+
+  function refreshFavoriteCategories(path: string) {
+    getFavoriteCategories(path)
+      .then(setFavoriteCategoriesValue)
+      .catch((err) => setError(err instanceof Error ? err.message : String(err)))
+  }
+
   function refresh() {
     getLibraryFolder().then((path) => {
       setLibraryFolderValue(path)
       setLibraryFolderInput((current) => current || path || '')
+      if (path) refreshFavoriteCategories(path)
     })
     getHomeLocation().then((label) => {
       setHomeLocationValue(label)
@@ -191,6 +206,28 @@ export function SettingsPanel({
     })
   }
 
+  // Immediate, like Connect/Disconnect/Sync now above — there's no sensible
+  // "staged" version of creating or deleting a named category to Cancel out
+  // of later, unlike the plain field values the Cancel/Save footer covers.
+  function handleAddFavoriteCategory() {
+    if (!libraryFolder || !newCategoryName.trim()) return
+    return runBusy(async () => {
+      await createFavoriteCategory(libraryFolder, newCategoryName.trim())
+      setNewCategoryName('')
+      refreshFavoriteCategories(libraryFolder)
+      onFavoriteCategoriesChanged(libraryFolder)
+    })
+  }
+
+  function handleDeleteFavoriteCategory(tagId: number) {
+    if (!libraryFolder) return
+    return runBusy(async () => {
+      await deleteFavoriteCategory(libraryFolder, tagId)
+      refreshFavoriteCategories(libraryFolder)
+      onFavoriteCategoriesChanged(libraryFolder)
+    })
+  }
+
   // One Cancel/Save pair for the whole dialog instead of a separate Save
   // next to every field — Connect/Verify/Disconnect/Sync now/auto-sync
   // toggle above stay immediate actions (there's nothing to "stage" about
@@ -266,6 +303,13 @@ export function SettingsPanel({
             onClick={() => setActiveTab('display')}
           >
             Display
+          </button>
+          <button
+            type="button"
+            className={`modal-tab ${activeTab === 'favorites' ? 'is-active' : ''}`}
+            onClick={() => setActiveTab('favorites')}
+          >
+            Favorites
           </button>
         </div>
         <div className="modal-body">
@@ -489,6 +533,54 @@ export function SettingsPanel({
                 />
                 <span className="settings-thumbsize-value">{thumbMinWidth}px</span>
               </div>
+            </section>
+          )}
+
+          {activeTab === 'favorites' && (
+            <section className="settings-section">
+              {!libraryFolder ? (
+                <p className="recyclebin-hint">Set a library folder above first.</p>
+              ) : (
+                <>
+                  <p className="recyclebin-hint">
+                    Named categories (e.g. "Favorites", "Kids") assignable per photo/video via the star button on
+                    each tile — each one doubles as a browsable album.
+                  </p>
+                  <div className="settings-row">
+                    <input
+                      type="text"
+                      placeholder="Category name"
+                      value={newCategoryName}
+                      onChange={(e) => setNewCategoryName(e.target.value)}
+                      onKeyDown={(e) => {
+                        if (e.key === 'Enter') handleAddFavoriteCategory()
+                      }}
+                    />
+                    <button type="button" onClick={handleAddFavoriteCategory} disabled={busy || !newCategoryName.trim()}>
+                      Add
+                    </button>
+                  </div>
+                  {favoriteCategories.length === 0 ? (
+                    <p className="settings-meta">No favorite categories yet.</p>
+                  ) : (
+                    <ul className="favorite-category-list">
+                      {favoriteCategories.map((c) => (
+                        <li key={c.id}>
+                          <span>{c.name}</span>
+                          <button
+                            type="button"
+                            className="modal-footer-cancel"
+                            onClick={() => handleDeleteFavoriteCategory(c.id)}
+                            disabled={busy}
+                          >
+                            Delete
+                          </button>
+                        </li>
+                      ))}
+                    </ul>
+                  )}
+                </>
+              )}
             </section>
           )}
         </div>

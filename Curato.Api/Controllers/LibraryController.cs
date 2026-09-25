@@ -21,7 +21,7 @@ public sealed class LibraryController(LibraryOperationGate gate, ServerDatabase 
 {
     public sealed record MediaItemDto(
         long Id, string RelativePath, string Kind, DateTime TakenAt, string TakenAtSource,
-        string? LiveVideoRelativePath, string? Location);
+        string? LiveVideoRelativePath, string? Location, long? FavoriteCategoryId);
 
     public sealed record EventDto(
         long Id, string Title, string NamingMode, string? FolderPath, string? ProposedFolderPath,
@@ -48,6 +48,7 @@ public sealed class LibraryController(LibraryOperationGate gate, ServerDatabase 
         var geocoder = new ReverseGeocoder(database, new NominatimClient());
 
         var mediaById = query.GetAllMediaItems().ToDictionary(m => m.Id);
+        var favoriteCategoryAssignments = query.GetFavoriteCategoryAssignments();
 
         // The user's own "Home" label (Settings) wins over a real
         // reverse-geocode for anything GpsTripGate considers nearby —
@@ -117,7 +118,8 @@ public sealed class LibraryController(LibraryOperationGate gate, ServerDatabase 
             m.LivePhotoVideoItemId is { } videoId && mediaById.TryGetValue(videoId, out var video)
                 ? video.RelativePath
                 : null,
-            ResolveLocation(m.Latitude is { } lat && m.Longitude is { } lon ? (lat, lon) : null));
+            ResolveLocation(m.Latitude is { } lat && m.Longitude is { } lon ? (lat, lon) : null),
+            favoriteCategoryAssignments.TryGetValue(m.Id, out var favoriteId) ? favoriteId : null);
 
         EventDto ToEventDto(Event e) => new(
             e.Id, e.Title, e.NamingMode.ToString(), e.FolderPath, ProposeEventPath(e), e.StartAt, e.EndAt,

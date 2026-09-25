@@ -17,6 +17,9 @@ public sealed class TagController : ControllerBase
 {
     public sealed record MediaItemDto(long Id, string RelativePath, string Kind, DateTime TakenAt, string TakenAtSource, string? LiveVideoRelativePath);
     public sealed record TagDto(long Id, string Name, bool IsFavoriteShortcut, int ItemCount, string? CoverRelativePath);
+    public sealed record FavoriteCategoryDto(long Id, string Name);
+    public sealed record CreateFavoriteCategoryRequest(string Path, string Name);
+    public sealed record SetMediaItemFavoriteCategoryRequest(string Path, long MediaItemId, long? TagId);
 
     [HttpGet]
     public ActionResult<IReadOnlyList<TagDto>> List([FromQuery] string path)
@@ -82,6 +85,81 @@ public sealed class TagController : ControllerBase
             .ToList();
 
         return Ok(dtos);
+    }
+
+    /// <summary>All favorite categories, including empty ones (unlike <see cref="List"/>) — for Settings and the star picker.</summary>
+    [HttpGet("favorites")]
+    public ActionResult<IReadOnlyList<FavoriteCategoryDto>> ListFavoriteCategories([FromQuery] string path)
+    {
+        if (!Directory.Exists(path))
+        {
+            return NotFound($"Folder not found: {path}");
+        }
+
+        var dtos = OpenQuery(path).GetFavoriteCategories()
+            .Select(t => new FavoriteCategoryDto(t.Id, t.Name))
+            .ToList();
+
+        return Ok(dtos);
+    }
+
+    [HttpPost("favorites")]
+    public IActionResult CreateFavoriteCategory([FromBody] CreateFavoriteCategoryRequest request)
+    {
+        if (!Directory.Exists(request.Path))
+        {
+            return NotFound($"Folder not found: {request.Path}");
+        }
+
+        var database = new LibraryDatabase(request.Path);
+        database.EnsureSchema();
+        var (result, category) = new TagRepository(database).CreateFavoriteCategory(request.Name);
+
+        return result switch
+        {
+            CreateFavoriteCategoryResult.Success => Ok(new FavoriteCategoryDto(category!.Id, category.Name)),
+            CreateFavoriteCategoryResult.EmptyName => BadRequest("Name cannot be empty."),
+            CreateFavoriteCategoryResult.NameTaken => Conflict($"A tag/category named \"{request.Name}\" already exists."),
+            _ => StatusCode(500),
+        };
+    }
+
+    [HttpDelete("favorites/{tagId:long}")]
+    public IActionResult DeleteFavoriteCategory(long tagId, [FromQuery] string path)
+    {
+        if (!Directory.Exists(path))
+        {
+            return NotFound($"Folder not found: {path}");
+        }
+
+        var database = new LibraryDatabase(path);
+        database.EnsureSchema();
+
+        return new TagRepository(database).DeleteFavoriteCategory(tagId)
+            ? NoContent()
+            : NotFound($"No favorite category with id {tagId}");
+    }
+
+    /// <summary>The star button on a grid tile — at most one favorite category per photo, see TagRepository.SetMediaItemFavoriteCategory.</summary>
+    [HttpPost("favorite-category")]
+    public IActionResult SetMediaItemFavoriteCategory([FromBody] SetMediaItemFavoriteCategoryRequest request)
+    {
+        if (!Directory.Exists(request.Path))
+        {
+            return NotFound($"Folder not found: {request.Path}");
+        }
+
+        var database = new LibraryDatabase(request.Path);
+        database.EnsureSchema();
+        var result = new TagRepository(database).SetMediaItemFavoriteCategory(request.MediaItemId, request.TagId);
+
+        return result switch
+        {
+            SetFavoriteCategoryResult.Success => NoContent(),
+            SetFavoriteCategoryResult.MediaItemNotFound => NotFound($"No MediaItem with id {request.MediaItemId}"),
+            SetFavoriteCategoryResult.CategoryNotFound => NotFound($"No favorite category with id {request.TagId}"),
+            _ => StatusCode(500),
+        };
     }
 
     private static LibraryQueryService OpenQuery(string path)

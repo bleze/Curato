@@ -9,6 +9,8 @@ export interface MediaItemDto {
   liveVideoRelativePath: string | null
   /** Reverse-geocoded from this item's own GPS Exif, if it has any — null for most video and any photo with no GPS tag. */
   location: string | null
+  /** At most one at a time — see TagRepository.SetMediaItemFavoriteCategory. Null when no favorite category (or Picasa star) is set. */
+  favoriteCategoryId: number | null
 }
 
 export interface EventDto {
@@ -474,6 +476,39 @@ export function getTags(path: string): Promise<TagDto[]> {
 export function getTagItems(path: string, tagId: number): Promise<MediaItemDto[]> {
   const params = new URLSearchParams({ path })
   return fetch(`/api/tags/${tagId}/items?${params.toString()}`).then(asJson<MediaItemDto[]>)
+}
+
+export interface FavoriteCategoryDto {
+  id: number
+  name: string
+}
+
+/** All favorite categories, including empty ones — for Settings and the star-button picker. */
+export function getFavoriteCategories(path: string): Promise<FavoriteCategoryDto[]> {
+  return fetch(`/api/tags/favorites?path=${encodeURIComponent(path)}`).then(asJson<FavoriteCategoryDto[]>)
+}
+
+/** Refused (409) if a tag/album by that name already exists. */
+export function createFavoriteCategory(path: string, name: string): Promise<FavoriteCategoryDto> {
+  return fetch('/api/tags/favorites', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ path, name }),
+  }).then(asJson<FavoriteCategoryDto>)
+}
+
+export function deleteFavoriteCategory(path: string, tagId: number): Promise<void> {
+  const params = new URLSearchParams({ path })
+  return fetch(`/api/tags/favorites/${tagId}?${params.toString()}`, { method: 'DELETE' }).then(expectOk)
+}
+
+/** The star button on a grid tile. Pass tagId null to clear — at most one favorite category per photo. */
+export function setMediaItemFavoriteCategory(path: string, mediaItemId: number, tagId: number | null): Promise<void> {
+  return fetch('/api/tags/favorite-category', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ path, mediaItemId, tagId }),
+  }).then(expectOk)
 }
 
 export function uploadFiles(path: string, files: FileList | File[]): Promise<UploadResult> {

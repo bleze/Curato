@@ -1,11 +1,12 @@
 import { useVirtualizer } from '@tanstack/react-virtual'
 import { useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react'
-import type { EventDto, LibraryDto, MediaItemDto, TripGroupDto } from '../api'
+import type { EventDto, FavoriteCategoryDto, LibraryDto, MediaItemDto, TripGroupDto } from '../api'
 import { bumpImageVersion, rotateMediaItem, thumbnailUrl } from '../api'
 import type { DateMarker } from './DateScrubber'
 import { DateScrubber } from './DateScrubber'
 import type { EventSummary } from './EventPicker'
 import { EventPicker } from './EventPicker'
+import { FavoriteCategoryMenu } from './FavoriteCategoryMenu'
 import { formatTakenAt } from '../format'
 import { Lightbox } from './Lightbox'
 import { useThumbMinWidth } from '../thumbSize'
@@ -210,6 +211,7 @@ function buildDateMarkers(blocks: Block[], rowHeight: number, scrollableRange: n
 export function LibraryGrid({
   library,
   libraryPath,
+  favoriteCategories,
   onDelete,
   onTakenAtChanged,
   onRotated,
@@ -220,9 +222,11 @@ export function LibraryGrid({
   onUngroupTripGroup,
   onMergeEventsInto,
   onRemoveEventsFromTrip,
+  onSetFavoriteCategory,
 }: {
   library: LibraryDto
   libraryPath: string
+  favoriteCategories: FavoriteCategoryDto[]
   onDelete: (mediaItemId: number) => void
   onTakenAtChanged: (mediaItemId: number, takenAt: string) => void
   onRotated: (mediaItemId: number) => void
@@ -233,6 +237,7 @@ export function LibraryGrid({
   onUngroupTripGroup: (tripGroupId: number) => void
   onMergeEventsInto: (sourceEventIds: number[], targetEventId: number) => void
   onRemoveEventsFromTrip: (eventIds: number[]) => void
+  onSetFavoriteCategory: (mediaItemId: number, tagId: number | null) => void
 }) {
   const scrollRef = useRef<HTMLDivElement>(null)
   // null = not yet measured. Deliberately never guess a fallback column
@@ -325,6 +330,18 @@ export function LibraryGrid({
   function closeMovePicker() {
     setMoveTarget(null)
     setMoveSearch('')
+  }
+  // The star button's popup — only opened when there's more than one
+  // favorite category to choose from (see handleStarClick); a single
+  // category just toggles directly, no picker needed.
+  const [favoritePickerItem, setFavoritePickerItem] = useState<MediaItemDto | null>(null)
+  function handleStarClick(item: MediaItemDto) {
+    if (favoriteCategories.length === 1) {
+      const only = favoriteCategories[0]
+      onSetFavoriteCategory(item.id, item.favoriteCategoryId === only.id ? null : only.id)
+      return
+    }
+    setFavoritePickerItem(item)
   }
   // Flattened once per library load for the Lightbox's "Move to Event"
   // picker — it needs every Event's id/title/date range regardless of
@@ -591,6 +608,8 @@ export function LibraryGrid({
                       onHoverChange={(hovering) => {
                         hoveredPhotoRef.current = hovering && item.kind === 'Photo' ? item : null
                       }}
+                      showFavoriteButton={favoriteCategories.length > 0}
+                      onFavoriteClick={() => handleStarClick(item)}
                     />
                   ))}
                 </div>
@@ -679,6 +698,20 @@ export function LibraryGrid({
               closeMovePicker()
             }}
             onCancel={closeMovePicker}
+          />
+        </div>
+      )}
+
+      {favoritePickerItem && (
+        <div className="event-picker-overlay" onClick={() => setFavoritePickerItem(null)}>
+          <FavoriteCategoryMenu
+            categories={favoriteCategories}
+            currentId={favoritePickerItem.favoriteCategoryId}
+            onPick={(tagId) => {
+              onSetFavoriteCategory(favoritePickerItem.id, tagId)
+              setFavoritePickerItem(null)
+            }}
+            onCancel={() => setFavoritePickerItem(null)}
           />
         </div>
       )}
@@ -796,6 +829,8 @@ function ThumbTile({
   onDelete,
   onMove,
   onHoverChange,
+  showFavoriteButton,
+  onFavoriteClick,
 }: {
   item: MediaItemDto
   libraryPath: string
@@ -824,6 +859,9 @@ function ThumbTile({
   onDelete: (mediaItemId: number) => void
   onMove: () => void
   onHoverChange: (hovering: boolean) => void
+  /** Hidden entirely (not just disabled) when zero favorite categories exist — nothing to assign. */
+  showFavoriteButton: boolean
+  onFavoriteClick: () => void
 }) {
   // Deliberately reading/writing the ref synchronously during render rather
   // than in an effect: an effect only runs after the first paint, so an
@@ -893,8 +931,33 @@ function ThumbTile({
         </svg>
       </button>
       <button type="button" className="thumb-delete" title="Move to Recycle Bin" onClick={() => onDelete(item.id)}>
-        &times;
+        <svg viewBox="0 0 24 24" width="12" height="12" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round">
+          <path d="M6 6l12 12M18 6L6 18" />
+        </svg>
       </button>
+      {showFavoriteButton && (
+        <button
+          type="button"
+          className={`thumb-favorite ${item.favoriteCategoryId !== null ? 'is-set' : ''}`}
+          title="Favorite category"
+          onClick={(e) => {
+            e.stopPropagation()
+            onFavoriteClick()
+          }}
+        >
+          <svg
+            viewBox="0 0 24 24"
+            width="13"
+            height="13"
+            fill={item.favoriteCategoryId !== null ? 'currentColor' : 'none'}
+            stroke="currentColor"
+            strokeWidth="2"
+            strokeLinejoin="round"
+          >
+            <path d="M12 3.5l2.6 5.6 6.1.6-4.6 4.1 1.3 6-5.4-3.2-5.4 3.2 1.3-6-4.6-4.1 6.1-.6z" />
+          </svg>
+        </button>
+      )}
     </div>
   )
 }

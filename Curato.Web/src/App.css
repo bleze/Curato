@@ -83,6 +83,38 @@ button {
   cursor: pointer;
 }
 
+/* Library/Albums/Recycle Bin toggle — a segmented control (same visual
+   language as Settings' .modal-tabs) instead of three plain buttons that
+   each launched a separate stacked panel, so switching between them reads
+   as "one view at a time" rather than "open another thing on top". */
+.view-switcher {
+  display: flex;
+  gap: 2px;
+  padding: 3px;
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: 8px;
+}
+
+.view-switcher button {
+  padding: 4px 12px;
+  font-size: 12.5px;
+  border: none;
+  border-radius: 6px;
+  background: none;
+  color: var(--text-muted);
+  cursor: pointer;
+}
+
+.view-switcher button:hover {
+  color: var(--text);
+}
+
+.view-switcher button.is-active {
+  color: var(--on-accent);
+  background: var(--accent);
+}
+
 /* Full-viewport flexbox centering on both axes, rather than a max-width +
    margin:auto approach — confirmed live that didn't actually center the
    page: this element is simultaneously a flex ITEM of #root (which
@@ -764,18 +796,17 @@ button {
   border-radius: 50%;
   background: rgba(0, 0, 0, 0.55);
   color: white;
-  font-size: 14px;
-  line-height: 1;
-  /* Flex-centered, not line-height-centered — the × glyph's own visual
-     center never lined up with a line-height-based vertical middle (confirmed
-     live as visibly offset toward the bottom of the circle), the same reason
-     .thumb-move's icon uses flex centering instead. */
+  /* An SVG X (not the &times; glyph) — every font's × glyph has its own ink
+     offset within its em box, so even flex-centering the line box still
+     looked visibly off-center toward the bottom (confirmed live, more than
+     once). An SVG path centers exactly the same way .thumb-move's chevron
+     and .thumb-favorite's star already do. */
   display: flex;
   align-items: center;
   justify-content: center;
   cursor: pointer;
   opacity: 0;
-  transition: opacity 0.15s;
+  transition: opacity 0.15s, background 0.15s, transform 0.15s;
 }
 
 .thumb:hover .thumb-delete {
@@ -800,11 +831,54 @@ button {
   justify-content: center;
   cursor: pointer;
   opacity: 0;
-  transition: opacity 0.15s;
+  transition: opacity 0.15s, background 0.15s, transform 0.15s;
 }
 
 .thumb:hover .thumb-move {
   opacity: 1;
+}
+
+/* Bottom-right corner (top-left/top-right already taken by Move/Delete,
+   bottom-left by the LIVE badge) — same shape/theme-independent styling,
+   but the filled (.is-set) state stays visible without a hover, since it's
+   status info ("this has a favorite category") rather than just an action
+   affordance, the same reasoning behind .live-badge always showing. */
+.thumb-favorite {
+  position: absolute;
+  bottom: 4px;
+  right: 4px;
+  width: 20px;
+  height: 20px;
+  padding: 0;
+  border: none;
+  border-radius: 50%;
+  background: rgba(0, 0, 0, 0.55);
+  color: white;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  cursor: pointer;
+  opacity: 0;
+  transition: opacity 0.15s, background 0.15s, transform 0.15s;
+}
+
+.thumb:hover .thumb-favorite,
+.thumb-favorite.is-set {
+  opacity: 1;
+}
+
+.thumb-favorite.is-set {
+  color: #ffc93c;
+}
+
+/* Direct hover feedback on the button itself — distinct from .thumb:hover's
+   opacity reveal above, which only says "these controls exist here", not
+   "this one specifically is what your cursor is on". */
+.thumb-delete:hover,
+.thumb-move:hover,
+.thumb-favorite:hover {
+  background: rgba(0, 0, 0, 0.85);
+  transform: scale(1.15);
 }
 
 .event-picker-overlay {
@@ -831,6 +905,19 @@ button {
   border-radius: 8px;
   max-height: 65vh;
   overflow-y: auto;
+}
+
+/* Library/Albums/Recycle Bin toolbar toggle (App.tsx's activeView) — these
+   are full views of the main content area now, not dismissable panels
+   stacked above the grid, so this fills the same flex-1 .library slot
+   LibraryGrid uses and drops .recyclebin-panel's bounded-card look
+   (border/background/margin/vh-capped height) entirely. Find Duplicates
+   keeps that card look — it's a real one-off overlay, not a view toggle. */
+.library-tab-panel {
+  flex: 1;
+  min-height: 0;
+  overflow-y: auto;
+  padding: 4px 4px 24px 10px;
 }
 
 /* A true window on top of the app (Settings), unlike .recyclebin-panel's
@@ -888,13 +975,14 @@ button {
 
 .modal-tab {
   flex: 1;
-  padding: 7px 14px;
-  font-size: 12.5px;
+  padding: 7px 6px;
+  font-size: 11.5px;
   border: none;
   border-radius: 6px;
   background: none;
   color: var(--text-muted);
   cursor: pointer;
+  white-space: nowrap;
 }
 
 .modal-tab:hover {
@@ -955,11 +1043,13 @@ button {
 
 /* The selected-tag view swaps the panel's own scrolling for its inner
    TagGrid's virtualized one — scrolling both would be confusing, and only
-   the inner grid knows how tall its (potentially huge) content really is. */
+   the inner grid knows how tall its (potentially huge) content really is.
+   Combined with .library-tab-panel (flex:1/min-height:0 fill), overriding
+   its overflow-y:auto to hidden here since the inner .library-scroll below
+   does the actual scrolling instead. */
 .albums-panel {
   display: flex;
   flex-direction: column;
-  max-height: 70vh;
   overflow: hidden;
 }
 
@@ -1125,11 +1215,6 @@ button {
   text-align: right;
 }
 
-.recyclebin-item-actions {
-  display: flex;
-  gap: 6px;
-}
-
 .icloud-header {
   display: flex;
   align-items: flex-start;
@@ -1206,24 +1291,25 @@ button {
   color: var(--text-muted);
 }
 
-.recyclebin-item-actions button {
-  flex: 1;
-  padding: 4px 6px;
-  font-size: 11px;
-  border-radius: 5px;
-  border: 1px solid var(--border);
+.favorite-category-list {
+  list-style: none;
+  margin: 12px 0 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.favorite-category-list li {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+  padding: 6px 10px;
+  border: 1px solid var(--border-soft);
+  border-radius: 6px;
   background: var(--surface);
-  cursor: pointer;
-}
-
-.recyclebin-item-actions button.danger {
-  border-color: var(--border-danger);
-  color: var(--text-danger);
-}
-
-.recyclebin-item-actions button:disabled {
-  opacity: 0.5;
-  cursor: default;
+  font-size: 13px;
 }
 
 .duplicate-group {
@@ -1484,6 +1570,46 @@ button {
   font-size: 13px;
   font-weight: 600;
   cursor: pointer;
+}
+
+/* A small centered confirm step for an irreversible action (Recycle Bin's
+   "Delete forever") — same .event-picker-overlay backdrop every other small
+   popup in the app already uses. */
+.confirm-dialog {
+  width: 280px;
+  background: var(--surface);
+  color: var(--text);
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  box-shadow: 0 8px 24px rgba(0, 0, 0, 0.35);
+  padding: 16px;
+}
+
+.confirm-dialog p {
+  margin: 0 0 14px;
+  font-size: 13.5px;
+}
+
+.confirm-dialog-actions {
+  display: flex;
+  justify-content: flex-end;
+  gap: 10px;
+}
+
+.confirm-dialog-actions .danger {
+  padding: 7px 16px;
+  font-size: 13px;
+  font-weight: 600;
+  border-radius: 6px;
+  border: 1px solid var(--border-danger);
+  background: var(--surface);
+  color: var(--text-danger);
+  cursor: pointer;
+}
+
+.confirm-dialog-actions .danger:disabled {
+  opacity: 0.5;
+  cursor: default;
 }
 
 .lightbox-toolbar button {

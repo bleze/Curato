@@ -100,6 +100,44 @@ public sealed class LibraryQueryService(LibraryDatabase database)
         return ids;
     }
 
+    /// <summary>
+    /// User-created "Favorite Category" tags (Settings) — the same
+    /// IsFavoriteShortcut=1 flag PicasaImportService already sets on its own
+    /// star-rating tag, so a Picasa-starred photo and a user-picked category
+    /// share the exact same per-MediaItem slot. Includes categories with zero
+    /// members (unlike the Albums-tab tag listing), since Settings/the star
+    /// picker both need to show a just-created, still-empty category.
+    /// </summary>
+    public IReadOnlyList<Tag> GetFavoriteCategories()
+    {
+        using var connection = database.OpenConnection();
+        var tags = new List<Tag>();
+        foreach (var row in connection.Query("SELECT * FROM Tag WHERE IsFavoriteShortcut = 1 ORDER BY SortOrder"))
+        {
+            tags.Add(MapTag(row));
+        }
+
+        return tags;
+    }
+
+    /// <summary>Every MediaItem's current favorite category, if any — at most one per item (see TagRepository.SetMediaItemFavoriteCategory).</summary>
+    public IReadOnlyDictionary<long, long> GetFavoriteCategoryAssignments()
+    {
+        using var connection = database.OpenConnection();
+        var assignments = new Dictionary<long, long>();
+        foreach (var row in connection.Query("""
+            SELECT MediaItemTag.MediaItemId AS MediaItemId, MediaItemTag.TagId AS TagId
+            FROM MediaItemTag
+            JOIN Tag ON Tag.Id = MediaItemTag.TagId
+            WHERE Tag.IsFavoriteShortcut = 1
+            """))
+        {
+            assignments[(long)row.MediaItemId] = (long)row.TagId;
+        }
+
+        return assignments;
+    }
+
     private static Tag MapTag(dynamic row)
     {
         string name = row.Name;

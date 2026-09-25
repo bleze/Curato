@@ -5,13 +5,11 @@ import { TagGrid } from './TagGrid'
 
 export function AlbumsPanel({
   libraryPath,
-  onClose,
   onDelete,
   onTakenAtChanged,
   onRotated,
 }: {
   libraryPath: string
-  onClose: () => void
   onDelete: (mediaItemId: number) => void
   onTakenAtChanged: (mediaItemId: number, takenAt: string) => void
   onRotated: (mediaItemId: number) => void
@@ -53,7 +51,7 @@ export function AlbumsPanel({
 
   if (selectedTag) {
     return (
-      <div className="recyclebin-panel albums-panel">
+      <div className="library-tab-panel albums-panel">
         <div className="recyclebin-header">
           <h2>
             {selectedTag.name}
@@ -87,12 +85,9 @@ export function AlbumsPanel({
   }
 
   return (
-    <div className="recyclebin-panel">
+    <div className="library-tab-panel">
       <div className="recyclebin-header">
         <h2>Albums</h2>
-        <button type="button" onClick={onClose}>
-          Close
-        </button>
       </div>
       <p className="recyclebin-hint">
         Freeform tags and Picasa-imported favorites/albums (§9) — a photo can belong to any number
