@@ -104,6 +104,22 @@ public sealed class iCloudSyncRunner(
         // accepts either form directly (a relative interval like "365d", or
         // an absolute ISO date), so no client-side date math is needed here.
         var skipCreatedBefore = sinceDate is { } date ? date.ToString("yyyy-MM-dd") : $"{lookbackDays}d";
+
+        // See SeedAlreadyDownloadedStubs: pre-create correctly-sized
+        // placeholder files for anything icloudpd's own de-dup would
+        // otherwise consider re-downloading this run, so it skips them with
+        // zero network transfer. Bounded by the exact same cutoff/count used
+        // for icloudpd's own --skip-created-before/--recent below, so this
+        // never does more work than icloudpd itself is about to do anyway.
+        var cutoff = sinceDate is { } d ? d.ToDateTime(TimeOnly.MinValue) : DateTime.UtcNow.AddDays(-lookbackDays);
+        List<string> stubPaths;
+        using (await gate.AcquireAsync(libraryFolder, cancellationToken))
+        {
+            var seedDatabase = new LibraryDatabase(libraryFolder);
+            seedDatabase.EnsureSchema();
+            stubPaths = SeedAlreadyDownloadedStubs(libraryFolder, new LibraryQueryService(seedDatabase), cutoff, recentItemCap);
+        }
+
         var startInfo = new ProcessStartInfo
         {
             FileName = options.IcloudpdExecutable,
@@ -209,6 +225,17 @@ public sealed class iCloudSyncRunner(
             CurrentActivity = null;
         }
 
+        // Always clean up our own placeholders regardless of outcome — they
+        // were never real content, and icloudpd's own de-dup policy is
+        // documented to fall back to a size-suffixed *new* filename rather
+        // than overwriting an existing file in place when a stub's size
+        // didn't actually match, so a stub is never at risk of silently
+        // becoming (or masking) real downloaded content.
+        using (await gate.AcquireAsync(libraryFolder, cancellationToken))
+        {
+            CleanupStubs(stubPaths);
+        }
+
         if (process.ExitCode != 0)
         {
             var stderr = string.Join('\n', stderrLines);
@@ -267,6 +294,82 @@ public sealed class iCloudSyncRunner(
     /// good: a fingerprint recorded once keeps matching forever, so anything
     /// ever deleted here never silently comes back from a later sync.
     /// </summary>
+    /// <summary>
+    /// icloudpd's own de-dup (--file-match-policy, default name-size-dedup-
+    /// with-suffix per its own --help text) treats an existing file in the
+    /// destination directory as "already downloaded" when its name and size
+    /// match what iCloud is offering, and skips it — no network transfer at
+    /// all. But it only ever looks in the flat destination directory, so
+    /// once Organize moves a file into a dated folder, icloudpd sees nothing
+    /// there and re-downloads the exact same bytes from iCloud every single
+    /// sync. RemoveExactRedownloads below already stopped that from becoming
+    /// a duplicate in the library, but not the redundant download itself —
+    /// user asked specifically to avoid causing IO we don't need to.
+    ///
+    /// Pre-creating a placeholder file of the exact right size at the
+    /// original filename gives icloudpd's own de-dup exactly the (name,
+    /// size) pair it's looking for, so it skips with zero bytes transferred.
+    /// If the size guess is ever wrong, icloudpd's documented fallback is to
+    /// download under a size-suffixed *new* filename rather than overwrite
+    /// what's there — so getting this wrong only costs the same redundant
+    /// download that already happens today, never data loss or corruption.
+    ///
+    /// Bounded to the same window icloudpd itself is about to consider
+    /// (skip-created-before's cutoff, recent-N's count) rather than every
+    /// item ever indexed — stubbing the whole library on every sync would
+    /// itself be pointless IO for items icloudpd wouldn't even look at.
+    /// </summary>
+    private static List<string> SeedAlreadyDownloadedStubs(
+        string libraryFolder, LibraryQueryService query, DateTime cutoff, int recentItemCap)
+    {
+        var created = new List<string>();
+        var candidates = query.GetAllMediaItems()
+            .Where(m => m.TakenAt >= cutoff)
+            .OrderByDescending(m => m.TakenAt)
+            .Take(recentItemCap);
+
+        foreach (var item in candidates)
+        {
+            var stubPath = Path.Combine(libraryFolder, Path.GetFileName(item.RelativePath));
+            if (File.Exists(stubPath))
+            {
+                // Already sitting at the root for real (not yet organized) —
+                // never touch a real file.
+                continue;
+            }
+
+            try
+            {
+                using var stream = new FileStream(stubPath, FileMode.CreateNew, FileAccess.Write);
+                stream.SetLength(item.FileSizeBytes);
+                created.Add(stubPath);
+            }
+            catch (IOException)
+            {
+                // Best-effort optimization — a failure here just means this
+                // one item gets redundantly re-downloaded, same as before
+                // this existed.
+            }
+        }
+
+        return created;
+    }
+
+    private static void CleanupStubs(IReadOnlyList<string> stubPaths)
+    {
+        foreach (var path in stubPaths)
+        {
+            try
+            {
+                File.Delete(path);
+            }
+            catch (IOException)
+            {
+                // Best-effort cleanup.
+            }
+        }
+    }
+
     private int RemoveExactRedownloads(string libraryFolder, LibraryDatabase database, LibraryQueryService query)
     {
         var existingByHash = new HashSet<(long Size, string Hash)>(
