@@ -26,18 +26,31 @@ button {
 
 .app-header {
   display: flex;
-  align-items: baseline;
+  align-items: center;
   justify-content: space-between;
-}
-
-.app-header h1 {
-  margin-bottom: 0;
 }
 
 .app-brand {
   display: flex;
   align-items: center;
   gap: 12px;
+}
+
+/* Both margins, not just margin-bottom — the base h1 rule's 32px top margin
+   was still pushing the text down inside .app-brand's row (a flex child's
+   margin never collapses with its container's), which threw off vertical
+   alignment against the logo. line-height is the other half of the same
+   complaint: the base h1 rule never sets its own, so it inherits whatever
+   ambient line-height is in scope up the tree — confirmed live, in a
+   browser with a larger base font size, that resolved to something far
+   smaller than what a 56px font actually needs (its *glyphs* still render
+   at full size regardless of a too-small line box), spilling the text
+   downward into whatever sits below, in this case the Organize band right
+   under the header. A self-consistent value here means it can never depend
+   on whatever line-height happens to be ambient. */
+.app-brand h1 {
+  margin: 0;
+  line-height: 1.1;
 }
 
 .app-logo {
@@ -93,8 +106,13 @@ button {
   border-radius: 14px;
 }
 
+/* line-height set explicitly for the same reason as .app-brand h1 — the
+   base h1 rule has none of its own, so without this it inherits whatever
+   ambient value happens to be in scope instead of one that's actually
+   consistent with its own 56px font-size. */
 .auth-brand h1 {
   margin: 0;
+  line-height: 1.1;
 }
 
 .auth-form {
