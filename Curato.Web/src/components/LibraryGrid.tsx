@@ -139,13 +139,22 @@ function blockDate(block: Block): string | null {
 // (Confirmed live this needed fixing: marker positions used to come from
 // counting distinct months instead, which only matches real proportional
 // height when every month happens to have the same number of photos.)
-function buildDateMarkers(blocks: Block[], rowHeight: number): DateMarker[] {
+// scrollableRange is (total content height - viewport height) — the same
+// quantity a native scrollbar's thumb position is computed against
+// (thumbFraction = scrollTop / scrollableRange, never / totalHeight). Using
+// plain totalHeight here looked right in isolation (a click landed exactly
+// on the real first item of a year) but confirmed live as still wrong in
+// context: the native scrollbar's own handle sat measurably away from where
+// that same marker's label was drawn, since the two were computed against
+// different denominators. Content within the last one viewport's worth of
+// height can never have a distinct scrollbar position anyway (you're
+// already at max scroll once any of it is visible), so its heightFraction
+// is clamped to 1 rather than allowed past it.
+function buildDateMarkers(blocks: Block[], rowHeight: number, scrollableRange: number): DateMarker[] {
   const markers: DateMarker[] = []
   let lastMonthKey = ''
   let lastYear = -1
   let cumulativeHeight = 0
-
-  const totalHeight = blocks.reduce((sum, block) => sum + blockHeight(block, rowHeight), 0)
 
   blocks.forEach((block) => {
     const dateStr = blockDate(block)
@@ -159,7 +168,7 @@ function buildDateMarkers(blocks: Block[], rowHeight: number): DateMarker[] {
         if (isMajor) lastYear = date.getFullYear()
 
         markers.push({
-          heightFraction: totalHeight > 0 ? cumulativeHeight / totalHeight : 0,
+          heightFraction: scrollableRange > 0 ? Math.min(1, cumulativeHeight / scrollableRange) : 0,
           label: String(date.getFullYear()),
           tooltipLabel: date.toLocaleDateString(undefined, { year: 'numeric', month: 'short' }),
           isMajor,
@@ -201,6 +210,16 @@ export function LibraryGrid({
   // removes the wrong state entirely rather than needing to find and patch
   // every path that could produce it.
   const [containerWidth, setContainerWidth] = useState<number | null>(null)
+  // The scroll container's own viewport height — needed for the date
+  // scrubber's markers/jump math below (buildDateMarkers, onJump) to match
+  // the native scrollbar's own thumb-position convention: a thumb's
+  // position is scrollTop / (scrollHeight - clientHeight), not
+  // scrollTop / scrollHeight. Confirmed live as a real, reproducible bug
+  // from omitting the clientHeight term: even with the height-proportional
+  // marker math already exactly correct, the native scrollbar's handle sat
+  // measurably away from where a marker's label was drawn, since the two
+  // were being computed against two different denominators.
+  const [containerHeight, setContainerHeight] = useState<number | null>(null)
   // The DateScrubber rail used to sit at a hardcoded `right: 0`, which is
   // exactly where the real native scrollbar also renders — confirmed live
   // (measuring both elements' actual pixel bounds) that they occupied the
@@ -268,6 +287,7 @@ export function LibraryGrid({
     // correct (content-box, padding and scrollbar both already excluded).
     const observer = new ResizeObserver((entries) => {
       setContainerWidth(entries[0].contentRect.width)
+      setContainerHeight(entries[0].contentRect.height)
       setScrollbarWidth(el.offsetWidth - el.clientWidth)
     })
     observer.observe(el)
@@ -285,7 +305,19 @@ export function LibraryGrid({
   const rowHeight = thumbSize + GAP
 
   const blocks = useMemo(() => buildBlocks(library, columnCount), [library, columnCount])
-  const dateMarkers = useMemo(() => buildDateMarkers(blocks, rowHeight), [blocks, rowHeight])
+  // Computed independently of the virtualizer's own getTotalSize() (even
+  // though the two are numerically identical, confirmed live) so this and
+  // the scrubber's onJump wiring below share one unambiguous source for the
+  // same quantity, rather than each recomputing it its own way.
+  const totalContentHeight = useMemo(
+    () => blocks.reduce((sum, block) => sum + blockHeight(block, rowHeight), 0),
+    [blocks, rowHeight],
+  )
+  const scrollableRange = containerHeight !== null ? Math.max(0, totalContentHeight - containerHeight) : totalContentHeight
+  const dateMarkers = useMemo(
+    () => buildDateMarkers(blocks, rowHeight, scrollableRange),
+    [blocks, rowHeight, scrollableRange],
+  )
 
   const virtualizer = useVirtualizer({
     count: blocks.length,
@@ -417,7 +449,7 @@ export function LibraryGrid({
 
       <DateScrubber
         markers={dateMarkers}
-        onJump={(fraction) => virtualizer.scrollToOffset(fraction * virtualizer.getTotalSize(), { align: 'start' })}
+        onJump={(fraction) => virtualizer.scrollToOffset(fraction * scrollableRange, { align: 'start' })}
         rightOffset={scrollbarWidth}
       />
 
