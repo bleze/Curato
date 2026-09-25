@@ -366,7 +366,7 @@ export function SettingsPanel({
                           disabled={!!sinceDateInput}
                           style={{ width: '70px' }}
                         />
-                        <span>day(s)</span>
+                        <span className="settings-field-suffix">day(s)</span>
                       </div>
                     </div>
 
