@@ -21,6 +21,12 @@ namespace Curato.Organizer;
 /// the user made themselves outside Curato, not something Curato's naming
 /// template owns. Editing an Adopted item's title only ever corrects how
 /// Curato displays it — the folder on disk is intentionally left alone.
+///
+/// A title itself is never rejected for containing characters that aren't
+/// valid in a folder name — the database has no such restriction, and a
+/// CuratoManaged Event/Trip might not even have a folder yet (nothing on
+/// disk to be invalid for). FolderNameTemplate silently sanitizes whatever
+/// isn't safe at the one point a title actually becomes a real folder name.
 /// </summary>
 public sealed class RenameService(
     LibraryDatabase database, LibraryQueryService query, LibraryRepository repository, OrganizeRepository organizeRepository)
@@ -28,9 +34,9 @@ public sealed class RenameService(
     public (bool Success, string? ErrorMessage) RenameEvent(long eventId, string newTitle)
     {
         newTitle = newTitle.Trim();
-        if (!FolderNameValidator.IsValid(newTitle, out var validationError))
+        if (newTitle.Length == 0)
         {
-            return (false, validationError);
+            return (false, "Title cannot be empty.");
         }
 
         var @event = query.GetAllEvents().SingleOrDefault(e => e.Id == eventId);
@@ -64,9 +70,9 @@ public sealed class RenameService(
     public (bool Success, string? ErrorMessage) RenameTripGroup(long tripId, string newTitle)
     {
         newTitle = newTitle.Trim();
-        if (!FolderNameValidator.IsValid(newTitle, out var validationError))
+        if (newTitle.Length == 0)
         {
-            return (false, validationError);
+            return (false, "Title cannot be empty.");
         }
 
         var trip = query.GetAllTripGroups().SingleOrDefault(t => t.Id == tripId);

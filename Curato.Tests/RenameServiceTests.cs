@@ -184,33 +184,50 @@ public class RenameServiceTests
         });
     }
 
-    // Filesystem-invalid titles (PLAN.md §3/§4): a title is only ever a
-    // database value until Organize turns it into a real folder name, so
-    // one that isn't a valid folder name on every deployment target (§1
-    // Windows dev, Linux/Synology in production) has to be rejected before
-    // it's ever saved, not discovered later as a failed Organize run.
-    [Theory]
-    [InlineData("Beach/Day")]
-    [InlineData("Beach\\Day")]
-    [InlineData("Who: What?")]
-    [InlineData("Trailing dot.")]
-    [InlineData("CON")]
-    [InlineData("con")]
-    public void A_filesystem_invalid_title_is_rejected(string invalidTitle)
+    // Filesystem-unsafe titles (PLAN.md §3/§4): the database itself has no
+    // restriction on a title's characters, so a rename is never rejected
+    // for containing "/" or "?" or the like — that rule only actually
+    // applies once a title becomes a real folder name, which an
+    // unorganized Event doesn't have yet.
+    [Fact]
+    public void A_title_with_filesystem_unsafe_characters_is_stored_verbatim_when_not_yet_organized()
     {
         WithTempLibrary((root, database, query, repository, organizeRepository) =>
         {
             File.WriteAllBytes(Path.Combine(root, "photo.jpg"), [1, 2, 3]);
             new ScanService(repository, query, database).Scan(root);
-            var originalTitle = Assert.Single(query.GetAllEvents()).Title;
             var eventId = Assert.Single(query.GetAllEvents()).Id;
 
             var renamed = new RenameService(database, query, repository, organizeRepository)
-                .RenameEvent(eventId, invalidTitle);
+                .RenameEvent(eventId, "Who: What/Where?");
 
-            Assert.False(renamed.Success);
-            Assert.NotNull(renamed.ErrorMessage);
-            Assert.Equal(originalTitle, query.GetAllEvents().Single().Title); // unchanged
+            Assert.True(renamed.Success);
+            Assert.Equal("Who: What/Where?", query.GetAllEvents().Single().Title);
+        });
+    }
+
+    [Fact]
+    public void Renaming_an_organized_event_to_an_unsafe_title_sanitizes_only_the_folder_name()
+    {
+        WithTempLibrary((root, database, query, repository, organizeRepository) =>
+        {
+            File.WriteAllBytes(Path.Combine(root, "photo.jpg"), [1, 2, 3]);
+            new ScanService(repository, query, database).Scan(root);
+            new OrganizeService(database, query, organizeRepository).Organize();
+            var eventId = Assert.Single(query.GetAllEvents()).Id;
+
+            var renamed = new RenameService(database, query, repository, organizeRepository)
+                .RenameEvent(eventId, "Who: What/Where?");
+
+            Assert.True(renamed.Success);
+            var after = Assert.Single(query.GetAllEvents());
+            Assert.Equal("Who: What/Where?", after.Title); // verbatim in the database
+
+            var leafFolderName = after.FolderPath!.Split('/')[^1];
+            Assert.DoesNotContain(':', leafFolderName);
+            Assert.DoesNotContain('?', leafFolderName);
+            // Real proof it's a valid Windows path, not just an absence-of-character check.
+            Assert.True(Directory.Exists(Path.Combine(root, after.FolderPath!)));
         });
     }
 

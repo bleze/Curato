@@ -375,29 +375,15 @@ export function LibraryGrid({
 // the getItemKey/estimateSize comment above), so a taller editing state
 // here would silently reintroduce the scrollbar drag-handle desync bug that
 // took four attempts to actually fix.
-// Mirrors Curato.Core.FolderNameValidator — a title eventually becomes a
-// real folder name once Organize runs, so it has to be valid everywhere
-// Curato might deploy. This is a client-side convenience only (immediate
-// feedback, no round-trip needed to find out a title is invalid); the
-// server re-validates the same rules regardless of what the UI allowed
-// through.
-const INVALID_FOLDER_NAME_CHARS = /[<>:"/\\|?*\x00-\x1f]/
-const RESERVED_FOLDER_NAMES = new Set([
-  'CON', 'PRN', 'AUX', 'NUL',
-  'COM1', 'COM2', 'COM3', 'COM4', 'COM5', 'COM6', 'COM7', 'COM8', 'COM9',
-  'LPT1', 'LPT2', 'LPT3', 'LPT4', 'LPT5', 'LPT6', 'LPT7', 'LPT8', 'LPT9',
-])
-
+// A title lives freely in the database — no filesystem restrictions apply
+// to it here at all. Whatever isn't safe in a real folder name gets
+// silently sanitized server-side (Curato.Core.FolderNameSanitizer) at the
+// one point it actually becomes one, rather than being rejected this early
+// for a rule that doesn't even apply yet (a CuratoManaged Event/Trip might
+// not have a folder at all until Organize runs). Empty is still rejected
+// here since it's meaningless as a title, database or not.
 function validateFolderName(title: string): string | null {
   if (!title) return 'Title cannot be empty.'
-  if (title.length > 200) return 'Title is too long (max 200 characters).'
-  if (INVALID_FOLDER_NAME_CHARS.test(title)) return 'Can’t contain: < > : " / \\ | ? *'
-  if (title.endsWith('.') || title.endsWith(' ')) return 'Can’t end with a period or space.'
-  const dotIndex = title.indexOf('.')
-  const nameWithoutExtension = dotIndex < 0 ? title : title.slice(0, dotIndex)
-  if (RESERVED_FOLDER_NAMES.has(nameWithoutExtension.toUpperCase())) {
-    return `"${nameWithoutExtension}" is a reserved name and can't be used.`
-  }
   return null
 }
 

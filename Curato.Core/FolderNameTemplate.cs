@@ -8,13 +8,20 @@ namespace Curato.Core;
 /// </summary>
 public static class FolderNameTemplate
 {
-    /// <summary>An Event's own folder name, e.g. "2026-07-11 Evening Bonfire".</summary>
+    /// <summary>
+    /// An Event's own folder name, e.g. "2026-07-11 Evening Bonfire". The
+    /// title is sanitized (FolderNameSanitizer), not validated — a title
+    /// lives freely in the database with no filesystem restrictions, so
+    /// whatever isn't safe there is silently converted at the one place it
+    /// actually becomes a real folder name, rather than being rejected
+    /// earlier at the database layer for a rule that doesn't apply to it yet.
+    /// </summary>
     public static string RenderEventFolderName(Event @event) =>
-        $"{@event.StartAt:yyyy-MM-dd} {@event.Title}";
+        $"{@event.StartAt:yyyy-MM-dd} {FolderNameSanitizer.Sanitize(@event.Title)}";
 
-    /// <summary>A TripGroup's own folder name, e.g. "2026-07-10 to 2026-07-14 Summer Vacation".</summary>
+    /// <summary>A TripGroup's own folder name, e.g. "2026-07-10 to 2026-07-14 Summer Vacation" — see RenderEventFolderName for why the title is sanitized here, not validated earlier.</summary>
     public static string RenderTripFolderName(TripGroup trip) =>
-        $"{FormatDateRange(trip.StartDate, trip.EndDate)} {trip.Title}";
+        $"{FormatDateRange(trip.StartDate, trip.EndDate)} {FolderNameSanitizer.Sanitize(trip.Title)}";
 
     /// <summary>
     /// The Event's full path relative to the library root: `{year}/{date}
