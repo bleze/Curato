@@ -33,7 +33,7 @@ export function AuthGate({ needsSetup, onSignedIn }: { needsSetup: boolean; onSi
       <p className="tagline">
         {needsSetup
           ? 'Create the admin account (one-time setup — PLAN.md §15).'
-          : 'Sign in to continue.'}
+          : 'Sign in to continue'}
       </p>
       <form className="auth-form" onSubmit={handleSubmit}>
         <input
