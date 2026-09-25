@@ -55,7 +55,28 @@ export function DateScrubber({
     const rail = railRef.current
     if (!rail) return
     const rect = rail.getBoundingClientRect()
-    const fraction = Math.min(1, Math.max(0, (clientY - rect.top) / rect.height))
+    const rawFraction = Math.min(1, Math.max(0, (clientY - rect.top) / rect.height))
+
+    // Magnetic snap onto a labeled (major) marker within ~14px, even though
+    // the underlying proportional math is exactly correct — confirmed live
+    // this was still needed: this rail is only 16px wide, compressing
+    // 70,000+ pixels of real content into under a thousand, so landing on a
+    // specific labeled year without it required genuinely sub-pixel mouse
+    // precision. 14px roughly matches a tick label's own rendered height, so
+    // clicking anywhere on the visible text reliably lands on what it says.
+    const snapToleranceFraction = 14 / rect.height
+    let closestMajor: DateMarker | null = null
+    let closestDistance = Infinity
+    for (const marker of markers) {
+      if (!marker.isMajor) continue
+      const distance = Math.abs(marker.heightFraction - rawFraction)
+      if (distance < closestDistance) {
+        closestDistance = distance
+        closestMajor = marker
+      }
+    }
+    const fraction = closestMajor && closestDistance <= snapToleranceFraction ? closestMajor.heightFraction : rawFraction
+
     onJump(fraction)
     setHover({ y: clientY - rect.top, label: nearestMarker(fraction).tooltipLabel })
   }
