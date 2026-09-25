@@ -292,6 +292,15 @@ export function ungroupTripGroup(path: string, tripGroupId: number): Promise<voi
   }).then(expectOk)
 }
 
+/** Ejects one Event from its Trip back to standalone — the whole Trip stays (see ungroupTripGroup for removing all of it at once). */
+export function removeEventFromTrip(path: string, eventId: number): Promise<void> {
+  return fetch(`/api/events/${eventId}/remove-from-trip`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ path }),
+  }).then(expectOk)
+}
+
 /** Merges every item out of sourceEventId into targetEventId and deletes the now-empty source. Refused (409) if either Event is already organized into a real folder. */
 export function mergeEventInto(path: string, sourceEventId: number, targetEventId: number): Promise<void> {
   return fetch('/api/events/merge', {

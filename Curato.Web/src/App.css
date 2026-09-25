@@ -629,6 +629,31 @@ button {
   cursor: pointer;
 }
 
+/* Same small/muted treatment as .trip-ungroup-btn, in the checkbox's own
+   slot for an Event nested under a Trip (mutually exclusive with it — a
+   Trip-grouped Event isn't offered for Trip/merge selection). align-self:
+   center for the same reason as .event-select-checkbox above: the row's own
+   baseline alignment (matching the title text) doesn't give a small button
+   a sensible place to sit otherwise. */
+.event-remove-from-trip-btn {
+  flex-shrink: 0;
+  align-self: center;
+  font-size: 11px;
+  font-weight: 400;
+  color: var(--text-muted);
+  background: none;
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  padding: 2px 8px;
+  white-space: nowrap;
+  cursor: pointer;
+}
+
+.event-remove-from-trip-btn:hover {
+  color: var(--text-danger);
+  border-color: var(--border-danger);
+}
+
 .event-header h3 {
   display: flex;
   align-items: baseline;

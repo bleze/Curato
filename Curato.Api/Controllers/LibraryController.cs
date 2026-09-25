@@ -294,6 +294,25 @@ public sealed class LibraryController(LibraryOperationGate gate, ServerDatabase 
             : NotFound($"No TripGroup with id {tripGroupId}");
     }
 
+    public sealed record RemoveEventFromTripRequest(string Path);
+
+    /// <summary>Ejects one Event from its Trip, back to standalone — see LibraryRepository.RemoveEventFromTrip.</summary>
+    [HttpPost("events/{eventId:long}/remove-from-trip")]
+    public IActionResult RemoveEventFromTrip(long eventId, [FromBody] RemoveEventFromTripRequest request)
+    {
+        if (!Directory.Exists(request.Path))
+        {
+            return NotFound($"Folder not found: {request.Path}");
+        }
+
+        var database = new LibraryDatabase(request.Path);
+        database.EnsureSchema();
+
+        return new LibraryRepository(database).RemoveEventFromTrip(eventId)
+            ? NoContent()
+            : NotFound($"No Event with id {eventId} currently in a Trip");
+    }
+
     public sealed record MergeEventRequest(string Path, long SourceEventId, long TargetEventId);
 
     /// <summary>

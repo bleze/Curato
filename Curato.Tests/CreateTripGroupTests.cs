@@ -147,6 +147,76 @@ public class CreateTripGroupTests
         });
     }
 
+    [Fact]
+    public void Removing_one_event_leaves_the_trip_intact_for_the_rest()
+    {
+        WithTempLibrary((repository, query, database) =>
+        {
+            RunScanPass(repository, query, database,
+            [
+                Item("day1.jpg", new DateTime(2026, 6, 1, 9, 0, 0)),
+                Item("day3.jpg", new DateTime(2026, 6, 3, 9, 0, 0)),
+                Item("day5.jpg", new DateTime(2026, 6, 5, 9, 0, 0)),
+            ]);
+            var events = query.GetAllEvents();
+            var (_, trip) = repository.CreateTripGroup(events.Select(e => e.Id).ToList());
+
+            var removed = repository.RemoveEventFromTrip(events[0].Id);
+
+            Assert.True(removed);
+            var ejectedEvent = query.GetAllEvents().Single(e => e.Id == events[0].Id);
+            Assert.Null(ejectedEvent.TripGroupId);
+
+            var survivingTrip = Assert.Single(query.GetAllTripGroups());
+            Assert.Equal(trip!.Id, survivingTrip.Id);
+            Assert.Equal(2, survivingTrip.EventIds.Count);
+            Assert.DoesNotContain(events[0].Id, survivingTrip.EventIds);
+        });
+    }
+
+    [Fact]
+    public void Removing_the_last_event_from_a_trip_deletes_the_trip()
+    {
+        WithTempLibrary((repository, query, database) =>
+        {
+            RunScanPass(repository, query, database,
+            [
+                Item("day1.jpg", new DateTime(2026, 6, 1, 9, 0, 0)),
+                Item("day3.jpg", new DateTime(2026, 6, 3, 9, 0, 0)),
+            ]);
+            var events = query.GetAllEvents();
+            repository.CreateTripGroup(events.Select(e => e.Id).ToList());
+
+            repository.RemoveEventFromTrip(events[0].Id);
+            var removed = repository.RemoveEventFromTrip(events[1].Id);
+
+            Assert.True(removed);
+            Assert.Empty(query.GetAllTripGroups());
+            Assert.All(query.GetAllEvents(), e => Assert.Null(e.TripGroupId));
+        });
+    }
+
+    [Fact]
+    public void Removing_an_unknown_event_returns_false()
+    {
+        WithTempLibrary((repository, _, _) =>
+        {
+            Assert.False(repository.RemoveEventFromTrip(999));
+        });
+    }
+
+    [Fact]
+    public void Removing_an_event_that_is_not_in_a_trip_returns_false()
+    {
+        WithTempLibrary((repository, query, database) =>
+        {
+            RunScanPass(repository, query, database, [Item("day1.jpg", new DateTime(2026, 6, 1, 9, 0, 0))]);
+            var eventId = query.GetAllEvents()[0].Id;
+
+            Assert.False(repository.RemoveEventFromTrip(eventId));
+        });
+    }
+
     private static void RunScanPass(
         LibraryRepository repository, LibraryQueryService query, LibraryDatabase database, MediaItem[] rawItems) =>
         new ScanService(repository, query, database).ScanItems(rawItems);

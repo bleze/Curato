@@ -219,6 +219,7 @@ export function LibraryGrid({
   onCreateTripGroup,
   onUngroupTripGroup,
   onMergeEventsInto,
+  onRemoveEventFromTrip,
 }: {
   library: LibraryDto
   libraryPath: string
@@ -231,6 +232,7 @@ export function LibraryGrid({
   onCreateTripGroup: (eventIds: number[]) => void
   onUngroupTripGroup: (tripGroupId: number) => void
   onMergeEventsInto: (sourceEventIds: number[], targetEventId: number) => void
+  onRemoveEventFromTrip: (eventId: number) => void
 }) {
   const scrollRef = useRef<HTMLDivElement>(null)
   // null = not yet measured. Deliberately never guess a fallback column
@@ -538,7 +540,7 @@ export function LibraryGrid({
               {block.type === 'event-header' && (
                 <header className={`event-header ${block.closesTripAbove ? 'event-header-after-trip' : ''}`}>
                   <div className="event-header-row">
-                    {block.event.tripGroupId === null && (
+                    {block.event.tripGroupId === null ? (
                       <input
                         type="checkbox"
                         className="event-select-checkbox"
@@ -546,6 +548,15 @@ export function LibraryGrid({
                         checked={selectedEventIds.has(block.event.id)}
                         onChange={() => toggleEventSelected(block.event.id)}
                       />
+                    ) : (
+                      <button
+                        type="button"
+                        className="event-remove-from-trip-btn"
+                        title="Remove from this Trip — it becomes a standalone Event again (no file is moved)"
+                        onClick={() => onRemoveEventFromTrip(block.event.id)}
+                      >
+                        Remove from Trip
+                      </button>
                     )}
                     <h3>
                       <EditableTitle

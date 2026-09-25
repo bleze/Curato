@@ -18,12 +18,16 @@ public static class GpsTripGate
 
     /// <summary>How close a point has to be to "home" for the user's own
     /// <see cref="Curato.Data.HomeLocationRepository"/> label to override
-    /// whatever Nominatim would otherwise return for it — wide enough to
-    /// cover the county-level area Nominatim tends to collapse a real home
-    /// address into, narrow enough to stay well clear of
-    /// <see cref="AwayFromHomeThresholdKm"/> (nothing that would ever
-    /// qualify as "away" should also be eligible for the home override).</summary>
-    public const double HomeOverrideRadiusKm = 15.0;
+    /// whatever Nominatim would otherwise return for it. Confirmed live that
+    /// 15km was much too generous — Danish towns sit close enough together
+    /// that it swallowed a genuinely different, real nearby city's photos
+    /// under the home label (Kirke Såby vs. Roskilde, ~10km apart, both
+    /// showing as "Kirke Såby"). Tight enough to cover GPS noise/rounding
+    /// right around the literal home address, not a whole neighboring town —
+    /// well clear of <see cref="AwayFromHomeThresholdKm"/> either way
+    /// (nothing that would ever qualify as "away" should also be eligible
+    /// for the home override).</summary>
+    public const double HomeOverrideRadiusKm = 3.0;
 
     /// <summary>An Event's representative point — the average of whichever of
     /// its members actually carry GPS coordinates; null if none do (an Event

@@ -634,6 +634,51 @@ public sealed class LibraryRepository(LibraryDatabase database)
     }
 
     /// <summary>
+    /// Ejects a single Event from whichever Trip it's currently grouped
+    /// into, back to standalone (no file is moved — same as
+    /// <see cref="UngroupTripGroup"/>, just for one Event instead of the
+    /// whole Trip). Confirmed live as needed: the GPS-gated auto-grouping
+    /// (ScanService.FormGpsAwareTrips) only checks whether *some* Event in a
+    /// time-contiguous run is away from home, not every Event in it, so a
+    /// genuinely-at-home day that happens to fall within the clustering gap
+    /// can get swept into an otherwise-real trip with no easy way back out.
+    /// Deletes the TripGroup itself if this was its last remaining Event.
+    /// Returns false if the Event doesn't exist or isn't currently in a Trip.
+    /// </summary>
+    public bool RemoveEventFromTrip(long eventId)
+    {
+        using var connection = database.OpenConnection();
+        using var transaction = connection.BeginTransaction();
+
+        var row = connection.QuerySingleOrDefault(
+            "SELECT TripGroupId FROM Event WHERE Id = @Id", new { Id = eventId }, transaction);
+        if (row is null)
+        {
+            transaction.Rollback();
+            return false;
+        }
+
+        long? tripId = row.TripGroupId;
+        if (tripId is null)
+        {
+            transaction.Rollback();
+            return false;
+        }
+
+        connection.Execute("UPDATE Event SET TripGroupId = NULL WHERE Id = @Id", new { Id = eventId }, transaction);
+
+        var remaining = connection.ExecuteScalar<long>(
+            "SELECT COUNT(*) FROM Event WHERE TripGroupId = @TripId", new { TripId = tripId }, transaction);
+        if (remaining == 0)
+        {
+            connection.Execute("DELETE FROM TripGroup WHERE Id = @TripId", new { TripId = tripId }, transaction);
+        }
+
+        transaction.Commit();
+        return true;
+    }
+
+    /// <summary>
     /// Un-does bare-year Adopted TripGroups (e.g. a "2019" trip wrapping
     /// every unrelated event that happened to live under a top-level
     /// `2019/` folder) written before <c>AdoptedFolderPlanner.PlanTrips</c>
