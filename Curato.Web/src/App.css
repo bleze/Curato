@@ -13,9 +13,18 @@
    affected by this (a class selector always wins over this plain element
    one). Fixes secondary buttons (Settings, Recycle Bin, thumbnail delete's
    ring aside) previously falling back to the browser's plain default text
-   color with no explicit color set at all. */
+   color with no explicit color set at all.
+   font-family: inherit fixes a separate, related mismatch — confirmed
+   live via getComputedStyle: a real <button> falls back to the browser's
+   own form-control default font (Arial here) since nothing in this file
+   ever set one, while .upload-button (a <label>, not a form control) just
+   inherits the page's own system-ui stack — visibly different fonts, and
+   different fonts' own "normal" line-height metrics differ too, which was
+   the rest of why .upload-button still measured a couple pixels taller
+   even after its own line-height was fixed. */
 button {
   color: var(--accent);
+  font-family: inherit;
 }
 
 .tagline {
