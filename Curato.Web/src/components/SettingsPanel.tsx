@@ -21,6 +21,7 @@ export function SettingsPanel({
   onOpenLibrary: (path: string) => void
   onLibraryContentChanged: (path: string) => void
 }) {
+  const [activeTab, setActiveTab] = useState<'library' | 'integrations'>('library')
   const [libraryFolder, setLibraryFolderValue] = useState<string | null>(null)
   const [libraryFolderInput, setLibraryFolderInput] = useState('')
   const [status, setStatus] = useState<iCloudSyncStatus | null>(null)
@@ -58,6 +59,14 @@ export function SettingsPanel({
   }
 
   useEffect(refresh, [])
+
+  useEffect(() => {
+    function onKeyDown(e: KeyboardEvent) {
+      if (e.key === 'Escape') onClose()
+    }
+    window.addEventListener('keydown', onKeyDown)
+    return () => window.removeEventListener('keydown', onKeyDown)
+  }, [onClose])
 
   // "Sync now" is a single long-running request with no progress in its
   // own response — poll the status endpoint on the side while it's in
@@ -204,45 +213,67 @@ export function SettingsPanel({
   }
 
   return (
-    <div className="recyclebin-panel">
-      <div className="recyclebin-header">
-        <h2>Settings</h2>
-        <button type="button" onClick={onClose}>
-          Close
-        </button>
-      </div>
-      {error && <p className="error">{error}</p>}
-
-      <section className="settings-section">
-        <h3>Library Folder</h3>
-        <p className="recyclebin-hint">
-          The destination iCloud sync (and any future external source) copies content into. Scanning/organizing a
-          folder you point Curato at directly still works exactly as before — this is a separate, additional setting.
-        </p>
-        <div className="settings-row">
-          <input
-            type="text"
-            placeholder="D:/Photos or /volume1/Photos"
-            value={libraryFolderInput}
-            onChange={(e) => setLibraryFolderInput(e.target.value)}
-          />
-          <button type="button" onClick={handleSaveLibraryFolder} disabled={busy || !libraryFolderInput.trim()}>
-            Save
+    <div className="modal-overlay" onClick={onClose}>
+      <div className="modal-dialog" onClick={(e) => e.stopPropagation()}>
+        <div className="modal-header">
+          <h2>Settings</h2>
+          <button type="button" onClick={onClose}>
+            Close
           </button>
         </div>
-        {libraryFolder && (
-          <p className="settings-meta">
-            Current: {libraryFolder}{' '}
-            <button type="button" onClick={() => onOpenLibrary(libraryFolder)} disabled={busy}>
-              Open this library
-            </button>
-          </p>
-        )}
-      </section>
+        <div className="modal-tabs">
+          <button
+            type="button"
+            className={`modal-tab ${activeTab === 'library' ? 'is-active' : ''}`}
+            onClick={() => setActiveTab('library')}
+          >
+            Library Folder
+          </button>
+          <button
+            type="button"
+            className={`modal-tab ${activeTab === 'integrations' ? 'is-active' : ''}`}
+            onClick={() => setActiveTab('integrations')}
+          >
+            Integrations
+          </button>
+        </div>
+        <div className="modal-body">
+          {error && <p className="error">{error}</p>}
 
-      <section className="settings-section">
-        <h3>iCloud Sync</h3>
-        {!libraryFolder ? (
+          {activeTab === 'library' && (
+            <section className="settings-section">
+              <p className="recyclebin-hint">
+                The destination iCloud sync (and any future external source) copies content into. Scanning/organizing
+                a folder you point Curato at directly still works exactly as before — this is a separate, additional
+                setting.
+              </p>
+              <div className="settings-row">
+                <input
+                  type="text"
+                  placeholder="D:/Photos or /volume1/Photos"
+                  value={libraryFolderInput}
+                  onChange={(e) => setLibraryFolderInput(e.target.value)}
+                />
+                <button type="button" onClick={handleSaveLibraryFolder} disabled={busy || !libraryFolderInput.trim()}>
+                  Save
+                </button>
+              </div>
+              {libraryFolder && (
+                <p className="settings-meta">
+                  Current: {libraryFolder}{' '}
+                  <button type="button" onClick={() => onOpenLibrary(libraryFolder)} disabled={busy}>
+                    Open this library
+                  </button>
+                </p>
+              )}
+            </section>
+          )}
+
+          {activeTab === 'integrations' && (
+            <>
+              <section className="settings-section">
+                <h3>iCloud Sync</h3>
+                {!libraryFolder ? (
           <p className="recyclebin-hint">Set a library folder above first.</p>
         ) : status?.connected ? (
           <>
@@ -361,12 +392,26 @@ export function SettingsPanel({
               value={password}
               onChange={(e) => setPassword(e.target.value)}
             />
-            <button type="button" onClick={handleICloudLogin} disabled={busy || !username.trim() || !password}>
-              Connect
-            </button>
-          </div>
-        )}
-      </section>
+                    <button type="button" onClick={handleICloudLogin} disabled={busy || !username.trim() || !password}>
+                      Connect
+                    </button>
+                  </div>
+                )}
+              </section>
+
+              <section className="settings-section">
+                <h3>Google Photos</h3>
+                <p className="recyclebin-hint">
+                  No direct integration — Google locked down third-party read access to your library in 2025.
+                  Install Google Drive for Desktop, let it sync your Google Photos library to a local folder, then
+                  point the Library Folder setting (or a regular Scan) at that folder — same mechanism as any other
+                  local folder.
+                </p>
+              </section>
+            </>
+          )}
+        </div>
+      </div>
     </div>
   )
 }

@@ -123,26 +123,31 @@ export function TagGrid({
                       hoveredPhotoRef.current = null
                     }}
                   >
-                    <img
-                      // See LibraryGrid's identical isScrolling suspension —
-                      // without it a scrollbar drag across a large distance
-                      // floods the browser's per-origin connection cap with
-                      // requests for every row scrolled past on the way,
-                      // starving the rows actually left on screen once the
-                      // drag stops.
-                      src={virtualizer.isScrolling ? undefined : thumbnailUrl(libraryPath, item.relativePath, item.id)}
-                      alt=""
-                      loading="lazy"
-                      onClick={() => setLightbox(virtualRow.index * columnCount + i)}
-                      onError={(e) => {
-                        e.currentTarget.replaceWith(
-                          Object.assign(document.createElement('div'), {
-                            className: 'thumb-fallback',
-                            textContent: item.kind === 'Photo' ? 'No preview' : '',
-                          }),
-                        )
-                      }}
-                    />
+                    {/* See LibraryGrid's identical isScrolling suspension —
+                        without it a scrollbar drag across a large distance
+                        floods the browser's per-origin connection cap with
+                        requests for every row scrolled past on the way,
+                        starving the rows actually left on screen once the
+                        drag stops. No <img> at all while suspended, rather
+                        than one with no src — that still renders Chrome's
+                        broken-image glyph and border instead of the plain
+                        .thumb background. */}
+                    {!virtualizer.isScrolling && (
+                      <img
+                        src={thumbnailUrl(libraryPath, item.relativePath, item.id)}
+                        alt=""
+                        loading="lazy"
+                        onClick={() => setLightbox(virtualRow.index * columnCount + i)}
+                        onError={(e) => {
+                          e.currentTarget.replaceWith(
+                            Object.assign(document.createElement('div'), {
+                              className: 'thumb-fallback',
+                              textContent: item.kind === 'Photo' ? 'No preview' : '',
+                            }),
+                          )
+                        }}
+                      />
+                    )}
                     {item.kind === 'Video' && (
                       <div className="video-play-badge" aria-hidden="true">
                         <svg viewBox="0 0 24 24" width="32" height="32">

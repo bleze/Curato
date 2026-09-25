@@ -525,6 +525,77 @@ button {
   overflow-y: auto;
 }
 
+/* A true window on top of the app (Settings), unlike .recyclebin-panel's
+   family of panels above, which are still in-flow content that pushes the
+   rest of the page down — confirmed live as the actual reported complaint
+   ("still just a panel, I see no difference"), not a hypothetical one. */
+.modal-overlay {
+  position: fixed;
+  inset: 0;
+  background: rgba(0, 0, 0, 0.55);
+  z-index: 900;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.modal-dialog {
+  background: var(--surface-tint-soft);
+  border: 1px solid var(--border-soft);
+  border-radius: 10px;
+  width: min(560px, calc(100vw - 32px));
+  max-height: 82vh;
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+  box-shadow: 0 20px 60px rgba(0, 0, 0, 0.45);
+}
+
+.modal-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 14px 18px;
+  flex-shrink: 0;
+}
+
+.modal-header h2 {
+  margin: 0;
+  font-size: 16px;
+}
+
+.modal-tabs {
+  display: flex;
+  gap: 4px;
+  padding: 0 18px;
+  border-bottom: 1px solid var(--border-soft);
+  flex-shrink: 0;
+}
+
+.modal-tab {
+  padding: 9px 14px;
+  font-size: 13px;
+  border: none;
+  border-bottom: 2px solid transparent;
+  background: none;
+  color: var(--text-muted);
+  cursor: pointer;
+}
+
+.modal-tab:hover {
+  color: var(--text);
+}
+
+.modal-tab.is-active {
+  color: var(--text);
+  border-bottom-color: var(--accent);
+}
+
+.modal-body {
+  padding: 14px 18px;
+  overflow-y: auto;
+}
+
 /* The selected-tag view swaps the panel's own scrolling for its inner
    TagGrid's virtualized one — scrolling both would be confusing, and only
    the inner grid knows how tall its (potentially huge) content really is. */

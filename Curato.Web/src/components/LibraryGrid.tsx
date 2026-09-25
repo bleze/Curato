@@ -520,23 +520,31 @@ function ThumbTile({
       onMouseEnter={() => onHoverChange(true)}
       onMouseLeave={() => onHoverChange(false)}
     >
-      <img
-        src={suspendLoad ? undefined : thumbnailUrl(libraryPath, item.relativePath, item.id)}
-        alt=""
-        loading="lazy"
-        onClick={onOpen}
-        onError={(e) => {
-          e.currentTarget.replaceWith(
-            Object.assign(document.createElement('div'), {
-              className: 'thumb-fallback',
-              // A video already shows its own play-icon badge as the "this
-              // is a video" signal — "No preview" text underneath it just
-              // looked cluttered, so only photos get the text explanation.
-              textContent: item.kind === 'Photo' ? 'No preview' : '',
-            }),
-          )
-        }}
-      />
+      {/* No <img> at all while suspended, rather than one with no src —
+          an <img> with a missing/empty src still renders Chrome's own
+          broken-image glyph and border, which looked far worse than the
+          plain-grey .thumb background it now falls back to showing
+          instead (confirmed live: reported as an ugly bordered icon in
+          the corner of every not-yet-loaded tile while scrolling). */}
+      {!suspendLoad && (
+        <img
+          src={thumbnailUrl(libraryPath, item.relativePath, item.id)}
+          alt=""
+          loading="lazy"
+          onClick={onOpen}
+          onError={(e) => {
+            e.currentTarget.replaceWith(
+              Object.assign(document.createElement('div'), {
+                className: 'thumb-fallback',
+                // A video already shows its own play-icon badge as the "this
+                // is a video" signal — "No preview" text underneath it just
+                // looked cluttered, so only photos get the text explanation.
+                textContent: item.kind === 'Photo' ? 'No preview' : '',
+              }),
+            )
+          }}
+        />
+      )}
       {item.kind === 'Video' && (
         <div className="video-play-badge" aria-hidden="true">
           <svg viewBox="0 0 24 24" width="32" height="32">
