@@ -52,6 +52,23 @@ type Block =
   | { type: 'event-header'; key: string; event: EventDto }
   | { type: 'thumb-row'; key: string; event: EventDto; items: MediaItemDto[]; startIndex: number }
 
+// Shared by the virtualizer's own estimateSize and buildDateMarkers's
+// cumulative-height math below — both need the exact same per-block height
+// to agree, or the date scrubber's markers wouldn't actually line up with
+// where their content really sits (which is exactly the bug this fixes:
+// markers used to be spaced by counting distinct months rather than by real
+// rendered height, so they never matched the native scrollbar next to them,
+// which moves by real pixel height like every scrollbar does).
+function blockHeight(block: Block, rowHeight: number): number {
+  if (block.type === 'trip-header') {
+    return TRIP_HEADER_HEIGHT + (block.trip.proposedFolderPath ? PROPOSED_PATH_HEIGHT : 0)
+  }
+  if (block.type === 'event-header') {
+    return EVENT_HEADER_HEIGHT
+  }
+  return rowHeight
+}
+
 function formatRange(startAt: string, endAt: string): string {
   const start = new Date(startAt)
   const end = new Date(endAt)
@@ -114,29 +131,41 @@ function blockDate(block: Block): string | null {
   return block.event.startAt
 }
 
-function buildDateMarkers(blocks: Block[]): DateMarker[] {
+// heightFraction is cumulative rendered height *before* each marker's block,
+// as a fraction of the grid's total height — the same quantity a native
+// scrollbar's thumb position represents, so the two agree with each other.
+// (Confirmed live this needed fixing: marker positions used to come from
+// counting distinct months instead, which only matches real proportional
+// height when every month happens to have the same number of photos.)
+function buildDateMarkers(blocks: Block[], rowHeight: number): DateMarker[] {
   const markers: DateMarker[] = []
   let lastMonthKey = ''
   let lastYear = -1
+  let cumulativeHeight = 0
 
-  blocks.forEach((block, index) => {
+  const totalHeight = blocks.reduce((sum, block) => sum + blockHeight(block, rowHeight), 0)
+
+  blocks.forEach((block) => {
     const dateStr = blockDate(block)
-    if (!dateStr) return
+    if (dateStr) {
+      const date = new Date(dateStr)
+      const monthKey = `${date.getFullYear()}-${date.getMonth()}`
+      if (monthKey !== lastMonthKey) {
+        lastMonthKey = monthKey
 
-    const date = new Date(dateStr)
-    const monthKey = `${date.getFullYear()}-${date.getMonth()}`
-    if (monthKey === lastMonthKey) return
-    lastMonthKey = monthKey
+        const isMajor = date.getFullYear() !== lastYear
+        if (isMajor) lastYear = date.getFullYear()
 
-    const isMajor = date.getFullYear() !== lastYear
-    if (isMajor) lastYear = date.getFullYear()
+        markers.push({
+          heightFraction: totalHeight > 0 ? cumulativeHeight / totalHeight : 0,
+          label: String(date.getFullYear()),
+          tooltipLabel: date.toLocaleDateString(undefined, { year: 'numeric', month: 'short' }),
+          isMajor,
+        })
+      }
+    }
 
-    markers.push({
-      blockIndex: index,
-      label: String(date.getFullYear()),
-      tooltipLabel: date.toLocaleDateString(undefined, { year: 'numeric', month: 'short' }),
-      isMajor,
-    })
+    cumulativeHeight += blockHeight(block, rowHeight)
   })
 
   return markers
@@ -252,7 +281,7 @@ export function LibraryGrid({
   const rowHeight = thumbSize + GAP
 
   const blocks = useMemo(() => buildBlocks(library, columnCount), [library, columnCount])
-  const dateMarkers = useMemo(() => buildDateMarkers(blocks), [blocks])
+  const dateMarkers = useMemo(() => buildDateMarkers(blocks, rowHeight), [blocks, rowHeight])
 
   const virtualizer = useVirtualizer({
     count: blocks.length,
@@ -267,16 +296,7 @@ export function LibraryGrid({
     // individual row positioning (the overlapping/offset-labels bug).
     // Keying by the block's own stable id fixes both.
     getItemKey: (index) => blocks[index].key,
-    estimateSize: (index) => {
-      const block = blocks[index]
-      if (block.type === 'trip-header') {
-        return TRIP_HEADER_HEIGHT + (block.trip.proposedFolderPath ? PROPOSED_PATH_HEIGHT : 0)
-      }
-      if (block.type === 'event-header') {
-        return EVENT_HEADER_HEIGHT
-      }
-      return rowHeight
-    },
+    estimateSize: (index) => blockHeight(blocks[index], rowHeight),
     overscan: 6,
   })
 
@@ -392,7 +412,7 @@ export function LibraryGrid({
 
       <DateScrubber
         markers={dateMarkers}
-        onJump={(blockIndex) => virtualizer.scrollToIndex(blockIndex, { align: 'start' })}
+        onJump={(fraction) => virtualizer.scrollToOffset(fraction * virtualizer.getTotalSize(), { align: 'start' })}
         rightOffset={scrollbarWidth}
       />
 
