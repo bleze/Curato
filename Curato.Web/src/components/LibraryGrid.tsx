@@ -1,7 +1,7 @@
 import { useVirtualizer } from '@tanstack/react-virtual'
-import { useLayoutEffect, useMemo, useRef, useState } from 'react'
+import { useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react'
 import type { EventDto, LibraryDto, MediaItemDto, TripGroupDto } from '../api'
-import { thumbnailUrl } from '../api'
+import { bumpImageVersion, rotateMediaItem, thumbnailUrl } from '../api'
 import type { DateMarker } from './DateScrubber'
 import { DateScrubber } from './DateScrubber'
 import { Lightbox } from './Lightbox'
@@ -183,6 +183,32 @@ export function LibraryGrid({
   // strip.
   const [scrollbarWidth, setScrollbarWidth] = useState(0)
   const [lightbox, setLightbox] = useState<{ items: MediaItemDto[]; index: number } | null>(null)
+  // A ref, not state — this changes on every mouse move between thumbnails,
+  // and none of that needs to trigger a re-render of the (potentially huge)
+  // virtualized grid; a keydown handler only ever needs its *current* value
+  // at the moment L/R is actually pressed.
+  const hoveredPhotoRef = useRef<MediaItemDto | null>(null)
+  const [, forceRerenderForRotate] = useState(0)
+
+  // Lets you rotate a photo by hovering its grid thumbnail and pressing
+  // L/R, without opening the fullscreen viewer first — same non-destructive
+  // Edit-row mechanism as the Lightbox toolbar (rotateMediaItem never
+  // touches the original file).
+  useEffect(() => {
+    async function onKeyDown(e: KeyboardEvent) {
+      if (e.target instanceof HTMLInputElement || e.target instanceof HTMLTextAreaElement) return
+      if (e.key !== 'l' && e.key !== 'L' && e.key !== 'r' && e.key !== 'R') return
+
+      const hovered = hoveredPhotoRef.current
+      if (!hovered) return
+
+      await rotateMediaItem(libraryPath, hovered.id, e.key === 'r' || e.key === 'R' ? 90 : -90)
+      bumpImageVersion(hovered.id)
+      forceRerenderForRotate((n) => n + 1)
+    }
+    window.addEventListener('keydown', onKeyDown)
+    return () => window.removeEventListener('keydown', onKeyDown)
+  }, [libraryPath])
 
   useLayoutEffect(() => {
     const el = scrollRef.current
@@ -338,6 +364,9 @@ export function LibraryGrid({
                       libraryPath={libraryPath}
                       onOpen={() => setLightbox({ items: block.event.items, index: block.startIndex + i })}
                       onDelete={onDelete}
+                      onHoverChange={(hovering) => {
+                        hoveredPhotoRef.current = hovering && item.kind === 'Photo' ? item : null
+                      }}
                     />
                   ))}
                 </div>
@@ -459,16 +488,23 @@ function ThumbTile({
   libraryPath,
   onOpen,
   onDelete,
+  onHoverChange,
 }: {
   item: MediaItemDto
   libraryPath: string
   onOpen: () => void
   onDelete: (mediaItemId: number) => void
+  onHoverChange: (hovering: boolean) => void
 }) {
   return (
-    <div className="thumb" title={item.relativePath}>
+    <div
+      className="thumb"
+      title={item.relativePath}
+      onMouseEnter={() => onHoverChange(true)}
+      onMouseLeave={() => onHoverChange(false)}
+    >
       <img
-        src={thumbnailUrl(libraryPath, item.relativePath)}
+        src={thumbnailUrl(libraryPath, item.relativePath, item.id)}
         alt=""
         loading="lazy"
         onClick={onOpen}

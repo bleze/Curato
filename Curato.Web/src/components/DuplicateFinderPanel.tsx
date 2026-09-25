@@ -67,7 +67,7 @@ export function DuplicateFinderPanel({ libraryPath, onClose }: { libraryPath: st
               >
                 <div className="thumb">
                   <img
-                    src={thumbnailUrl(libraryPath, item.relativePath)}
+                    src={thumbnailUrl(libraryPath, item.relativePath, item.id)}
                     alt=""
                     loading="lazy"
                     onError={(e) => {

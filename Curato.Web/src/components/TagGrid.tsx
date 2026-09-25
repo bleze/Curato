@@ -1,7 +1,7 @@
 import { useVirtualizer } from '@tanstack/react-virtual'
-import { useLayoutEffect, useMemo, useRef, useState } from 'react'
+import { useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react'
 import type { MediaItemDto } from '../api'
-import { thumbnailUrl } from '../api'
+import { bumpImageVersion, rotateMediaItem, thumbnailUrl } from '../api'
 import { Lightbox } from './Lightbox'
 
 // Mirrors LibraryGrid's sizing — kept in sync manually since the two grids'
@@ -29,6 +29,26 @@ export function TagGrid({
   // never falls back to a guessed column count anymore.
   const [containerWidth, setContainerWidth] = useState<number | null>(null)
   const [lightbox, setLightbox] = useState<number | null>(null)
+  // See LibraryGrid's identical hover-to-rotate feature for why this is a
+  // ref, not state, and how it's non-destructive (a saved Edit row only).
+  const hoveredPhotoRef = useRef<MediaItemDto | null>(null)
+  const [, forceRerenderForRotate] = useState(0)
+
+  useEffect(() => {
+    async function onKeyDown(e: KeyboardEvent) {
+      if (e.target instanceof HTMLInputElement || e.target instanceof HTMLTextAreaElement) return
+      if (e.key !== 'l' && e.key !== 'L' && e.key !== 'r' && e.key !== 'R') return
+
+      const hovered = hoveredPhotoRef.current
+      if (!hovered) return
+
+      await rotateMediaItem(libraryPath, hovered.id, e.key === 'r' || e.key === 'R' ? 90 : -90)
+      bumpImageVersion(hovered.id)
+      forceRerenderForRotate((n) => n + 1)
+    }
+    window.addEventListener('keydown', onKeyDown)
+    return () => window.removeEventListener('keydown', onKeyDown)
+  }, [libraryPath])
 
   useLayoutEffect(() => {
     const el = scrollRef.current
@@ -92,9 +112,19 @@ export function TagGrid({
             >
               <div className="thumb-grid" style={{ gridTemplateColumns: `repeat(${columnCount}, 1fr)` }}>
                 {row.map((item, i) => (
-                  <div className="thumb" key={item.id} title={item.relativePath}>
+                  <div
+                    className="thumb"
+                    key={item.id}
+                    title={item.relativePath}
+                    onMouseEnter={() => {
+                      hoveredPhotoRef.current = item.kind === 'Photo' ? item : null
+                    }}
+                    onMouseLeave={() => {
+                      hoveredPhotoRef.current = null
+                    }}
+                  >
                     <img
-                      src={thumbnailUrl(libraryPath, item.relativePath)}
+                      src={thumbnailUrl(libraryPath, item.relativePath, item.id)}
                       alt=""
                       loading="lazy"
                       onClick={() => setLightbox(virtualRow.index * columnCount + i)}

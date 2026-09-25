@@ -1,6 +1,6 @@
-import { useEffect, useRef, useState } from 'react'
+import { useCallback, useEffect, useRef, useState } from 'react'
 import type { MediaItemDto } from '../api'
-import { fullImageUrl, rawFileUrl, rotateMediaItem } from '../api'
+import { bumpImageVersion, fullImageUrl, rawFileUrl, rotateMediaItem } from '../api'
 
 const MIN_ZOOM = 1
 const MAX_ZOOM = 4
@@ -51,11 +51,16 @@ export function Lightbox({
   const [editingDate, setEditingDate] = useState(false)
   const [draftDate, setDraftDate] = useState('')
   const [rotating, setRotating] = useState(false)
-  // Bumped after a successful rotate so the <img> below gets a new URL —
-  // otherwise the browser keeps showing its cached response for the same
-  // fullImageUrl even though the server now renders a rotated image for it
-  // (PLAN.md §10's Edit pipeline changes rendered pixels, not the URL).
-  const [imageCacheBust, setImageCacheBust] = useState(0)
+  // bumpImageVersion (api.ts) is keyed by mediaItemId, shared across every
+  // view of this item (grid thumbnails included) — this local counter just
+  // forces Lightbox itself to re-render and pick up the new version after a
+  // rotate, since bumping a plain module-level Map doesn't trigger React on
+  // its own. Deliberately NOT reset on navigation (an earlier local-only
+  // cache-bust counter used to do that): resetting it would make the <img>
+  // go back to a version-less URL and show the browser's stale pre-rotation
+  // cached response again if you navigated away from a rotated photo and
+  // back to it.
+  const [, forceRerender] = useState(0)
   const dragStart = useRef<{ x: number; y: number; panX: number; panY: number; moved: boolean } | null>(null)
 
   useEffect(() => {
@@ -63,29 +68,43 @@ export function Lightbox({
     setZoom(1)
     setPan({ x: 0, y: 0 })
     setEditingDate(false)
-    setImageCacheBust(0)
   }, [index])
 
-  async function handleRotate(deltaDegrees: number) {
-    setRotating(true)
-    try {
-      await rotateMediaItem(libraryPath, item.id, deltaDegrees)
-      setImageCacheBust((v) => v + 1)
-      onRotated(item.id)
-    } finally {
-      setRotating(false)
-    }
-  }
+  const handleRotate = useCallback(
+    async (deltaDegrees: number) => {
+      if (rotating) return
+      setRotating(true)
+      try {
+        await rotateMediaItem(libraryPath, item.id, deltaDegrees)
+        bumpImageVersion(item.id)
+        forceRerender((n) => n + 1)
+        onRotated(item.id)
+      } finally {
+        setRotating(false)
+      }
+    },
+    [rotating, libraryPath, item.id, onRotated],
+  )
 
   useEffect(() => {
     function onKeyDown(e: KeyboardEvent) {
+      // Don't hijack L/R (or anything else) while a text field has focus —
+      // the date-edit input is the one place that's reachable from here.
+      if (e.target instanceof HTMLInputElement || e.target instanceof HTMLTextAreaElement) return
       if (e.key === 'Escape') onClose()
       if (e.key === 'ArrowRight' && index < items.length - 1) onNavigate(index + 1)
       if (e.key === 'ArrowLeft' && index > 0) onNavigate(index - 1)
+      if ((e.key === 'l' || e.key === 'L') && item.kind === 'Photo') handleRotate(-90)
+      if ((e.key === 'r' || e.key === 'R') && item.kind === 'Photo') handleRotate(90)
     }
     window.addEventListener('keydown', onKeyDown)
     return () => window.removeEventListener('keydown', onKeyDown)
-  }, [index, items.length, onClose, onNavigate])
+    // handleRotate is memoized (useCallback) specifically so it can sit in
+    // this dependency array without re-subscribing the listener on every
+    // render, while still always being the version that closes over the
+    // current `rotating` value — omitting it would let this effect call a
+    // stale closure whose in-flight guard never saw a real rotate happen.
+  }, [index, items.length, onClose, onNavigate, item.kind, handleRotate])
 
   if (!item) return null
 
@@ -150,7 +169,7 @@ export function Lightbox({
             type="button"
             onClick={() => handleRotate(-90)}
             disabled={rotating}
-            title="Rotate left — a saved edit, the original file is never touched"
+            title="Rotate left (L) — a saved edit, the original file is never touched"
             aria-label="Rotate left"
           >
             <svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
@@ -162,7 +181,7 @@ export function Lightbox({
             type="button"
             onClick={() => handleRotate(90)}
             disabled={rotating}
-            title="Rotate right — a saved edit, the original file is never touched"
+            title="Rotate right (R) — a saved edit, the original file is never touched"
             aria-label="Rotate right"
           >
             <svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
@@ -212,7 +231,7 @@ export function Lightbox({
           <video src={rawFileUrl(libraryPath, item.liveVideoRelativePath)} autoPlay loop muted playsInline />
         ) : (
           <img
-            src={fullImageUrl(libraryPath, item.relativePath, imageCacheBust)}
+            src={fullImageUrl(libraryPath, item.relativePath, item.id)}
             alt=""
             onMouseDown={handleMouseDown}
             draggable={false}

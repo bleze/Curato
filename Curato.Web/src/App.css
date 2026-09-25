@@ -888,6 +888,13 @@ button {
   height: 56px;
   border-radius: 50%;
   cursor: pointer;
+  /* The ‹/› glyph's own font metrics (ascender/descender space) don't sit
+     centered around its em-box middle, so at this font-size it visually
+     read as sitting toward the bottom of the button — flex-centering the
+     button's content box fixes that regardless of the glyph's own metrics. */
+  display: flex;
+  align-items: center;
+  justify-content: center;
 }
 
 .lightbox-nav:hover {

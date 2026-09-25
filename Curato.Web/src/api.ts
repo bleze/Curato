@@ -232,15 +232,35 @@ export function renameTripGroup(path: string, tripGroupId: number, title: string
   }).then(expectOk)
 }
 
-export function thumbnailUrl(libraryPath: string, relativePath: string): string {
+// An edit (e.g. Lightbox rotate) changes what a MediaItem's thumbnail/full
+// image render to without changing its URL at all, so the browser happily
+// keeps showing its old cached response everywhere that URL is used —
+// confirmed live as a rotated photo's grid thumbnail still showing the old
+// orientation even after the Lightbox's own (separately cache-busted) view
+// of it was already correct. A single shared version number per item,
+// bumped once by bumpImageVersion and read by every thumbnailUrl/
+// fullImageUrl call for that item from then on, fixes every view of it at
+// once without each caller needing to track or pass anything itself.
+const imageVersions = new Map<number, number>()
+
+export function bumpImageVersion(mediaItemId: number): void {
+  imageVersions.set(mediaItemId, (imageVersions.get(mediaItemId) ?? 0) + 1)
+}
+
+function appendCacheBust(params: URLSearchParams, mediaItemId?: number): void {
+  const version = mediaItemId !== undefined ? imageVersions.get(mediaItemId) : undefined
+  if (version) params.set('v', String(version))
+}
+
+export function thumbnailUrl(libraryPath: string, relativePath: string, mediaItemId?: number): string {
   const params = new URLSearchParams({ libraryPath, relativePath })
+  appendCacheBust(params, mediaItemId)
   return `/api/media/thumbnail?${params.toString()}`
 }
 
-/** cacheBust: bump after an edit (e.g. rotate) changes the rendered pixels for this path, so the browser doesn't keep showing its cached response for the same URL. */
-export function fullImageUrl(libraryPath: string, relativePath: string, cacheBust?: number): string {
+export function fullImageUrl(libraryPath: string, relativePath: string, mediaItemId?: number): string {
   const params = new URLSearchParams({ libraryPath, relativePath })
-  if (cacheBust) params.set('v', String(cacheBust))
+  appendCacheBust(params, mediaItemId)
   return `/api/media/full?${params.toString()}`
 }
 
