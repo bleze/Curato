@@ -2,6 +2,7 @@ import { useVirtualizer } from '@tanstack/react-virtual'
 import { useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react'
 import type { MediaItemDto } from '../api'
 import { bumpImageVersion, rotateMediaItem, thumbnailUrl } from '../api'
+import { formatTakenAt } from '../format'
 import { Lightbox } from './Lightbox'
 
 // Mirrors LibraryGrid's sizing — kept in sync manually since the two grids'
@@ -129,7 +130,7 @@ export function TagGrid({
                   <div
                     className="thumb"
                     key={item.id}
-                    title={item.relativePath}
+                    title={`${item.relativePath}\n${formatTakenAt(item.takenAt)}`}
                     onMouseEnter={() => {
                       hoveredPhotoRef.current = item.kind === 'Photo' ? item : null
                     }}

@@ -1,20 +1,11 @@
 import { useCallback, useEffect, useRef, useState } from 'react'
 import type { MediaItemDto } from '../api'
 import { bumpImageVersion, fullImageUrl, rawFileUrl, rotateMediaItem } from '../api'
+import { formatTakenAt } from '../format'
 
 const MIN_ZOOM = 1
 const MAX_ZOOM = 4
 const ZOOM_STEP = 0.4
-
-function formatTakenAt(takenAt: string): string {
-  return new Date(takenAt).toLocaleString(undefined, {
-    year: 'numeric',
-    month: 'long',
-    day: 'numeric',
-    hour: 'numeric',
-    minute: '2-digit',
-  })
-}
 
 // <input type="datetime-local">'s value format ("YYYY-MM-DDTHH:mm", no
 // timezone) — built from the Date object's LOCAL getters (not toISOString,

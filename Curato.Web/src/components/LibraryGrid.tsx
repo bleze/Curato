@@ -4,6 +4,7 @@ import type { EventDto, LibraryDto, MediaItemDto, TripGroupDto } from '../api'
 import { bumpImageVersion, rotateMediaItem, thumbnailUrl } from '../api'
 import type { DateMarker } from './DateScrubber'
 import { DateScrubber } from './DateScrubber'
+import { formatTakenAt } from '../format'
 import { Lightbox } from './Lightbox'
 
 // Mirrors the old CSS grid's `repeat(auto-fill, minmax(120px, 1fr))` — kept
@@ -546,7 +547,7 @@ function ThumbTile({
   return (
     <div
       className="thumb"
-      title={item.relativePath}
+      title={`${item.relativePath}\n${formatTakenAt(item.takenAt)}`}
       onMouseEnter={() => onHoverChange(true)}
       onMouseLeave={() => onHoverChange(false)}
     >
