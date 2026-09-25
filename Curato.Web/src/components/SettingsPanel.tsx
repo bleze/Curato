@@ -273,9 +273,8 @@ export function SettingsPanel({
           {activeTab === 'library' && (
             <section className="settings-section">
               <p className="recyclebin-hint">
-                The destination iCloud sync (and any future external source) copies content into. Scanning/organizing
-                a folder you point Curato at directly still works exactly as before — this is a separate, additional
-                setting.
+                The destination iCloud sync (and any future external source) copies content into. Separate from
+                scanning/organizing a folder you point Curato at directly.
               </p>
               <div className="settings-row">
                 <input
