@@ -354,40 +354,46 @@ than only ever appending.]
 2. `TripGroup`s are proposals: shown to the user before organizing, with merge/split
    controls, but no manual date-range selection required for the common case.
 
-[**Disabled in the built Phase 1/2 pipeline** — TripClusterer (this
-algorithm) is implemented and unit-tested, but ScanService no longer calls
-it to auto-create TripGroups. With zero location signal, a pure time gap
+[**GPS-gated, not purely time-based** — TripClusterer (this algorithm) was
+disabled entirely for a while: with zero location signal, a pure time gap
 can't tell "an actual trip away from home" apart from an ordinary run of
 days that happen to have photos on them — for anyone who takes photos close
 to daily, nearly their whole library has <36h gaps between consecutive
 days' Events, so it was merging unrelated weeks/months into sprawling,
-meaningless "trips." Confirmed against a real library and fixed per
-explicit product decision rather than just tuning the threshold, since any
-purely time-based number has the same fundamental problem. Adopted
-TripGroups (§3 Step 0 — real folder structure the user already made, e.g.
-`2019 Summer/Day 1`, `2019 Summer/Day 2`) are unaffected; that's reading
-existing organization, never a guess. A library scanned before this fix
-self-heals on its next scan: `LibraryRepository.RemoveAutoFormedTripGroups`
-ungroups any leftover CuratoManaged TripGroup back into standalone Events
-(no file or MediaItem is touched). The real fix is Step 3's location-aware
-naming logic below, generalized into location-aware *grouping* — tracked
-against Phase 4 (Map view, §12) landing GPS EXIF extraction, not scheduled
-before then.]
+meaningless "trips." Re-enabled once GPS EXIF extraction landed (ahead of
+the rest of Phase 4/§12's Map view — location text and trip *naming* alone
+didn't need a map), gated by `Curato.Organizer.GpsTripGate`: a candidate
+group (still found by the pure time-gap/span rule above) only actually
+becomes a TripGroup if at least one member Event's representative GPS point
+is genuinely far (50km) from a detected "home" location (the most common
+~1km GPS bucket across the library). A library with no GPS data at all has
+no home location, so the gate never passes and behavior is unchanged from
+before. Adopted TripGroups (§3 Step 0 — real folder structure the user
+already made, e.g. `2019 Summer/Day 1`, `2019 Summer/Day 2`) are unaffected
+either way; that's reading existing organization, never a guess. Manual
+grouping (`LibraryRepository.CreateTripGroup`/`UngroupTripGroup`, a UI
+checkbox-select on Event headers) is the escape hatch for whatever the gate
+doesn't catch — no GPS on the photos, or a real trip close enough to home
+that the 50km threshold misses it.]
 
 ### Step 3 — Titling
 - Auto-title an `Event` from its date/time-of-day (e.g. "Morning", "Evening") unless
   the user supplies one; auto-title a `TripGroup` as its date range until named.
-- **Location-aware trip naming, when GPS data is available**: reverse-geocode a
-  `TripGroup`'s photos (reusing Map view's reverse-geocoding, §12 — see that section's
-  note on it being the one network-dependent feature) and use the **plurality
-  location** — the place name shared by the most photos, not just the first or last —
-  as the default title instead of a bare date range, e.g. "Mallorca" for a week's trip.
-  Using the plurality rather than first/last matters exactly because of airport photos
-  at each end: a handful of shots at a departure/arrival airport shouldn't dilute or
-  override the name of the place where most of the week was actually spent. This is
-  purely a *naming* enhancement — it never changes which photos belong to the trip
-  (that's still Step 1–2's gap-based clustering, which already includes the bookending
-  airport photos naturally, since they're time-contiguous with the rest of the trip) —
+- **Location-aware trip naming, when GPS data is available**: a GPS-gated auto-formed
+  TripGroup (Step 2 above) is titled after the away-from-home place that qualified it
+  (e.g. "Mallorca") instead of a bare date range, via the same `ReverseGeocoder` (§12)
+  the library view's location text uses. [**Simplified from the plurality-location
+  design below** — the shipped version titles a trip after the *first* qualifying
+  away-from-home Event it finds, not a plurality vote across every member Event's
+  photos; airport-photo dilution is a real but narrow edge case worth revisiting once
+  it's actually reported live, not before.] The plurality design, for reference: use
+  the place name shared by the most photos, not just the first or last, as the default
+  title. Using the plurality rather than first/last matters exactly because of airport
+  photos at each end: a handful of shots at a departure/arrival airport shouldn't
+  dilute or override the name of the place where most of the week was actually spent.
+  This is purely a *naming* enhancement — it never changes which photos belong to the
+  trip (that's still Step 1–2's gap-based clustering, which already includes the
+  bookending airport photos naturally, since they're time-contiguous with the rest) —
   and it degrades gracefully to the plain date-range title whenever geocoding is
   unavailable (offline, or GPS-less photos), so it never becomes a hard dependency for
   the otherwise fully offline Import & Organize flow.
@@ -1285,6 +1291,22 @@ design in from the start rather than discover later:
   question (§19) to settle nearer Phase 4. The same reverse-geocoding this section needs
   for the map itself is what powers location-aware Trip auto-naming (§3, Step 3) — one
   capability, two uses, both landing together in Phase 4.
+
+  [**Reverse-geocoding itself landed early, ahead of the map**: `Curato.Data.
+  ReverseGeocoder` calls OpenStreetMap Nominatim (the provider this section already
+  leaned toward), caching results by ~1km-rounded coordinate bucket (`GeocodeCache`
+  table) and rate-limiting to Nominatim's 1 req/sec usage policy — the exact
+  network-dependent-exception posture described above, just without the interactive
+  map/pin-dragging/tile-caching parts of this section, which are still not built. Real
+  resolution runs out-of-band in `GeocodeWarmupBackgroundService` (Curato.Api), not
+  inline in a page load: resolving a whole library's worth of distinct places one at a
+  time at 1 req/sec inside `GetLibrary` itself made the library view hang for minutes
+  the first time it ran, confirmed live right after backfilling GPS for a
+  previously-scanned library — `GetLibrary` now only ever reads the cache
+  (`TryGetCached`), so a location simply isn't shown yet for anything the background
+  warmer hasn't gotten to. Powers the location text next to dates (Event/Trip headers,
+  Lightbox) and §3 Step 2/3's GPS-gated Trip formation/naming — the map itself (pins,
+  clustering, manual placement) remains unbuilt.]
 
 ## 13. Slideshow
 
