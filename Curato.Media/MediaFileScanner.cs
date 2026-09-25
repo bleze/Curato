@@ -145,35 +145,56 @@ public sealed class MediaFileScanner
     }
 
     /// <summary>
-    /// Reads the QuickTime/MP4-family "movie header" creation date (covers
-    /// .mov/.mp4/.m4v/.3gp — the ISO-base-media-file-format family, by far
-    /// the common case for phone-recorded video). MetadataExtractor has no
-    /// reader for AVI/Matroska/WebM/WMV creation dates, so those still fall
-    /// back to the file's filesystem date, same as before this method existed.
+    /// Reads the QuickTime/MP4-family creation date (covers .mov/.mp4/.m4v/
+    /// .3gp — the ISO-base-media-file-format family, by far the common case
+    /// for phone-recorded video). MetadataExtractor has no reader for AVI/
+    /// Matroska/WebM/WMV creation dates, so those still fall back to the
+    /// file's filesystem date, same as before this method existed.
     /// </summary>
     private static (DateTime TakenAt, TakenAtSource Source) ReadVideoTakenAt(string filePath, FileInfo info)
     {
         try
         {
             var directories = ImageMetadataReader.ReadMetadata(filePath);
+
+            // Apple's own "com.apple.quicktime.creationdate" key (exposed
+            // here as QuickTimeMetadataHeaderDirectory.TagCreationDate) is
+            // written by the iOS Camera app for every photo/video/Live Photo
+            // it records, and — confirmed live by dumping a real file's raw
+            // tag value — it's already the true local wall-clock time AT THE
+            // RECORDING LOCATION (e.g. 18:51:14 for a video whose mvhd UTC
+            // time was 17:51:14, a real Denmark-in-November file: correctly
+            // +01:00, not a guessed offset). This is fundamentally different
+            // from — and more correct than — the movie header's plain UTC
+            // timestamp below: reported live as a Live Photo's HEIC (EXIF,
+            // naive local time, always correct) and its paired MOV (movie-
+            // header UTC converted using the *server's* own timezone) ending
+            // up a full hour apart for a video shot in Brighton, UK while the
+            // Curato server ran in Denmark — the UK wasn't in the same DST
+            // transition window as Denmark that week. Using Apple's own
+            // location-aware value sidesteps needing to know the recording
+            // location's timezone at all, exactly like EXIF's DateTimeOriginal
+            // already does for photos, so it's preferred whenever present.
+            var metadataHeader = directories.OfType<QuickTimeMetadataHeaderDirectory>().FirstOrDefault();
+            if (metadataHeader is not null &&
+                metadataHeader.TryGetDateTime(QuickTimeMetadataHeaderDirectory.TagCreationDate, out var creationDate) &&
+                creationDate.Year > 1904)
+            {
+                return (creationDate, TakenAtSource.VideoMetadata);
+            }
+
+            // Fallback for video without Apple's metadata key (Android,
+            // desktop-recorded, re-encoded, etc.): the "movie header"
+            // creation date, defined by spec to be UTC. Converting via the
+            // *server's* local timezone is only a best-effort guess — it's
+            // wrong for anything recorded while traveling outside that
+            // timezone, exactly the gap the metadata-header path above
+            // exists to close for ordinary iPhone-recorded video.
             var movieHeader = directories.OfType<QuickTimeMovieHeaderDirectory>().FirstOrDefault();
             if (movieHeader is not null &&
                 movieHeader.TryGetDateTime(QuickTimeMovieHeaderDirectory.TagCreated, out var created) &&
                 created.Year > 1904) // some encoders write an all-zero "unknown" creation time (decodes to the 1904 epoch itself) rather than omitting the field
             {
-                // Unlike EXIF's DateTimeOriginal (a naive local wall-clock
-                // value, no timezone concept — see ReadPhotoTakenAt above),
-                // the QuickTime movie header's creation date is defined by
-                // spec to be UTC. MetadataExtractor hands it back with
-                // Kind=Unspecified rather than Kind=Utc, so storing it
-                // as-is silently skipped the UTC->local conversion every
-                // other TakenAt value already gets for free by being a
-                // genuine local value — reported live as video timestamps
-                // sitting exactly one timezone-offset (2h, CEST) early.
-                // DateTime.ToLocalTime() treats an Unspecified source as
-                // UTC by its own documented contract, which is exactly the
-                // assumption QuickTime's spec makes, so this both converts
-                // and matches what ReadPhotoTakenAt's values already are.
                 return (created.ToLocalTime(), TakenAtSource.VideoMetadata);
             }
         }
