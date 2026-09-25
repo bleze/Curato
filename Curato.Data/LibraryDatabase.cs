@@ -1,3 +1,4 @@
+using System.Collections.Concurrent;
 using Microsoft.Data.Sqlite;
 
 namespace Curato.Data;
@@ -10,6 +11,21 @@ namespace Curato.Data;
 /// </summary>
 public sealed class LibraryDatabase
 {
+    // Every controller action constructs a fresh LibraryDatabase and calls
+    // EnsureSchema() before doing anything else (simplest correct thing when
+    // this type was written — no shared state to worry about). That became a
+    // real problem once thumbnail requests started arriving in bursts of
+    // dozens (scrolling far in one jump): EnsureSchema's CREATE TABLE IF NOT
+    // EXISTS is still a DDL statement even when it's a no-op, and DDL takes
+    // SQLite's exclusive/reserved lock in the default rollback-journal mode —
+    // so a burst of concurrent thumbnail requests, each re-running schema
+    // setup, serialized on that lock instead of reading in parallel. Schema
+    // only ever needs establishing once per library per process lifetime, so
+    // memoize it per database path; Lazy<> (default thread-safety mode) makes
+    // the one real run atomic and lets concurrent callers block on it instead
+    // of racing into the DDL together.
+    private static readonly ConcurrentDictionary<string, Lazy<bool>> SchemaEnsured = new();
+
     public string LibraryRoot { get; }
     public string DatabasePath { get; }
 
@@ -30,7 +46,19 @@ public sealed class LibraryDatabase
 
     public void EnsureSchema()
     {
+        _ = SchemaEnsured.GetOrAdd(DatabasePath, _ => new Lazy<bool>(RunSchemaSetup)).Value;
+    }
+
+    private bool RunSchemaSetup()
+    {
         using var connection = OpenConnection();
+        // WAL lets readers (thumbnail/full-image requests, the common case
+        // during a scroll burst) proceed without blocking on whatever single
+        // writer might be running a scan/organize at the same time —
+        // rollback-journal mode's default takes an exclusive lock for any
+        // write, which serialized exactly the concurrent-read case this file
+        // most needs to be fast for.
+        connection.Execute("PRAGMA journal_mode=WAL;");
         connection.Execute(Schema.CreateTables);
 
         foreach (var (table, column, definition) in Schema.ColumnMigrations)
@@ -40,6 +68,8 @@ public sealed class LibraryDatabase
                 connection.Execute($"ALTER TABLE {table} ADD COLUMN {column} {definition}");
             }
         }
+
+        return true;
     }
 
     private static bool ColumnExists(SqliteConnection connection, string table, string column)
