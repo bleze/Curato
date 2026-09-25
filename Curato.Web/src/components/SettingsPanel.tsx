@@ -408,7 +408,7 @@ export function SettingsPanel({
 
                     <p className="settings-meta">
                       The specific date wins over "last N days" when both are set. "Max files" caps how many
-                      recently-added items are even considered per sync. Changes here apply when you Save below.
+                      recently-added items are even considered per sync.
                     </p>
                   </div>
                 </>
