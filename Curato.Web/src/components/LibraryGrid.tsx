@@ -189,6 +189,16 @@ export function LibraryGrid({
   // at the moment L/R is actually pressed.
   const hoveredPhotoRef = useRef<MediaItemDto | null>(null)
   const [, forceRerenderForRotate] = useState(0)
+  // Tracks every item whose <img> has ever actually been mounted with a real
+  // src — NOT reset on scroll. virtualizer.isScrolling is a blanket flag for
+  // "a scroll is happening right now" with no idea which tiles are already
+  // loaded vs. genuinely new; suspending every tile by that flag alone made
+  // already-visible, already-loaded thumbnails flicker out and back in on
+  // even a one-row scroll, since they'd suspend and then immediately
+  // re-request. Consulting this set lets a tile that's already been
+  // requested once just keep rendering through any later isScrolling spans,
+  // so only tiles that have genuinely never been requested before suspend.
+  const requestedIdsRef = useRef<Set<number>>(new Set())
 
   // Lets you rotate a photo by hovering its grid thumbnail and pressing
   // L/R, without opening the fullscreen viewer first — same non-destructive
@@ -363,6 +373,7 @@ export function LibraryGrid({
                       item={item}
                       libraryPath={libraryPath}
                       suspendLoad={virtualizer.isScrolling}
+                      requestedIdsRef={requestedIdsRef}
                       onOpen={() => setLightbox({ items: block.event.items, index: block.startIndex + i })}
                       onDelete={onDelete}
                       onHoverChange={(hovering) => {
@@ -488,6 +499,7 @@ function ThumbTile({
   item,
   libraryPath,
   suspendLoad,
+  requestedIdsRef,
   onOpen,
   onDelete,
   onHoverChange,
@@ -509,10 +521,28 @@ function ThumbTile({
   // this) means only the row(s) still on screen once scrolling actually
   // stops ever ask for an image.
   suspendLoad: boolean
+  // See LibraryGrid's declaration — this tile only actually honors
+  // suspendLoad the first time it's ever asked to render, so a tile that
+  // was already showing a loaded thumbnail before this scroll started never
+  // flickers away just because *some* scroll is in progress.
+  requestedIdsRef: React.RefObject<Set<number>>
   onOpen: () => void
   onDelete: (mediaItemId: number) => void
   onHoverChange: (hovering: boolean) => void
 }) {
+  // Deliberately reading/writing the ref synchronously during render rather
+  // than in an effect: an effect only runs after the first paint, so an
+  // already-seen tile would still flash blank for one frame before the
+  // effect discovered that and re-rendered it with the real image — exactly
+  // the flicker this exists to prevent. This project has no React Compiler
+  // in its build, so there's no memoization to invalidate; the Set mutation
+  // is idempotent (a re-render of the same tile just re-adds the same id).
+  // oxlint-disable-next-line react/refs
+  const alreadyRequested = requestedIdsRef.current.has(item.id)
+  const shouldLoad = !suspendLoad || alreadyRequested
+  // oxlint-disable-next-line react/refs
+  if (shouldLoad) requestedIdsRef.current.add(item.id)
+
   return (
     <div
       className="thumb"
@@ -526,7 +556,7 @@ function ThumbTile({
           plain-grey .thumb background it now falls back to showing
           instead (confirmed live: reported as an ugly bordered icon in
           the corner of every not-yet-loaded tile while scrolling). */}
-      {!suspendLoad && (
+      {shouldLoad && (
         <img
           src={thumbnailUrl(libraryPath, item.relativePath, item.id)}
           alt=""

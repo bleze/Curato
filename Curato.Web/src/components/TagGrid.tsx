@@ -33,6 +33,11 @@ export function TagGrid({
   // ref, not state, and how it's non-destructive (a saved Edit row only).
   const hoveredPhotoRef = useRef<MediaItemDto | null>(null)
   const [, forceRerenderForRotate] = useState(0)
+  // See LibraryGrid's identical requestedIdsRef — without it, isScrolling
+  // being a blanket "some scroll is happening" flag suspended every tile
+  // including ones already showing a loaded thumbnail, flickering them out
+  // and back in on even a small scroll.
+  const requestedIdsRef = useRef<Set<number>>(new Set())
 
   useEffect(() => {
     async function onKeyDown(e: KeyboardEvent) {
@@ -111,7 +116,16 @@ export function TagGrid({
               }}
             >
               <div className="thumb-grid" style={{ gridTemplateColumns: `repeat(${columnCount}, 1fr)` }}>
-                {row.map((item, i) => (
+                {row.map((item, i) => {
+                  // See LibraryGrid's ThumbTile for why this reads/writes the
+                  // ref synchronously during render rather than in an effect.
+                  // oxlint-disable-next-line react/refs
+                  const alreadyRequested = requestedIdsRef.current.has(item.id)
+                  const shouldLoad = !virtualizer.isScrolling || alreadyRequested
+                  // oxlint-disable-next-line react/refs
+                  if (shouldLoad) requestedIdsRef.current.add(item.id)
+
+                  return (
                   <div
                     className="thumb"
                     key={item.id}
@@ -131,8 +145,11 @@ export function TagGrid({
                         drag stops. No <img> at all while suspended, rather
                         than one with no src — that still renders Chrome's
                         broken-image glyph and border instead of the plain
-                        .thumb background. */}
-                    {!virtualizer.isScrolling && (
+                        .thumb background. Also gated by requestedIdsRef (see
+                        its declaration above) so an already-loaded tile
+                        never flickers away just because some scroll,
+                        anywhere, is currently in progress. */}
+                    {shouldLoad && (
                       <img
                         src={thumbnailUrl(libraryPath, item.relativePath, item.id)}
                         alt=""
@@ -166,7 +183,8 @@ export function TagGrid({
                       &times;
                     </button>
                   </div>
-                ))}
+                  )
+                })}
               </div>
             </div>
           )
