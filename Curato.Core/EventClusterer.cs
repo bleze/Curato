@@ -51,7 +51,12 @@ public sealed class EventClusterer
         };
     }
 
-    private static string AutoTitle(DateTime startAt) => startAt.Hour switch
+    /// <summary>
+    /// Public so a single-item manual move (LibraryRepository.MoveMediaItemToEvent)
+    /// can title the new standalone Event it creates the same way a fresh
+    /// cluster would, instead of duplicating this time-of-day bucketing.
+    /// </summary>
+    public static string AutoTitle(DateTime startAt) => startAt.Hour switch
     {
         >= 5 and < 12 => "Morning",
         >= 12 and < 17 => "Afternoon",

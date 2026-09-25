@@ -5,6 +5,8 @@ using Dapper;
 
 namespace Curato.Data;
 
+public enum MoveMediaItemResult { Success, MediaItemNotFound, TargetEventNotFound, SourceEventOrganized, TargetEventOrganized }
+
 /// <summary>
 /// First, minimal persistence slice for Phase 1: save a scan's MediaItems and
 /// the Events/TripGroups clustered from them. Re-scanning the same folder is
@@ -280,6 +282,157 @@ public sealed class LibraryRepository(LibraryDatabase database)
             EventId = eventId
         }, transaction);
     }
+
+    /// <summary>
+    /// Refreshes StartAt/EndAt for every never-Organized Event
+    /// (FolderPath IS NULL) to match its members' *current* TakenAt.
+    /// Needed after any bulk TakenAt correction that writes MediaItem.TakenAt
+    /// directly rather than through <see cref="SetTakenAt"/> (e.g. a
+    /// metadata-repair pass) — confirmed live as a video's corrected date not
+    /// being reflected in the Event it's grouped/labeled under (still showing
+    /// its stale pre-correction date range). Adopted/already-Organized Events
+    /// are skipped: their range is never supposed to auto-shift from file
+    /// metadata alone. Membership itself is untouched — an item whose
+    /// correction moves it far enough that it no longer belongs with its
+    /// Event's other members needs <see cref="MoveMediaItemToEvent"/>
+    /// instead, not just a boundary refresh.
+    /// </summary>
+    public int RefreshLooseEventBoundaries()
+    {
+        using var connection = database.OpenConnection();
+        using var transaction = connection.BeginTransaction();
+
+        var eventIds = new List<long>();
+        foreach (var row in connection.Query(
+            "SELECT Id FROM Event WHERE FolderPath IS NULL", transaction: transaction))
+        {
+            eventIds.Add((long)row.Id);
+        }
+
+        foreach (var eventId in eventIds)
+        {
+            ResortEventMembership(connection, transaction, eventId);
+        }
+
+        transaction.Commit();
+        return eventIds.Count;
+    }
+
+    /// <summary>
+    /// Moves one MediaItem out of whichever Event it's currently in and into
+    /// a different one — or, with <paramref name="targetEventId"/> null, into
+    /// a brand new standalone Event of its own — re-sorting/re-bounding both
+    /// the old and new Event afterward and deleting the old one if that
+    /// leaves it empty. The manual escape hatch for whatever automatic
+    /// clustering can't safely infer on its own: a wrong timestamp that put
+    /// an item in the wrong moment, or a correction that moves it far enough
+    /// from its old Event's other members that it no longer belongs there
+    /// (<see cref="SetTakenAt"/>'s own doc comment calls this out as
+    /// deliberately out of scope for a single-field fix).
+    ///
+    /// Deliberately refuses to touch either side once it has a real
+    /// FolderPath (Adopted, or already Organized) — Curato never auto-moves
+    /// files for such content, so a DB-only membership change there would
+    /// desync the database from what's actually on disk. Moving photos in or
+    /// out of organized folders needs a real file move, out of scope here.
+    /// </summary>
+    public MoveMediaItemResult MoveMediaItemToEvent(long mediaItemId, long? targetEventId)
+    {
+        using var connection = database.OpenConnection();
+        using var transaction = connection.BeginTransaction();
+
+        var takenAtRaw = connection.ExecuteScalar<string?>(
+            "SELECT TakenAt FROM MediaItem WHERE Id = @Id", new { Id = mediaItemId }, transaction);
+        if (takenAtRaw is null)
+        {
+            transaction.Rollback();
+            return MoveMediaItemResult.MediaItemNotFound;
+        }
+
+        var sourceEventId = connection.ExecuteScalar<long?>(
+            "SELECT EventId FROM EventMediaItem WHERE MediaItemId = @Id", new { Id = mediaItemId }, transaction);
+
+        if (sourceEventId is { } srcId)
+        {
+            var sourceFolderPath = connection.ExecuteScalar<string?>(
+                "SELECT FolderPath FROM Event WHERE Id = @Id", new { Id = srcId }, transaction);
+            if (sourceFolderPath is not null)
+            {
+                transaction.Rollback();
+                return MoveMediaItemResult.SourceEventOrganized;
+            }
+        }
+
+        long resolvedTargetId;
+        if (targetEventId is { } requestedTargetId)
+        {
+            var targetRow = connection.QuerySingleOrDefault<(string? FolderPath, bool Found)?>("""
+                SELECT FolderPath, 1 AS Found FROM Event WHERE Id = @Id
+                """, new { Id = requestedTargetId }, transaction);
+
+            if (targetRow is null)
+            {
+                transaction.Rollback();
+                return MoveMediaItemResult.TargetEventNotFound;
+            }
+
+            if (targetRow.Value.FolderPath is not null)
+            {
+                transaction.Rollback();
+                return MoveMediaItemResult.TargetEventOrganized;
+            }
+
+            resolvedTargetId = requestedTargetId;
+        }
+        else
+        {
+            var takenAt = ParseDateTime(takenAtRaw);
+            resolvedTargetId = connection.ExecuteScalar<long>("""
+                INSERT INTO Event (StartAt, EndAt, Title, TitleIsAuto, FolderPath, TripGroupId, NamingMode)
+                VALUES (@StartAt, @StartAt, @Title, 1, NULL, NULL, @NamingMode)
+                RETURNING Id
+                """, new
+            {
+                StartAt = takenAtRaw,
+                Title = Curato.Core.EventClusterer.AutoTitle(takenAt),
+                NamingMode = nameof(Curato.Core.NamingMode.CuratoManaged)
+            }, transaction);
+        }
+
+        if (sourceEventId is { } sourceIdToLeave)
+        {
+            connection.Execute(
+                "DELETE FROM EventMediaItem WHERE EventId = @EventId AND MediaItemId = @MediaItemId",
+                new { EventId = sourceIdToLeave, MediaItemId = mediaItemId }, transaction);
+        }
+
+        connection.Execute("""
+            INSERT INTO EventMediaItem (EventId, MediaItemId, SortOrder) VALUES (@EventId, @MediaItemId, 0)
+            """, new { EventId = resolvedTargetId, MediaItemId = mediaItemId }, transaction);
+        ResortEventMembership(connection, transaction, resolvedTargetId);
+
+        if (sourceEventId is { } sourceIdToCheck)
+        {
+            var remaining = connection.ExecuteScalar<long>(
+                "SELECT COUNT(*) FROM EventMediaItem WHERE EventId = @EventId",
+                new { EventId = sourceIdToCheck }, transaction);
+
+            if (remaining == 0)
+            {
+                connection.Execute("DELETE FROM Event WHERE Id = @EventId", new { EventId = sourceIdToCheck }, transaction);
+            }
+            else
+            {
+                ResortEventMembership(connection, transaction, sourceIdToCheck);
+            }
+        }
+
+        transaction.Commit();
+        return MoveMediaItemResult.Success;
+    }
+
+    private static DateTime ParseDateTime(string value) =>
+        DateTime.Parse(value, null, System.Globalization.DateTimeStyles.RoundtripKind);
 
     /// <summary>
     /// Un-does auto-formed (NamingMode = CuratoManaged) TripGroups: their
