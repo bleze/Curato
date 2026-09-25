@@ -161,15 +161,15 @@ public sealed class ScanService(
         // formation after saving — computed once from the library's full
         // current MediaItem state (already committed by UpsertMediaItems
         // above, regardless of Event-saving order), not just this scan's items.
-        var itemsById = savedItems.ToDictionary(i => i.Id);
-        var homeLocation = GpsTripGate.DetectHomeLocation(query.GetAllMediaItems());
-        EnrichAutoTitlesWithLocation(newAutoEvents, itemsById, homeLocation);
+        var allMediaItemsById = query.GetAllMediaItems().ToDictionary(i => i.Id);
+        var homeLocation = GpsTripGate.DetectHomeLocation(allMediaItemsById.Values);
+        EnrichAutoTitlesWithLocation(newAutoEvents, savedItems.ToDictionary(i => i.Id), homeLocation);
 
         var allNewEvents = newAutoEvents.Concat(newAdoptedEvents).ToList();
         repository.SaveEvents(allNewEvents); // assigns real Ids, needed before trip-grouping
 
         var adoptedTrips = AdoptedFolderPlanner.PlanTrips(newAdoptedEvents);
-        var gpsTrips = FormGpsAwareTrips(newAutoEvents, itemsById, homeLocation);
+        var gpsTrips = FormGpsAwareTrips(homeLocation, allMediaItemsById);
         var allNewTrips = adoptedTrips.Concat(gpsTrips).ToList();
         repository.SaveTripGroups(allNewTrips);
 
@@ -224,21 +224,37 @@ public sealed class ScanService(
     /// succeeds, falling back to the plain date-range title otherwise. A
     /// library with no GPS data anywhere never has a home location, so the
     /// gate never passes and behavior is unchanged (zero auto-formed Trips).
-    /// <paramref name="newAutoEvents"/> must already have real ids (saved).
+    ///
+    /// Candidates are every not-yet-grouped CuratoManaged Event in the whole
+    /// library, not just ones this scan pass just created — confirmed live as
+    /// wanted: a library that already existed before GPS extraction landed
+    /// still has years of standalone Events sitting in it, and re-scanning
+    /// alone can't re-cluster their MediaItems (already-clustered content is
+    /// never touched — see GetMediaItemIdsAlreadyInAnyEvent), so this is the
+    /// only path that ever forms a Trip for them. Naturally idempotent: once
+    /// an Event is grouped, its TripGroupId excludes it from being considered
+    /// again on the next scan. Adopted Events are excluded — their grouping
+    /// is folder-driven (AdoptedFolderPlanner.PlanTrips), never GPS-guessed.
+    /// Already-Organized Events are still eligible (CreateTripGroup's own
+    /// doc comment: grouping is pure metadata, never a file move).
     /// </summary>
     private IReadOnlyList<TripGroup> FormGpsAwareTrips(
-        IReadOnlyList<Event> newAutoEvents, IReadOnlyDictionary<long, MediaItem> itemsById, (double Lat, double Lon)? homeLocation)
+        (double Lat, double Lon)? homeLocation, IReadOnlyDictionary<long, MediaItem> itemsById)
     {
         if (homeLocation is null)
         {
             return [];
         }
 
-        var eventLocations = newAutoEvents.ToDictionary(
+        var candidateEvents = query.GetAllEvents()
+            .Where(e => e.NamingMode == NamingMode.CuratoManaged && e.TripGroupId is null)
+            .ToList();
+
+        var eventLocations = candidateEvents.ToDictionary(
             e => e.Id, e => GpsTripGate.RepresentativeLocation(e, itemsById));
 
         var qualifyingTrips = new TripClusterer()
-            .Cluster(newAutoEvents)
+            .Cluster(candidateEvents)
             .Where(trip => trip.EventIds.Any(id => GpsTripGate.IsAwayFromHome(homeLocation, eventLocations[id])))
             .ToList();
 

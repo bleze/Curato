@@ -145,6 +145,76 @@ public class ScanServiceTripFormationTests
     }
 
     [Fact]
+    public void A_scan_retroactively_forms_a_trip_from_standalone_events_that_already_existed()
+    {
+        // The exact scope limit reported live: a library scanned before GPS
+        // extraction/trip formation existed has years of already-clustered
+        // standalone Events sitting in it, and a plain re-scan can't
+        // re-cluster their MediaItems (GetMediaItemIdsAlreadyInAnyEvent
+        // excludes anything already in an Event) — so forming a Trip for them
+        // has to come from re-considering already-existing Events, not just
+        // whatever a given scan pass happens to create fresh.
+        WithGpsAwareLibrary((repository, query, service, client) =>
+        {
+            // Simulate what a library scanned before this feature existed
+            // already has: two far-away days as two ordinary standalone
+            // Events, saved directly (bypassing ScanService, exactly like
+            // the pre-GPS clusterer would have left them), plus a home-area
+            // Event so DetectHomeLocation has a real home cluster to find.
+            // Two home-area items (outnumbering the two Rome ones) so
+            // DetectHomeLocation's plain frequency count actually picks home,
+            // not Rome, as "wherever this library's photos are usually taken".
+            var savedItems = repository.UpsertMediaItems(
+            [
+                Item("home1.jpg", new DateTime(2025, 1, 1, 9, 0, 0), HomeLat, HomeLon),
+                Item("home2.jpg", new DateTime(2025, 1, 5, 9, 0, 0), HomeLat, HomeLon),
+                Item("rome1.jpg", new DateTime(2026, 2, 1, 9, 0, 0), FarAwayLat, FarAwayLon),
+                Item("rome2.jpg", new DateTime(2026, 2, 2, 9, 0, 0), FarAwayLat, FarAwayLon),
+            ]);
+            repository.SaveEvents(
+            [
+                new Event
+                {
+                    StartAt = savedItems[0].TakenAt, EndAt = savedItems[0].TakenAt,
+                    Title = "Morning", TitleIsAuto = true, NamingMode = NamingMode.CuratoManaged,
+                    MediaItemIds = [savedItems[0].Id]
+                },
+                new Event
+                {
+                    StartAt = savedItems[1].TakenAt, EndAt = savedItems[1].TakenAt,
+                    Title = "Morning", TitleIsAuto = true, NamingMode = NamingMode.CuratoManaged,
+                    MediaItemIds = [savedItems[1].Id]
+                },
+                new Event
+                {
+                    StartAt = savedItems[2].TakenAt, EndAt = savedItems[2].TakenAt,
+                    Title = "Morning", TitleIsAuto = true, NamingMode = NamingMode.CuratoManaged,
+                    MediaItemIds = [savedItems[2].Id]
+                },
+                new Event
+                {
+                    StartAt = savedItems[3].TakenAt, EndAt = savedItems[3].TakenAt,
+                    Title = "Morning", TitleIsAuto = true, NamingMode = NamingMode.CuratoManaged,
+                    MediaItemIds = [savedItems[3].Id]
+                },
+            ]);
+            Assert.Empty(query.GetAllTripGroups());
+
+            // A normal re-scan with nothing new to add should still
+            // retroactively group the two pre-existing far-away Events.
+            service.ScanItems([]);
+
+            var trip = Assert.Single(query.GetAllTripGroups());
+            Assert.Equal("Rome, Italy", trip.Title);
+            Assert.Equal(2, trip.EventIds.Count);
+
+            // And it's idempotent — a second scan doesn't duplicate it.
+            service.ScanItems([]);
+            Assert.Single(query.GetAllTripGroups());
+        });
+    }
+
+    [Fact]
     public void Adopted_folder_structure_still_forms_a_trip_since_thats_not_a_time_based_guess()
     {
         WithTempLibrary((repository, query, service) =>
