@@ -273,6 +273,15 @@ function App() {
     }
   }
 
+  // The actual rotate call already happened inside Lightbox (it needs the
+  // result immediately, to bust its own <img>'s cache) — this just keeps
+  // the rest of the app's data fresh afterward, same as the other handlers.
+  async function handleRotated() {
+    if (!loadedPath) return
+    const lib = await getLibrary(loadedPath)
+    setLibrary(lib)
+  }
+
   async function handleRenameEvent(eventId: number, title: string) {
     if (!loadedPath) return
     setError(null)
@@ -389,6 +398,7 @@ function App() {
           onClose={() => setShowAlbums(false)}
           onDelete={handleDelete}
           onTakenAtChanged={handleTakenAtChanged}
+          onRotated={handleRotated}
         />
       )}
 
@@ -429,6 +439,7 @@ function App() {
             libraryPath={loadedPath}
             onDelete={handleDelete}
             onTakenAtChanged={handleTakenAtChanged}
+            onRotated={handleRotated}
             onRenameEvent={handleRenameEvent}
             onRenameTrip={handleRenameTrip}
           />

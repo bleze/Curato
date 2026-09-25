@@ -53,7 +53,19 @@ button {
 
 .auth-shell {
   max-width: 360px;
-  margin-top: 15vh;
+  margin: 15vh auto 0;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  text-align: center;
+}
+
+.auth-logo {
+  border-radius: 10px;
+}
+
+.auth-shell h1 {
+  margin: 12px 0 0;
 }
 
 .auth-form {
@@ -61,6 +73,16 @@ button {
   flex-direction: column;
   gap: 10px;
   margin-top: 16px;
+  width: 100%;
+}
+
+.auth-remember-me {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 13px;
+  color: var(--text-muted);
+  cursor: pointer;
 }
 
 .auth-form input {
@@ -419,6 +441,10 @@ button {
   color: var(--text);
   border: 1px solid var(--border);
   border-radius: 4px;
+}
+
+.title-edit input.title-edit-input-invalid {
+  border-color: var(--text-danger);
 }
 
 .title-edit button {
@@ -788,6 +814,36 @@ button {
   max-width: 92vw;
   max-height: 88vh;
   object-fit: contain;
+}
+
+.lightbox-toolbar {
+  position: absolute;
+  top: 16px;
+  left: 20px;
+  display: flex;
+  gap: 8px;
+}
+
+.lightbox-toolbar button {
+  background: rgba(255, 255, 255, 0.1);
+  border: none;
+  color: white;
+  width: 36px;
+  height: 36px;
+  border-radius: 50%;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  cursor: pointer;
+}
+
+.lightbox-toolbar button:hover {
+  background: rgba(255, 255, 255, 0.2);
+}
+
+.lightbox-toolbar button:disabled {
+  opacity: 0.5;
+  cursor: default;
 }
 
 .lightbox-close {

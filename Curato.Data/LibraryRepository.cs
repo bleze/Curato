@@ -1,4 +1,5 @@
 using System.Data;
+using System.Text.Json;
 using Curato.Core;
 using Dapper;
 
@@ -183,6 +184,56 @@ public sealed class LibraryRepository(LibraryDatabase database)
 
         transaction.Commit();
         return true;
+    }
+
+    /// <summary>
+    /// Rotates a MediaItem by a relative amount (+/-90 from a Lightbox
+    /// toolbar button) — PLAN.md §10's non-destructive Edit pipeline, so
+    /// this only ever writes a database row; the original file's bytes are
+    /// never touched, exactly like Picasa-imported rotate/crop edits
+    /// already work. `EditRenderer` only ever applies the *first* Rotate
+    /// edit it finds for an item, so this replaces that single row (reading
+    /// its current angle first to rotate relative to it) rather than
+    /// accumulating a new row on every click. Landing back at 0 degrees
+    /// removes the row entirely rather than storing a no-op rotation.
+    /// </summary>
+    public void RotateMediaItem(long mediaItemId, int deltaDegrees)
+    {
+        using var connection = database.OpenConnection();
+        using var transaction = connection.BeginTransaction();
+
+        var currentParameters = connection.QuerySingleOrDefault<string?>("""
+            SELECT Parameters FROM Edit WHERE MediaItemId = @MediaItemId AND OperationType = @OperationType
+            """, new { MediaItemId = mediaItemId, OperationType = nameof(EditOperationType.Rotate) }, transaction);
+
+        var currentDegrees = 0;
+        if (currentParameters is not null)
+        {
+            using var parsed = JsonDocument.Parse(currentParameters);
+            currentDegrees = parsed.RootElement.GetProperty("Degrees").GetInt32();
+        }
+
+        var newDegrees = ((currentDegrees + deltaDegrees) % 360 + 360) % 360;
+
+        connection.Execute(
+            "DELETE FROM Edit WHERE MediaItemId = @MediaItemId AND OperationType = @OperationType",
+            new { MediaItemId = mediaItemId, OperationType = nameof(EditOperationType.Rotate) }, transaction);
+
+        if (newDegrees != 0)
+        {
+            connection.Execute("""
+                INSERT INTO Edit (MediaItemId, OperationType, Parameters, PipelineOrder, Source)
+                VALUES (@MediaItemId, @OperationType, @Parameters, 0, @Source)
+                """, new
+            {
+                MediaItemId = mediaItemId,
+                OperationType = nameof(EditOperationType.Rotate),
+                Parameters = $$"""{"Degrees":{{newDegrees}}}""",
+                Source = nameof(RecordSource.Local)
+            }, transaction);
+        }
+
+        transaction.Commit();
     }
 
     /// <summary>

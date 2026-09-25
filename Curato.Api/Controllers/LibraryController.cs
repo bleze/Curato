@@ -135,6 +135,28 @@ public sealed class LibraryController(LibraryOperationGate gate) : ControllerBas
             : NotFound($"No MediaItem with id {request.MediaItemId}");
     }
 
+    public sealed record RotateRequest(string Path, long MediaItemId, int DeltaDegrees);
+
+    /// <summary>
+    /// The Lightbox toolbar's Rotate Left/Right buttons — a pure database
+    /// write (PLAN.md §10: non-destructive, the original file is never
+    /// touched), same mechanism Picasa-imported rotate edits already use.
+    /// See LibraryRepository.RotateMediaItem.
+    /// </summary>
+    [HttpPost("media-items/rotate")]
+    public IActionResult Rotate([FromBody] RotateRequest request)
+    {
+        if (!Directory.Exists(request.Path))
+        {
+            return NotFound($"Folder not found: {request.Path}");
+        }
+
+        var database = new LibraryDatabase(request.Path);
+        database.EnsureSchema();
+        new LibraryRepository(database).RotateMediaItem(request.MediaItemId, request.DeltaDegrees);
+        return NoContent();
+    }
+
     public sealed record RenameEventRequest(string Path, long EventId, string Title);
     public sealed record RenameTripGroupRequest(string Path, long TripGroupId, string Title);
 
@@ -160,9 +182,8 @@ public sealed class LibraryController(LibraryOperationGate gate) : ControllerBas
         var service = new RenameService(
             database, new LibraryQueryService(database), new LibraryRepository(database), new OrganizeRepository(database));
 
-        return service.RenameEvent(request.EventId, request.Title)
-            ? NoContent()
-            : BadRequest("Title cannot be empty, or no Event with that id exists.");
+        var (success, errorMessage) = service.RenameEvent(request.EventId, request.Title);
+        return success ? NoContent() : BadRequest(errorMessage);
     }
 
     /// <summary>Manual title edit for a TripGroup — see <see cref="RenameEvent"/> and <see cref="RenameService"/>.</summary>
@@ -181,8 +202,7 @@ public sealed class LibraryController(LibraryOperationGate gate) : ControllerBas
         var service = new RenameService(
             database, new LibraryQueryService(database), new LibraryRepository(database), new OrganizeRepository(database));
 
-        return service.RenameTripGroup(request.TripGroupId, request.Title)
-            ? NoContent()
-            : BadRequest("Title cannot be empty, or no TripGroup with that id exists.");
+        var (success, errorMessage) = service.RenameTripGroup(request.TripGroupId, request.Title);
+        return success ? NoContent() : BadRequest(errorMessage);
     }
 }

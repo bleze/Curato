@@ -4,6 +4,7 @@ import { login, setupAccount } from '../api'
 export function AuthGate({ needsSetup, onSignedIn }: { needsSetup: boolean; onSignedIn: () => void }) {
   const [username, setUsername] = useState('')
   const [password, setPassword] = useState('')
+  const [rememberMe, setRememberMe] = useState(false)
   const [error, setError] = useState<string | null>(null)
   const [busy, setBusy] = useState(false)
 
@@ -13,9 +14,9 @@ export function AuthGate({ needsSetup, onSignedIn }: { needsSetup: boolean; onSi
     setError(null)
     try {
       if (needsSetup) {
-        await setupAccount(username, password)
+        await setupAccount(username, password, rememberMe)
       } else {
-        await login(username, password)
+        await login(username, password, rememberMe)
       }
       onSignedIn()
     } catch (err) {
@@ -27,6 +28,7 @@ export function AuthGate({ needsSetup, onSignedIn }: { needsSetup: boolean; onSi
 
   return (
     <main className="app-shell auth-shell">
+      <img src="/favicon.svg" alt="" className="auth-logo" width={48} height={48} />
       <h1>Curato</h1>
       <p className="tagline">
         {needsSetup
@@ -47,6 +49,10 @@ export function AuthGate({ needsSetup, onSignedIn }: { needsSetup: boolean; onSi
           value={password}
           onChange={(e) => setPassword(e.target.value)}
         />
+        <label className="auth-remember-me">
+          <input type="checkbox" checked={rememberMe} onChange={(e) => setRememberMe(e.target.checked)} />
+          Remember me
+        </label>
         <button type="submit" disabled={busy || !username || !password}>
           {busy ? 'Please wait…' : needsSetup ? 'Create account' : 'Sign in'}
         </button>

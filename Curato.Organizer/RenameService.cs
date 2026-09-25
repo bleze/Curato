@@ -25,23 +25,23 @@ namespace Curato.Organizer;
 public sealed class RenameService(
     LibraryDatabase database, LibraryQueryService query, LibraryRepository repository, OrganizeRepository organizeRepository)
 {
-    public bool RenameEvent(long eventId, string newTitle)
+    public (bool Success, string? ErrorMessage) RenameEvent(long eventId, string newTitle)
     {
         newTitle = newTitle.Trim();
-        if (newTitle.Length == 0)
+        if (!FolderNameValidator.IsValid(newTitle, out var validationError))
         {
-            return false;
+            return (false, validationError);
         }
 
         var @event = query.GetAllEvents().SingleOrDefault(e => e.Id == eventId);
         if (@event is null || !repository.SetEventTitle(eventId, newTitle))
         {
-            return false;
+            return (false, "No Event with that id exists.");
         }
 
         if (@event.NamingMode != NamingMode.CuratoManaged || @event.FolderPath is not { } oldFolderPath)
         {
-            return true; // no folder yet, or an Adopted one this never touches
+            return (true, null); // no folder yet, or an Adopted one this never touches
         }
 
         var trip = @event.TripGroupId is { } tripId
@@ -52,39 +52,39 @@ public sealed class RenameService(
         var candidatePath = FolderNameTemplate.RenderEventPath(@event, trip);
         if (candidatePath == oldFolderPath)
         {
-            return true;
+            return (true, null);
         }
 
         var newFolderPath = ResolveCollisionFreeFolderPath(candidatePath);
         MoveFolderAndCascadeMediaItemPaths(oldFolderPath, newFolderPath, @event.MediaItemIds);
         organizeRepository.SetEventFolderPath(eventId, newFolderPath);
-        return true;
+        return (true, null);
     }
 
-    public bool RenameTripGroup(long tripId, string newTitle)
+    public (bool Success, string? ErrorMessage) RenameTripGroup(long tripId, string newTitle)
     {
         newTitle = newTitle.Trim();
-        if (newTitle.Length == 0)
+        if (!FolderNameValidator.IsValid(newTitle, out var validationError))
         {
-            return false;
+            return (false, validationError);
         }
 
         var trip = query.GetAllTripGroups().SingleOrDefault(t => t.Id == tripId);
         if (trip is null || !repository.SetTripGroupTitle(tripId, newTitle))
         {
-            return false;
+            return (false, "No TripGroup with that id exists.");
         }
 
         if (trip.NamingMode != NamingMode.CuratoManaged || trip.FolderPath is not { } oldFolderPath)
         {
-            return true;
+            return (true, null);
         }
 
         trip.Title = newTitle;
         var candidatePath = FolderNameTemplate.RenderTripPath(trip);
         if (candidatePath == oldFolderPath)
         {
-            return true;
+            return (true, null);
         }
 
         var newFolderPath = ResolveCollisionFreeFolderPath(candidatePath);
@@ -103,7 +103,7 @@ public sealed class RenameService(
             organizeRepository.SetEventFolderPath(nestedEvent.Id, rewrittenEventPath);
         }
 
-        return true;
+        return (true, null);
     }
 
     private void MoveFolderAndCascadeMediaItemPaths(

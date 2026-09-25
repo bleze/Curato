@@ -26,7 +26,7 @@ public class RenameServiceTests
             var renamed = new RenameService(database, query, repository, organizeRepository)
                 .RenameEvent(eventId, "Beach Day");
 
-            Assert.True(renamed);
+            Assert.True(renamed.Success);
             var @event = Assert.Single(query.GetAllEvents());
             Assert.Equal("Beach Day", @event.Title);
             Assert.False(@event.TitleIsAuto);
@@ -50,7 +50,7 @@ public class RenameServiceTests
             var renamed = new RenameService(database, query, repository, organizeRepository)
                 .RenameEvent(before.Id, "Beach Day");
 
-            Assert.True(renamed);
+            Assert.True(renamed.Success);
             var after = Assert.Single(query.GetAllEvents());
             Assert.Equal("Beach Day", after.Title);
             Assert.EndsWith("Beach Day", after.FolderPath);
@@ -115,7 +115,7 @@ public class RenameServiceTests
             var renamed = new RenameService(database, query, repository, organizeRepository)
                 .RenameTripGroup(tripBefore.Id, "Summer Vacation");
 
-            Assert.True(renamed);
+            Assert.True(renamed.Success);
             var tripAfter = Assert.Single(query.GetAllTripGroups());
             Assert.Equal("Summer Vacation", tripAfter.Title);
             Assert.EndsWith("Summer Vacation", tripAfter.FolderPath);
@@ -148,7 +148,7 @@ public class RenameServiceTests
             var renamed = new RenameService(database, query, repository, organizeRepository)
                 .RenameEvent(before.Id, "Corrected Title");
 
-            Assert.True(renamed);
+            Assert.True(renamed.Success);
             var after = Assert.Single(query.GetAllEvents());
             Assert.Equal("Corrected Title", after.Title);
             Assert.Equal("Family Reunion 2019", after.FolderPath); // untouched on disk
@@ -168,7 +168,7 @@ public class RenameServiceTests
             var renamed = new RenameService(database, query, repository, organizeRepository)
                 .RenameEvent(eventId, "   ");
 
-            Assert.False(renamed);
+            Assert.False(renamed.Success);
         });
     }
 
@@ -180,7 +180,37 @@ public class RenameServiceTests
             var renamed = new RenameService(database, query, repository, organizeRepository)
                 .RenameEvent(999, "Anything");
 
-            Assert.False(renamed);
+            Assert.False(renamed.Success);
+        });
+    }
+
+    // Filesystem-invalid titles (PLAN.md §3/§4): a title is only ever a
+    // database value until Organize turns it into a real folder name, so
+    // one that isn't a valid folder name on every deployment target (§1
+    // Windows dev, Linux/Synology in production) has to be rejected before
+    // it's ever saved, not discovered later as a failed Organize run.
+    [Theory]
+    [InlineData("Beach/Day")]
+    [InlineData("Beach\\Day")]
+    [InlineData("Who: What?")]
+    [InlineData("Trailing dot.")]
+    [InlineData("CON")]
+    [InlineData("con")]
+    public void A_filesystem_invalid_title_is_rejected(string invalidTitle)
+    {
+        WithTempLibrary((root, database, query, repository, organizeRepository) =>
+        {
+            File.WriteAllBytes(Path.Combine(root, "photo.jpg"), [1, 2, 3]);
+            new ScanService(repository, query, database).Scan(root);
+            var originalTitle = Assert.Single(query.GetAllEvents()).Title;
+            var eventId = Assert.Single(query.GetAllEvents()).Id;
+
+            var renamed = new RenameService(database, query, repository, organizeRepository)
+                .RenameEvent(eventId, invalidTitle);
+
+            Assert.False(renamed.Success);
+            Assert.NotNull(renamed.ErrorMessage);
+            Assert.Equal(originalTitle, query.GetAllEvents().Single().Title); // unchanged
         });
     }
 

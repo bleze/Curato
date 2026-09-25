@@ -23,7 +23,7 @@ public sealed class AuthController(ServerDatabase database) : ControllerBase
     private static readonly PasswordHasher<UserRecord> Hasher = new();
 
     public sealed record StatusResponse(bool NeedsSetup, bool IsAuthenticated, string? Username);
-    public sealed record CredentialsRequest(string Username, string Password);
+    public sealed record CredentialsRequest(string Username, string Password, bool RememberMe = false);
 
     [HttpGet("status")]
     [AllowAnonymous]
@@ -66,7 +66,7 @@ public sealed class AuthController(ServerDatabase database) : ControllerBase
         var hash = Hasher.HashPassword(placeholder, request.Password);
         repository.CreateUser(request.Username, hash);
 
-        await SignInAsync(request.Username);
+        await SignInAsync(request.Username, request.RememberMe);
         return Ok();
     }
 
@@ -88,7 +88,7 @@ public sealed class AuthController(ServerDatabase database) : ControllerBase
             return Unauthorized();
         }
 
-        await SignInAsync(user.Username);
+        await SignInAsync(user.Username, request.RememberMe);
         return Ok();
     }
 
@@ -100,10 +100,23 @@ public sealed class AuthController(ServerDatabase database) : ControllerBase
         return Ok();
     }
 
-    private Task SignInAsync(string username)
+    /// <summary>
+    /// The cookie handler's 30-day sliding expiration (Program.cs) only ever
+    /// applies to the server-side ticket — confirmed live that every sign-in
+    /// still produced a plain session cookie (cleared on browser close)
+    /// regardless of that setting, since `IsPersistent` defaults to false
+    /// and nothing here ever set it. "Remember me" is exactly that switch:
+    /// checked, the cookie itself persists (up to the 30-day sliding
+    /// window); unchecked, today's implicit behavior — signed out the
+    /// moment the browser closes.
+    /// </summary>
+    private Task SignInAsync(string username, bool rememberMe)
     {
         var identity = new ClaimsIdentity(
             [new Claim(ClaimTypes.Name, username)], CookieAuthenticationDefaults.AuthenticationScheme);
-        return HttpContext.SignInAsync(CookieAuthenticationDefaults.AuthenticationScheme, new ClaimsPrincipal(identity));
+        return HttpContext.SignInAsync(
+            CookieAuthenticationDefaults.AuthenticationScheme,
+            new ClaimsPrincipal(identity),
+            new AuthenticationProperties { IsPersistent = rememberMe });
     }
 }

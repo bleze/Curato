@@ -8,11 +8,13 @@ export function AlbumsPanel({
   onClose,
   onDelete,
   onTakenAtChanged,
+  onRotated,
 }: {
   libraryPath: string
   onClose: () => void
   onDelete: (mediaItemId: number) => void
   onTakenAtChanged: (mediaItemId: number, takenAt: string) => void
+  onRotated: (mediaItemId: number) => void
 }) {
   const [tags, setTags] = useState<TagDto[] | null>(null)
   const [error, setError] = useState<string | null>(null)
@@ -77,6 +79,7 @@ export function AlbumsPanel({
             libraryPath={libraryPath}
             onDelete={handleDelete}
             onTakenAtChanged={handleTakenAtChanged}
+            onRotated={onRotated}
           />
         )}
       </div>

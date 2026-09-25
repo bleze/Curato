@@ -1,6 +1,6 @@
 import { useEffect, useRef, useState } from 'react'
 import type { MediaItemDto } from '../api'
-import { fullImageUrl, rawFileUrl } from '../api'
+import { fullImageUrl, rawFileUrl, rotateMediaItem } from '../api'
 
 const MIN_ZOOM = 1
 const MAX_ZOOM = 4
@@ -33,6 +33,7 @@ export function Lightbox({
   onClose,
   onNavigate,
   onTakenAtChanged,
+  onRotated,
 }: {
   items: MediaItemDto[]
   index: number
@@ -40,6 +41,7 @@ export function Lightbox({
   onClose: () => void
   onNavigate: (index: number) => void
   onTakenAtChanged: (mediaItemId: number, takenAt: string) => void
+  onRotated: (mediaItemId: number) => void
 }) {
   const item = items[index]
   const [playingLive, setPlayingLive] = useState(false)
@@ -48,6 +50,12 @@ export function Lightbox({
   const [dragging, setDragging] = useState(false)
   const [editingDate, setEditingDate] = useState(false)
   const [draftDate, setDraftDate] = useState('')
+  const [rotating, setRotating] = useState(false)
+  // Bumped after a successful rotate so the <img> below gets a new URL —
+  // otherwise the browser keeps showing its cached response for the same
+  // fullImageUrl even though the server now renders a rotated image for it
+  // (PLAN.md §10's Edit pipeline changes rendered pixels, not the URL).
+  const [imageCacheBust, setImageCacheBust] = useState(0)
   const dragStart = useRef<{ x: number; y: number; panX: number; panY: number; moved: boolean } | null>(null)
 
   useEffect(() => {
@@ -55,7 +63,19 @@ export function Lightbox({
     setZoom(1)
     setPan({ x: 0, y: 0 })
     setEditingDate(false)
+    setImageCacheBust(0)
   }, [index])
+
+  async function handleRotate(deltaDegrees: number) {
+    setRotating(true)
+    try {
+      await rotateMediaItem(libraryPath, item.id, deltaDegrees)
+      setImageCacheBust((v) => v + 1)
+      onRotated(item.id)
+    } finally {
+      setRotating(false)
+    }
+  }
 
   useEffect(() => {
     function onKeyDown(e: KeyboardEvent) {
@@ -124,6 +144,34 @@ export function Lightbox({
       <button type="button" className="lightbox-close" onClick={onClose} aria-label="Close">
         &times;
       </button>
+      {item.kind === 'Photo' && (
+        <div className="lightbox-toolbar" onClick={(e) => e.stopPropagation()}>
+          <button
+            type="button"
+            onClick={() => handleRotate(-90)}
+            disabled={rotating}
+            title="Rotate left — a saved edit, the original file is never touched"
+            aria-label="Rotate left"
+          >
+            <svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+              <path d="M1 4v6h6" />
+              <path d="M3.51 15a9 9 0 1 0 2.13-9.36L1 10" />
+            </svg>
+          </button>
+          <button
+            type="button"
+            onClick={() => handleRotate(90)}
+            disabled={rotating}
+            title="Rotate right — a saved edit, the original file is never touched"
+            aria-label="Rotate right"
+          >
+            <svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+              <path d="M23 4v6h-6" />
+              <path d="M20.49 15a9 9 0 1 1-2.13-9.36L23 10" />
+            </svg>
+          </button>
+        </div>
+      )}
       {index > 0 && (
         <button
           type="button"
@@ -164,7 +212,7 @@ export function Lightbox({
           <video src={rawFileUrl(libraryPath, item.liveVideoRelativePath)} autoPlay loop muted playsInline />
         ) : (
           <img
-            src={fullImageUrl(libraryPath, item.relativePath)}
+            src={fullImageUrl(libraryPath, item.relativePath, imageCacheBust)}
             alt=""
             onMouseDown={handleMouseDown}
             draggable={false}

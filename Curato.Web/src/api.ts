@@ -78,19 +78,19 @@ export function getAuthStatus(): Promise<AuthStatus> {
   return fetch('/api/auth/status').then(asJson<AuthStatus>)
 }
 
-export function setupAccount(username: string, password: string): Promise<void> {
+export function setupAccount(username: string, password: string, rememberMe: boolean): Promise<void> {
   return fetch('/api/auth/setup', {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ username, password }),
+    body: JSON.stringify({ username, password, rememberMe }),
   }).then(expectOk)
 }
 
-export function login(username: string, password: string): Promise<void> {
+export function login(username: string, password: string, rememberMe: boolean): Promise<void> {
   return fetch('/api/auth/login', {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ username, password }),
+    body: JSON.stringify({ username, password, rememberMe }),
   }).then(expectOk)
 }
 
@@ -237,8 +237,10 @@ export function thumbnailUrl(libraryPath: string, relativePath: string): string 
   return `/api/media/thumbnail?${params.toString()}`
 }
 
-export function fullImageUrl(libraryPath: string, relativePath: string): string {
+/** cacheBust: bump after an edit (e.g. rotate) changes the rendered pixels for this path, so the browser doesn't keep showing its cached response for the same URL. */
+export function fullImageUrl(libraryPath: string, relativePath: string, cacheBust?: number): string {
   const params = new URLSearchParams({ libraryPath, relativePath })
+  if (cacheBust) params.set('v', String(cacheBust))
   return `/api/media/full?${params.toString()}`
 }
 
@@ -274,6 +276,15 @@ export function setTakenAt(path: string, mediaItemId: number, takenAt: string): 
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify({ path, mediaItemId, takenAt }),
+  }).then(expectOk)
+}
+
+/** Non-destructive (PLAN.md §10) — a database-only Edit row, the original file is never touched. */
+export function rotateMediaItem(path: string, mediaItemId: number, deltaDegrees: number): Promise<void> {
+  return fetch('/api/media-items/rotate', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ path, mediaItemId, deltaDegrees }),
   }).then(expectOk)
 }
 

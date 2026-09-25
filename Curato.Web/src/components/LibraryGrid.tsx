@@ -146,6 +146,7 @@ export function LibraryGrid({
   libraryPath,
   onDelete,
   onTakenAtChanged,
+  onRotated,
   onRenameEvent,
   onRenameTrip,
 }: {
@@ -153,6 +154,7 @@ export function LibraryGrid({
   libraryPath: string
   onDelete: (mediaItemId: number) => void
   onTakenAtChanged: (mediaItemId: number, takenAt: string) => void
+  onRotated: (mediaItemId: number) => void
   onRenameEvent: (eventId: number, title: string) => void
   onRenameTrip: (tripGroupId: number, title: string) => void
 }) {
@@ -360,6 +362,7 @@ export function LibraryGrid({
           onClose={() => setLightbox(null)}
           onNavigate={(index) => setLightbox((current) => (current ? { ...current, index } : current))}
           onTakenAtChanged={onTakenAtChanged}
+          onRotated={onRotated}
         />
       )}
     </div>
@@ -372,6 +375,32 @@ export function LibraryGrid({
 // the getItemKey/estimateSize comment above), so a taller editing state
 // here would silently reintroduce the scrollbar drag-handle desync bug that
 // took four attempts to actually fix.
+// Mirrors Curato.Core.FolderNameValidator — a title eventually becomes a
+// real folder name once Organize runs, so it has to be valid everywhere
+// Curato might deploy. This is a client-side convenience only (immediate
+// feedback, no round-trip needed to find out a title is invalid); the
+// server re-validates the same rules regardless of what the UI allowed
+// through.
+const INVALID_FOLDER_NAME_CHARS = /[<>:"/\\|?*\x00-\x1f]/
+const RESERVED_FOLDER_NAMES = new Set([
+  'CON', 'PRN', 'AUX', 'NUL',
+  'COM1', 'COM2', 'COM3', 'COM4', 'COM5', 'COM6', 'COM7', 'COM8', 'COM9',
+  'LPT1', 'LPT2', 'LPT3', 'LPT4', 'LPT5', 'LPT6', 'LPT7', 'LPT8', 'LPT9',
+])
+
+function validateFolderName(title: string): string | null {
+  if (!title) return 'Title cannot be empty.'
+  if (title.length > 200) return 'Title is too long (max 200 characters).'
+  if (INVALID_FOLDER_NAME_CHARS.test(title)) return 'Can’t contain: < > : " / \\ | ? *'
+  if (title.endsWith('.') || title.endsWith(' ')) return 'Can’t end with a period or space.'
+  const dotIndex = title.indexOf('.')
+  const nameWithoutExtension = dotIndex < 0 ? title : title.slice(0, dotIndex)
+  if (RESERVED_FOLDER_NAMES.has(nameWithoutExtension.toUpperCase())) {
+    return `"${nameWithoutExtension}" is a reserved name and can't be used.`
+  }
+  return null
+}
+
 function EditableTitle({ title, onRename }: { title: string; onRename: (newTitle: string) => void }) {
   const [editing, setEditing] = useState(false)
   const [draft, setDraft] = useState(title)
@@ -400,11 +429,14 @@ function EditableTitle({ title, onRename }: { title: string; onRename: (newTitle
     )
   }
 
+  const trimmedDraft = draft.trim()
+  const validationError = validateFolderName(trimmedDraft)
+
   function commit() {
-    const trimmed = draft.trim()
+    if (validationError) return // Save is already disabled; belt-and-suspenders against a stray Enter
     setEditing(false)
-    if (trimmed && trimmed !== title) {
-      onRename(trimmed)
+    if (trimmedDraft !== title) {
+      onRename(trimmedDraft)
     }
   }
 
@@ -417,9 +449,16 @@ function EditableTitle({ title, onRename }: { title: string; onRename: (newTitle
           if (e.key === 'Enter') commit()
           if (e.key === 'Escape') setEditing(false)
         }}
+        // Validity shown via border color + a native tooltip rather than a
+        // separate error line — this input lives in a virtualized row whose
+        // height is a hard-coded constant (see EVENT_HEADER_HEIGHT above);
+        // adding a second line here would silently reintroduce the
+        // scrollbar drag-handle desync bug that took real effort to fix.
+        className={validationError ? 'title-edit-input-invalid' : undefined}
+        title={validationError ?? undefined}
         autoFocus
       />
-      <button type="button" onClick={commit}>
+      <button type="button" onClick={commit} disabled={!!validationError} title={validationError ?? undefined}>
         Save
       </button>
       <button type="button" onClick={() => setEditing(false)}>
