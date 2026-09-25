@@ -334,19 +334,29 @@ button {
   padding-top: 4px;
 }
 
-/* LibraryGrid only (reserves room for its date scrubber, and the real
-   scrollbar rendered just to the scrubber's right) — deliberately not part
-   of the base .library-scroll rule above, since TagGrid shares that class
-   but has no scrubber: this padding was previously applied there too,
+/* LibraryGrid only (reserves room for its date scrubber) — deliberately not
+   part of the base .library-scroll rule above, since TagGrid shares that
+   class but has no scrubber: this padding was previously applied there too,
    wasting width AND (since JS measured the padded border-box directly)
    causing the same computed-thumbnail-size-too-wide bug this class was
-   trying to avoid for its own case. The actual value is set inline from
-   LibraryGrid.tsx's live-measured scrollGutter (scrollbar width +
-   DateScrubber's own width) rather than a fixed number here — the two used
-   to just assume 18px covered both, which happened to be wrong on this
-   machine's scrollbar and caused DateScrubber to sit exactly on top of it. */
+   trying to avoid for its own case.
+   The native scrollbar is hidden here too, in favor of the scrubber
+   rendering its own thumb (DateScrubber) — after repeated attempts, a
+   native scrollbar's thumb simply can't be made to reliably line up with
+   this rail's labels, since the DOM has no way to query its exact pixel
+   geometry (arrow button sizes, etc.) to guarantee agreement. Scrolling
+   itself (wheel, keyboard, touch) is completely unaffected — only the
+   *native visual bar* is gone, replaced by the rail's own thumb. Scoped to
+   this class, not the base one, for the same reason as the padding above:
+   TagGrid has no replacement thumb, so it keeps its native scrollbar. */
 .library-scroll-with-scrubber {
   padding-right: 16px;
+  scrollbar-width: none; /* Firefox */
+  -ms-overflow-style: none; /* legacy Edge/IE */
+}
+
+.library-scroll-with-scrubber::-webkit-scrollbar {
+  display: none;
 }
 
 .library-scroll:focus {
@@ -376,6 +386,28 @@ button {
   left: 50%;
   width: 1px;
   background: var(--border-soft);
+}
+
+/* This rail's own scroll thumb — see DateScrubber's own comment for why it
+   replaced trying to align with the browser's native one. pointer-events:
+   none lets a click land here fall through to .date-scrubber's own
+   onMouseDown (the same jump-anywhere-on-the-rail handler already used
+   everywhere else on it), so no separate drag logic is needed just because
+   a click happened to start on top of the thumb. */
+.date-scrubber-thumb {
+  position: absolute;
+  left: 2px;
+  right: 2px;
+  /* No min-height here on purpose, even though a very tall library makes
+     this render just a few pixels tall — clamping it in CSS without also
+     adjusting the travelFraction math in DateScrubber.tsx would silently
+     desync the thumb's real visual size from what the labels are
+     positioned against, reintroducing the exact kind of mismatch this
+     whole rewrite exists to eliminate. Purely a visual indicator anyway:
+     pointer-events: none means clicking it still hits the rail underneath. */
+  border-radius: 4px;
+  background: var(--border);
+  pointer-events: none;
 }
 
 /* No translateY(-50%) here on purpose, even though it would look nicer

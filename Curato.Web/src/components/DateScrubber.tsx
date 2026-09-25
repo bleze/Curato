@@ -1,7 +1,7 @@
 import { useRef, useState } from 'react'
 
 export interface DateMarker {
-  /** 0-1 position within the grid's total rendered height — see LibraryGrid's blockHeight/buildDateMarkers. */
+  /** 0-1 position within the grid's scrollable range — see LibraryGrid's blockHeight/buildDateMarkers. */
   heightFraction: number
   label: string
   tooltipLabel: string
@@ -11,45 +11,31 @@ export interface DateMarker {
 /**
  * A right-edge rail for jumping straight to a month/year without scrolling
  * through everything in between (Picasa/Photos-style date scrubber, §11).
- * Markers are spaced by actual cumulative rendered height (heightFraction),
- * not by counting distinct months — confirmed live as a real bug, not just
- * a cosmetic one: the native scrollbar right next to this rail moves
- * proportionally to real pixel height, so a "2025" label placed by naive
- * month-count would land nowhere near where dragging the native scrollbar
- * to that same visual position actually takes you, in a library where
- * different months have wildly different photo counts (and therefore
- * wildly different rendered heights).
+ *
+ * Renders its own scroll thumb instead of relying on the browser's native
+ * one next to it — after three separate attempts to make a native
+ * scrollbar's thumb line up with this rail's labels (matching its
+ * proportional math, then its exact denominator, then its arrow-button
+ * insets), each independently verified correct yet still reported as
+ * visibly misaligned, the actual fix was to stop depending on a native
+ * control whose exact pixel geometry the DOM can't query at all. Now the
+ * thumb and the labels are computed by the same code from the same numbers,
+ * so they can't help but agree — LibraryGrid hides the native scrollbar via
+ * CSS and feeds this component the live scroll position instead.
  */
 export function DateScrubber({
   markers,
   onJump,
-  rightOffset,
-  edgeInset,
+  currentFraction,
+  thumbSizeFraction,
 }: {
   markers: DateMarker[]
-  /** Fraction (0-1) of the grid's total height to jump to — see LibraryGrid's onJump wiring (virtualizer.scrollToOffset). */
+  /** Fraction (0-1) of the grid's scrollable range to jump to — see LibraryGrid's onJump wiring (virtualizer.scrollToOffset). */
   onJump: (fraction: number) => void
-  /** Shifts the rail left of the real scrollbar (measured live) so the two never occupy the same pixels — see LibraryGrid.tsx. */
-  rightOffset: number
-  /**
-   * A classic (non-overlay) scrollbar reserves real pixels at each end for
-   * its arrow buttons, so its thumb's actual travel range is shorter than
-   * the scrollbar's own full length. Confirmed *functionally*, not just by
-   * eyeballing a screenshot (screenshots in this environment turned out to
-   * be scaled ~1.2x relative to real CSS pixels, which had made an earlier
-   * visual measurement unreliable): clicking right at the very top of the
-   * real scrollbar moved scrollTop by exactly 40px (a line-scroll, i.e. an
-   * arrow button was actually there), while a click ~12px further down
-   * produced an ~840px jump (a page-scroll, i.e. blank track) — the
-   * button's real height is small but genuine and was previously
-   * unaccounted for, leaving a marker's label a real, visible distance from
-   * where the native thumb actually reaches that content. LibraryGrid
-   * already measures scrollbarWidth for exactly this purpose (0 on
-   * overlay-scrollbar platforms — no arrow buttons either, so no inset
-   * needed there either; ~15-17px on Windows, matching this measurement)
-   * and passes it through as this prop.
-   */
-  edgeInset: number
+  /** scrollTop / scrollableRange right now — where the thumb's top edge sits, before accounting for its own size. */
+  currentFraction: number
+  /** clientHeight / totalContentHeight — how much of the rail's length the thumb itself occupies. */
+  thumbSizeFraction: number
 }) {
   const railRef = useRef<HTMLDivElement>(null)
   const [hover, setHover] = useState<{ y: number; label: string } | null>(null)
@@ -58,10 +44,18 @@ export function DateScrubber({
     return null
   }
 
+  // A marker's heightFraction and the thumb's currentFraction are the same
+  // number when scrolled exactly to that marker (both are scrollTop /
+  // scrollableRange) — but the thumb has a real size, so its usable *travel*
+  // range is only (1 - thumbSizeFraction) of the rail's length (it can't
+  // slide past having its own bottom edge reach the rail's bottom). Labels
+  // need that same compression applied to land at the thumb's actual top
+  // edge for that content, not at the raw uncompressed fraction.
+  const travelFraction = Math.max(0, 1 - thumbSizeFraction)
+
   // The marker whose month we're currently inside, for the hover tooltip
-  // only — the actual jump target (below) no longer snaps to a marker at
-  // all, since a plain proportional offset is exactly what makes this
-  // agree with the native scrollbar's own (also proportional) behavior.
+  // only — the actual jump target (below) doesn't snap to a marker unless
+  // the click is close enough to one (see the tolerance check below).
   function nearestMarker(fraction: number): DateMarker {
     let result = markers[0]
     for (const m of markers) {
@@ -75,22 +69,24 @@ export function DateScrubber({
     const rail = railRef.current
     if (!rail) return
     const rect = rail.getBoundingClientRect()
-    const usableHeight = Math.max(1, rect.height - edgeInset * 2)
-    const rawFraction = Math.min(1, Math.max(0, (clientY - rect.top - edgeInset) / usableHeight))
+    const rawPosition = Math.min(1, Math.max(0, (clientY - rect.top) / rect.height))
+    // Un-compress a click position back into a scroll fraction — the inverse
+    // of how labels/the thumb are positioned below.
+    const rawFraction = travelFraction > 0 ? Math.min(1, rawPosition / travelFraction) : 0
 
     // Magnetic snap onto a labeled (major) marker within ~14px, even though
-    // the underlying proportional math is exactly correct — confirmed live
-    // this was still needed: this rail is only 16px wide, compressing
-    // 70,000+ pixels of real content into under a thousand, so landing on a
-    // specific labeled year without it required genuinely sub-pixel mouse
-    // precision. 14px roughly matches a tick label's own rendered height, so
-    // clicking anywhere on the visible text reliably lands on what it says.
-    const snapToleranceFraction = 14 / usableHeight
+    // the underlying proportional math is exactly correct — this rail is
+    // only 16px wide, compressing 70,000+ pixels of real content into under
+    // a thousand, so landing on a specific labeled year without it required
+    // genuinely sub-pixel mouse precision. 14px roughly matches a tick
+    // label's own rendered height, so clicking anywhere on the visible text
+    // reliably lands on what it says.
+    const snapToleranceFraction = 14 / rect.height
     let closestMajor: DateMarker | null = null
     let closestDistance = Infinity
     for (const marker of markers) {
       if (!marker.isMajor) continue
-      const distance = Math.abs(marker.heightFraction - rawFraction)
+      const distance = Math.abs(marker.heightFraction * travelFraction - rawPosition)
       if (distance < closestDistance) {
         closestDistance = distance
         closestMajor = marker
@@ -117,15 +113,18 @@ export function DateScrubber({
   }
 
   return (
-    <div className="date-scrubber" ref={railRef} onMouseDown={handleMouseDown} style={{ right: rightOffset }}>
+    <div className="date-scrubber" ref={railRef} onMouseDown={handleMouseDown}>
+      <div
+        className="date-scrubber-thumb"
+        style={{
+          top: `${currentFraction * travelFraction * 100}%`,
+          height: `${thumbSizeFraction * 100}%`,
+        }}
+      />
       {markers
         .filter((m) => m.isMajor)
         .map((m) => (
-          <div
-            key={m.label}
-            className="date-scrubber-tick"
-            style={{ top: `calc(${edgeInset}px + ${m.heightFraction} * (100% - ${edgeInset * 2}px))` }}
-          >
+          <div key={m.label} className="date-scrubber-tick" style={{ top: `${m.heightFraction * travelFraction * 100}%` }}>
             {m.label}
           </div>
         ))}

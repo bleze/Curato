@@ -220,19 +220,15 @@ export function LibraryGrid({
   // measurably away from where a marker's label was drawn, since the two
   // were being computed against two different denominators.
   const [containerHeight, setContainerHeight] = useState<number | null>(null)
-  // The DateScrubber rail used to sit at a hardcoded `right: 0`, which is
-  // exactly where the real native scrollbar also renders — confirmed live
-  // (measuring both elements' actual pixel bounds) that they occupied the
-  // identical strip, so every drag on what looked like the scrollbar was
-  // actually captured by DateScrubber's "jump to nearest year marker"
-  // handler instead. That handler only supports a handful of discrete
-  // marker positions, so it could never reach the true bottom of a year's
-  // content — reported as "you cannot scroll to the bottom." Measuring the
-  // browser's actual scrollbar width (0 on some platforms/overlay
-  // scrollbars, ~15-17px on Windows) and shifting the rail to sit just to
-  // its left gives the real scrollbar its own untouched, fully draggable
-  // strip.
-  const [scrollbarWidth, setScrollbarWidth] = useState(0)
+  // The native scrollbar is hidden entirely now (App.css) — DateScrubber
+  // renders its own thumb instead. Three separate attempts to make a
+  // *native* scrollbar's thumb line up with this rail's labels (matching
+  // its proportional math, then its exact denominator, then its arrow-
+  // button insets) each looked correct in isolation yet was still reported
+  // as visibly misaligned — the DOM simply can't query a native scrollbar's
+  // exact pixel geometry to guarantee agreement with it. A custom thumb
+  // computed from the same numbers as the labels can't help but agree.
+  const [scrollTop, setScrollTop] = useState(0)
   const [lightbox, setLightbox] = useState<{ items: MediaItemDto[]; index: number } | null>(null)
   // A ref, not state — this changes on every mouse move between thumbnails,
   // and none of that needs to trigger a re-render of the (potentially huge)
@@ -288,17 +284,29 @@ export function LibraryGrid({
     const observer = new ResizeObserver((entries) => {
       setContainerWidth(entries[0].contentRect.width)
       setContainerHeight(entries[0].contentRect.height)
-      setScrollbarWidth(el.offsetWidth - el.clientWidth)
     })
     observer.observe(el)
     return () => observer.disconnect()
   }, [])
 
-  // Kept in sync with .date-scrubber's own CSS width (App.css) — the total
-  // gutter this view reserves so thumbnails never render underneath either
-  // the scrubber rail or the real scrollbar next to it.
+  // Drives DateScrubber's custom thumb position — see its own comment for
+  // why this replaced trying to align with the native scrollbar's thumb.
+  useEffect(() => {
+    const el = scrollRef.current
+    if (!el) return
+    function onScroll() {
+      if (el) setScrollTop(el.scrollTop)
+    }
+    el.addEventListener('scroll', onScroll, { passive: true })
+    return () => el.removeEventListener('scroll', onScroll)
+  }, [])
+
+  // Kept in sync with .date-scrubber's own CSS width (App.css) — the gutter
+  // this view reserves so thumbnails never render underneath the scrubber
+  // rail. No native scrollbar to additionally avoid overlapping anymore —
+  // it's hidden entirely (App.css) in favor of the rail's own thumb.
   const DATE_SCRUBBER_WIDTH = 16
-  const scrollGutter = scrollbarWidth + DATE_SCRUBBER_WIDTH
+  const scrollGutter = DATE_SCRUBBER_WIDTH
 
   const columnCount = containerWidth !== null ? Math.max(1, Math.floor((containerWidth + GAP) / (thumbMinWidth + GAP))) : 1
   const thumbSize = containerWidth !== null ? (containerWidth - (columnCount - 1) * GAP) / columnCount : thumbMinWidth
@@ -318,6 +326,9 @@ export function LibraryGrid({
     () => buildDateMarkers(blocks, rowHeight, scrollableRange),
     [blocks, rowHeight, scrollableRange],
   )
+  const currentScrubberFraction = scrollableRange > 0 ? Math.min(1, scrollTop / scrollableRange) : 0
+  const scrubberThumbSizeFraction =
+    totalContentHeight > 0 && containerHeight !== null ? Math.min(1, containerHeight / totalContentHeight) : 1
 
   const virtualizer = useVirtualizer({
     count: blocks.length,
@@ -450,8 +461,8 @@ export function LibraryGrid({
       <DateScrubber
         markers={dateMarkers}
         onJump={(fraction) => virtualizer.scrollToOffset(fraction * scrollableRange, { align: 'start' })}
-        rightOffset={scrollbarWidth}
-        edgeInset={scrollbarWidth}
+        currentFraction={currentScrubberFraction}
+        thumbSizeFraction={scrubberThumbSizeFraction}
       />
 
       {lightbox && (
