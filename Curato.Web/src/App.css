@@ -514,23 +514,36 @@ button {
   margin-top: 4px;
 }
 
-.trip-header-block h2 {
-  margin: 10px 0 4px;
-  font-size: 18px;
+/* Mirrors .event-header-row's own layout exactly (title, meta, then
+   whatever's pushed to the far right) — confirmed live as reported
+   inconsistent when this used to cram the badge/location/Ungroup button all
+   into the title <h2> itself and stack "Will move to" on its own line below
+   instead of aligning with events' same-row right-aligned treatment. */
+.trip-header-row {
   display: flex;
-  align-items: baseline;
-  gap: 8px;
+  align-items: center;
+  gap: 10px;
+  min-width: 0;
 }
 
-.trip-location {
-  font-size: 13px;
-  font-weight: 400;
+.trip-header-row h2 {
+  margin: 10px 0 4px;
+  font-size: 18px;
+  min-width: 0;
+  flex-shrink: 1;
+  overflow: hidden;
+}
+
+.trip-meta {
   color: var(--text-faint);
+  font-size: 13px;
+  flex-shrink: 0;
   white-space: nowrap;
 }
 
 .trip-ungroup-btn {
   margin-left: auto;
+  flex-shrink: 0;
   font-size: 11px;
   font-weight: 400;
   color: var(--text-muted);
@@ -545,6 +558,19 @@ button {
 .trip-ungroup-btn:hover {
   color: var(--text-danger);
   border-color: var(--border-danger);
+}
+
+/* Same-row, truncating rather than stacked — see .event-header-row
+   .proposed-path below for why. Already pushed right by .trip-ungroup-btn's
+   own margin-left: auto (whichever of the two is present first still starts
+   the rightward push). */
+.trip-header-row .proposed-path {
+  flex-shrink: 1;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  margin: 0;
 }
 
 .proposed-path {
@@ -572,6 +598,22 @@ button {
    this margin was bumped to 20px with literally no visible change. */
 .event-header {
   padding-top: 16px;
+}
+
+/* The exact same accent top-border treatment a Trip header itself gets
+   (.trip-header-block) — applied to whichever standalone Event immediately
+   follows a Trip, so the line marking "entering a Trip" has a matching one
+   for "leaving it" instead of only ever appearing on the way in (confirmed
+   live as reported asymmetric/inconsistent). The height delta this adds
+   over plain .event-header's own padding-top is accounted for explicitly in
+   LibraryGrid.tsx's EVENT_HEADER_AFTER_TRIP_EXTRA_HEIGHT — never resize this
+   without updating that constant to match, or the virtualizer's own height
+   math desyncs from what's actually on screen (the scrollbar drag-handle
+   bug this codebase has already fought hard to avoid). */
+.event-header-after-trip {
+  padding-top: 20px;
+  border-top: 2px solid var(--accent);
+  margin-top: 4px;
 }
 
 .event-header-row {
@@ -717,13 +759,20 @@ button {
   right: 4px;
   width: 20px;
   height: 20px;
-  line-height: 18px;
   padding: 0;
   border: none;
   border-radius: 50%;
   background: rgba(0, 0, 0, 0.55);
   color: white;
   font-size: 14px;
+  line-height: 1;
+  /* Flex-centered, not line-height-centered — the × glyph's own visual
+     center never lined up with a line-height-based vertical middle (confirmed
+     live as visibly offset toward the bottom of the circle), the same reason
+     .thumb-move's icon uses flex centering instead. */
+  display: flex;
+  align-items: center;
+  justify-content: center;
   cursor: pointer;
   opacity: 0;
   transition: opacity 0.15s;

@@ -49,11 +49,20 @@ const EVENT_HEADER_CONTENT_HEIGHT = 50
 const EVENT_HEADER_GAP = 11
 const EVENT_HEADER_HEIGHT = EVENT_HEADER_CONTENT_HEIGHT + EVENT_HEADER_GAP
 const TRIP_HEADER_HEIGHT = 84
-const PROPOSED_PATH_HEIGHT = 54
+// The exact extra top space .event-header-after-trip adds over the base
+// .event-header's own padding-top (see that class, App.css) — a standalone
+// Event immediately following a Trip gets the same accent top-border
+// treatment as a Trip header itself, closing off the Trip visually instead
+// of the line only ever appearing on the way in. Must stay a real, accounted
+// -for constant like every other height here: LibraryGrid.tsx never
+// remeasures a header against its actual rendered DOM height (the scrollbar
+// drag-handle desync bug's own root cause), so any extra CSS height has to
+// be added here too, not just in the stylesheet.
+const EVENT_HEADER_AFTER_TRIP_EXTRA_HEIGHT = 10
 
 type Block =
   | { type: 'trip-header'; key: string; trip: TripGroupDto }
-  | { type: 'event-header'; key: string; event: EventDto }
+  | { type: 'event-header'; key: string; event: EventDto; closesTripAbove: boolean }
   | { type: 'thumb-row'; key: string; event: EventDto; items: MediaItemDto[]; startIndex: number }
 
 // Shared by the virtualizer's own estimateSize and buildDateMarkers's
@@ -65,10 +74,10 @@ type Block =
 // which moves by real pixel height like every scrollbar does).
 function blockHeight(block: Block, rowHeight: number): number {
   if (block.type === 'trip-header') {
-    return TRIP_HEADER_HEIGHT + (block.trip.proposedFolderPath ? PROPOSED_PATH_HEIGHT : 0)
+    return TRIP_HEADER_HEIGHT
   }
   if (block.type === 'event-header') {
-    return EVENT_HEADER_HEIGHT
+    return EVENT_HEADER_HEIGHT + (block.closesTripAbove ? EVENT_HEADER_AFTER_TRIP_EXTRA_HEIGHT : 0)
   }
   return rowHeight
 }
@@ -97,15 +106,23 @@ function buildTimeline(library: LibraryDto): TimelineEntry[] {
     ...library.trips.map((trip): TimelineEntry => ({ kind: 'trip', date: trip.startDate, trip })),
     ...library.standaloneEvents.map((event): TimelineEntry => ({ kind: 'event', date: event.startAt, event })),
   ]
-  entries.sort((a, b) => a.date.localeCompare(b.date))
+  // Real date parsing, not a raw string compare: the server serializes some
+  // DateTimes with a UTC offset suffix (e.g. Apple's location-aware video
+  // metadata) and others without (plain Exif-derived local times), so two
+  // otherwise-adjacent dates can have differently-shaped ISO strings —
+  // confirmed live as a freshly-created singleton Event (via "move to a new
+  // Event") landing several *weeks* out of order in the timeline, since
+  // localeCompare has no idea "20:28:37" (no offset) and "18:15:03+02:00"
+  // don't compare the way their actual instants do.
+  entries.sort((a, b) => new Date(a.date).getTime() - new Date(b.date).getTime())
   return entries
 }
 
 function buildBlocks(library: LibraryDto, columnCount: number): Block[] {
   const blocks: Block[] = []
 
-  function pushEvent(event: EventDto) {
-    blocks.push({ type: 'event-header', key: `eh-${event.id}`, event })
+  function pushEvent(event: EventDto, closesTripAbove: boolean) {
+    blocks.push({ type: 'event-header', key: `eh-${event.id}`, event, closesTripAbove })
     for (let i = 0; i < event.items.length; i += columnCount) {
       blocks.push({
         type: 'thumb-row',
@@ -117,14 +134,20 @@ function buildBlocks(library: LibraryDto, columnCount: number): Block[] {
     }
   }
 
-  for (const entry of buildTimeline(library)) {
+  const timeline = buildTimeline(library)
+  timeline.forEach((entry, i) => {
     if (entry.kind === 'trip') {
       blocks.push({ type: 'trip-header', key: `th-${entry.trip.id}`, trip: entry.trip })
-      entry.trip.events.forEach(pushEvent)
+      entry.trip.events.forEach((event) => pushEvent(event, false))
     } else {
-      pushEvent(entry.event)
+      // The same accent top-border a Trip header itself gets, but on the
+      // standalone Event right after one ends — otherwise the line only ever
+      // marked entering a Trip, never leaving it (confirmed live as
+      // inconsistent/asymmetric).
+      const closesTripAbove = i > 0 && timeline[i - 1].kind === 'trip'
+      pushEvent(entry.event, closesTripAbove)
     }
-  }
+  })
 
   return blocks
 }
@@ -482,14 +505,19 @@ export function LibraryGrid({
               }}
             >
               {block.type === 'trip-header' && (
-                <div className="trip-header-block">
-                  <h2>
-                    <EditableTitle
-                      title={block.trip.title}
-                      onRename={(title) => onRenameTrip(block.trip.id, title)}
-                    />
-                    {block.trip.namingMode === 'Adopted' && <span className="badge">Adopted</span>}
-                    {block.trip.location && <span className="trip-location">&middot; {block.trip.location}</span>}
+                <header className="trip-header-block">
+                  <div className="trip-header-row">
+                    <h2>
+                      <EditableTitle
+                        title={block.trip.title}
+                        onRename={(title) => onRenameTrip(block.trip.id, title)}
+                      />
+                    </h2>
+                    <span className="trip-meta">
+                      {formatRange(block.trip.startDate, block.trip.endDate)}
+                      {block.trip.namingMode === 'Adopted' && <span className="badge">Adopted</span>}
+                      {block.trip.location && <> &middot; {block.trip.location}</>}
+                    </span>
                     <button
                       type="button"
                       className="trip-ungroup-btn"
@@ -498,15 +526,17 @@ export function LibraryGrid({
                     >
                       Ungroup
                     </button>
-                  </h2>
-                  {block.trip.proposedFolderPath && (
-                    <p className="proposed-path">Will move to: {block.trip.proposedFolderPath}</p>
-                  )}
-                </div>
+                    {block.trip.proposedFolderPath && (
+                      <p className="proposed-path" title={`Will move to: ${block.trip.proposedFolderPath}`}>
+                        Will move to: {block.trip.proposedFolderPath}
+                      </p>
+                    )}
+                  </div>
+                </header>
               )}
 
               {block.type === 'event-header' && (
-                <header className="event-header">
+                <header className={`event-header ${block.closesTripAbove ? 'event-header-after-trip' : ''}`}>
                   <div className="event-header-row">
                     {block.event.tripGroupId === null && (
                       <input
@@ -579,10 +609,13 @@ export function LibraryGrid({
             type="button"
             onClick={() => {
               const ids = [...selectedEventIds]
+              // Real date parsing (see buildTimeline's identical fix) — a
+              // raw string compare can misorder two ISO dates whose UTC-offset
+              // suffix presence differs.
               const earliest = ids
                 .map((id) => allEventSummaries.find((e) => e.id === id))
                 .filter((e): e is EventSummary => e !== undefined)
-                .sort((a, b) => a.startAt.localeCompare(b.startAt))[0]
+                .sort((a, b) => new Date(a.startAt).getTime() - new Date(b.startAt).getTime())[0]
               if (earliest) setMoveTarget({ kind: 'event', eventIds: ids, referenceStartAt: earliest.startAt })
             }}
           >
