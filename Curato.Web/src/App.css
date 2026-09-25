@@ -406,8 +406,19 @@ button {
      whole rewrite exists to eliminate. Purely a visual indicator anyway:
      pointer-events: none means clicking it still hits the rail underneath. */
   border-radius: 4px;
-  background: var(--border);
+  /* var(--border) was previously used here — reported live as "hard to
+     see": that token is a very subtle, near-background dark grey
+     (#33353c) meant for hairline dividers, not a control someone needs to
+     actually spot and track while scrolling. text-muted is the same token
+     already used for hint text throughout the app precisely because it's
+     legible without shouting. */
+  background: var(--text-muted);
+  opacity: 0.55;
   pointer-events: none;
+}
+
+.date-scrubber:hover .date-scrubber-thumb {
+  opacity: 0.85;
 }
 
 /* No translateY(-50%) here on purpose, even though it would look nicer

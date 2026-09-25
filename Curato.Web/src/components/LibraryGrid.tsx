@@ -228,7 +228,14 @@ export function LibraryGrid({
   // as visibly misaligned — the DOM simply can't query a native scrollbar's
   // exact pixel geometry to guarantee agreement with it. A custom thumb
   // computed from the same numbers as the labels can't help but agree.
-  const [scrollTop, setScrollTop] = useState(0)
+  //
+  // Its position is written directly to this ref's DOM node on every scroll
+  // event (see the effect below), not through React state — reported live
+  // as "jumps in big steps" when it briefly went through a scrollTop state
+  // value instead: that meant a full re-render of this whole heavy
+  // virtualized grid on every single scroll event, the same class of
+  // problem hoveredPhotoRef/requestedIdsRef below already exist to avoid.
+  const scrubberThumbRef = useRef<HTMLDivElement>(null)
   const [lightbox, setLightbox] = useState<{ items: MediaItemDto[]; index: number } | null>(null)
   // A ref, not state — this changes on every mouse move between thumbnails,
   // and none of that needs to trigger a re-render of the (potentially huge)
@@ -289,18 +296,6 @@ export function LibraryGrid({
     return () => observer.disconnect()
   }, [])
 
-  // Drives DateScrubber's custom thumb position — see its own comment for
-  // why this replaced trying to align with the native scrollbar's thumb.
-  useEffect(() => {
-    const el = scrollRef.current
-    if (!el) return
-    function onScroll() {
-      if (el) setScrollTop(el.scrollTop)
-    }
-    el.addEventListener('scroll', onScroll, { passive: true })
-    return () => el.removeEventListener('scroll', onScroll)
-  }, [])
-
   // Kept in sync with .date-scrubber's own CSS width (App.css) — the gutter
   // this view reserves so thumbnails never render underneath the scrubber
   // rail. No native scrollbar to additionally avoid overlapping anymore —
@@ -326,9 +321,29 @@ export function LibraryGrid({
     () => buildDateMarkers(blocks, rowHeight, scrollableRange),
     [blocks, rowHeight, scrollableRange],
   )
-  const currentScrubberFraction = scrollableRange > 0 ? Math.min(1, scrollTop / scrollableRange) : 0
   const scrubberThumbSizeFraction =
     totalContentHeight > 0 && containerHeight !== null ? Math.min(1, containerHeight / totalContentHeight) : 1
+  const scrubberTravelFraction = Math.max(0, 1 - scrubberThumbSizeFraction)
+
+  // Drives DateScrubber's custom thumb position directly via its DOM node
+  // (scrubberThumbRef), not React state — see that ref's own declaration
+  // for why. Re-synced whenever scrollableRange/scrubberTravelFraction
+  // themselves change (a resize, a thumbnail-size change, content loading
+  // in), not just on every scroll event, so the thumb never sits stale
+  // relative to a range that just changed out from under it.
+  useEffect(() => {
+    const el = scrollRef.current
+    if (!el) return
+    function updateThumbPosition() {
+      const thumb = scrubberThumbRef.current
+      if (!el || !thumb) return
+      const fraction = scrollableRange > 0 ? Math.min(1, el.scrollTop / scrollableRange) : 0
+      thumb.style.top = `${fraction * scrubberTravelFraction * 100}%`
+    }
+    updateThumbPosition()
+    el.addEventListener('scroll', updateThumbPosition, { passive: true })
+    return () => el.removeEventListener('scroll', updateThumbPosition)
+  }, [scrollableRange, scrubberTravelFraction])
 
   const virtualizer = useVirtualizer({
     count: blocks.length,
@@ -461,8 +476,8 @@ export function LibraryGrid({
       <DateScrubber
         markers={dateMarkers}
         onJump={(fraction) => virtualizer.scrollToOffset(fraction * scrollableRange, { align: 'start' })}
-        currentFraction={currentScrubberFraction}
         thumbSizeFraction={scrubberThumbSizeFraction}
+        thumbRef={scrubberThumbRef}
       />
 
       {lightbox && (

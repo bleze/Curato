@@ -21,21 +21,31 @@ export interface DateMarker {
  * control whose exact pixel geometry the DOM can't query at all. Now the
  * thumb and the labels are computed by the same code from the same numbers,
  * so they can't help but agree — LibraryGrid hides the native scrollbar via
- * CSS and feeds this component the live scroll position instead.
+ * CSS and drives this component's thumb position directly (see thumbRef
+ * below for why that's imperative, not a prop).
  */
 export function DateScrubber({
   markers,
   onJump,
-  currentFraction,
   thumbSizeFraction,
+  thumbRef,
 }: {
   markers: DateMarker[]
   /** Fraction (0-1) of the grid's scrollable range to jump to — see LibraryGrid's onJump wiring (virtualizer.scrollToOffset). */
   onJump: (fraction: number) => void
-  /** scrollTop / scrollableRange right now — where the thumb's top edge sits, before accounting for its own size. */
-  currentFraction: number
   /** clientHeight / totalContentHeight — how much of the rail's length the thumb itself occupies. */
   thumbSizeFraction: number
+  /**
+   * LibraryGrid writes the thumb's `top` directly via this ref on every
+   * scroll event, instead of passing it down as a prop — reported live as
+   * "jumps in big steps": a scroll-driven prop meant a React state update
+   * (and a re-render of this whole heavy virtualized grid) on every single
+   * scroll event, which is exactly the kind of high-frequency update this
+   * codebase already avoids elsewhere (see hoveredPhotoRef/requestedIdsRef
+   * in LibraryGrid) for the same reason. Same fix here: bypass React for
+   * this one high-frequency write and mutate the DOM node directly.
+   */
+  thumbRef: React.RefObject<HTMLDivElement | null>
 }) {
   const railRef = useRef<HTMLDivElement>(null)
   const [hover, setHover] = useState<{ y: number; label: string } | null>(null)
@@ -114,13 +124,7 @@ export function DateScrubber({
 
   return (
     <div className="date-scrubber" ref={railRef} onMouseDown={handleMouseDown}>
-      <div
-        className="date-scrubber-thumb"
-        style={{
-          top: `${currentFraction * travelFraction * 100}%`,
-          height: `${thumbSizeFraction * 100}%`,
-        }}
-      />
+      <div ref={thumbRef} className="date-scrubber-thumb" style={{ height: `${thumbSizeFraction * 100}%` }} />
       {markers
         .filter((m) => m.isMajor)
         .map((m) => (
