@@ -341,10 +341,19 @@ button {
   background: var(--border-soft);
 }
 
+/* No translateY(-50%) here on purpose, even though it would look nicer
+   (the label vertically centered on its exact data point) — confirmed live
+   this is the actual cause of "the year markers are off": jumpToClientY's
+   click math has no idea the visual label is shifted, so it computes a
+   fraction against the label's un-shifted `top: X%` while a real click
+   naturally lands on the visually-centered (shifted) text, landing a
+   marker or more early every time. Leaving the tick's top edge as the true
+   anchor point keeps the visual position and the click math in exact
+   agreement, at the minor cosmetic cost of the label starting at its data
+   point instead of straddling it. */
 .date-scrubber-tick {
   position: absolute;
   left: 4px;
-  transform: translateY(-50%);
   font-size: 10px;
   color: var(--text-faint);
   white-space: nowrap;
