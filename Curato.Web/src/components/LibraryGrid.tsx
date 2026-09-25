@@ -451,6 +451,7 @@ export function LibraryGrid({
         markers={dateMarkers}
         onJump={(fraction) => virtualizer.scrollToOffset(fraction * scrollableRange, { align: 'start' })}
         rightOffset={scrollbarWidth}
+        edgeInset={scrollbarWidth}
       />
 
       {lightbox && (

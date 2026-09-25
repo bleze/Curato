@@ -24,12 +24,32 @@ export function DateScrubber({
   markers,
   onJump,
   rightOffset,
+  edgeInset,
 }: {
   markers: DateMarker[]
   /** Fraction (0-1) of the grid's total height to jump to — see LibraryGrid's onJump wiring (virtualizer.scrollToOffset). */
   onJump: (fraction: number) => void
   /** Shifts the rail left of the real scrollbar (measured live) so the two never occupy the same pixels — see LibraryGrid.tsx. */
   rightOffset: number
+  /**
+   * A classic (non-overlay) scrollbar reserves real pixels at each end for
+   * its arrow buttons, so its thumb's actual travel range is shorter than
+   * the scrollbar's own full length. Confirmed *functionally*, not just by
+   * eyeballing a screenshot (screenshots in this environment turned out to
+   * be scaled ~1.2x relative to real CSS pixels, which had made an earlier
+   * visual measurement unreliable): clicking right at the very top of the
+   * real scrollbar moved scrollTop by exactly 40px (a line-scroll, i.e. an
+   * arrow button was actually there), while a click ~12px further down
+   * produced an ~840px jump (a page-scroll, i.e. blank track) — the
+   * button's real height is small but genuine and was previously
+   * unaccounted for, leaving a marker's label a real, visible distance from
+   * where the native thumb actually reaches that content. LibraryGrid
+   * already measures scrollbarWidth for exactly this purpose (0 on
+   * overlay-scrollbar platforms — no arrow buttons either, so no inset
+   * needed there either; ~15-17px on Windows, matching this measurement)
+   * and passes it through as this prop.
+   */
+  edgeInset: number
 }) {
   const railRef = useRef<HTMLDivElement>(null)
   const [hover, setHover] = useState<{ y: number; label: string } | null>(null)
@@ -55,7 +75,8 @@ export function DateScrubber({
     const rail = railRef.current
     if (!rail) return
     const rect = rail.getBoundingClientRect()
-    const rawFraction = Math.min(1, Math.max(0, (clientY - rect.top) / rect.height))
+    const usableHeight = Math.max(1, rect.height - edgeInset * 2)
+    const rawFraction = Math.min(1, Math.max(0, (clientY - rect.top - edgeInset) / usableHeight))
 
     // Magnetic snap onto a labeled (major) marker within ~14px, even though
     // the underlying proportional math is exactly correct — confirmed live
@@ -64,7 +85,7 @@ export function DateScrubber({
     // specific labeled year without it required genuinely sub-pixel mouse
     // precision. 14px roughly matches a tick label's own rendered height, so
     // clicking anywhere on the visible text reliably lands on what it says.
-    const snapToleranceFraction = 14 / rect.height
+    const snapToleranceFraction = 14 / usableHeight
     let closestMajor: DateMarker | null = null
     let closestDistance = Infinity
     for (const marker of markers) {
@@ -100,7 +121,11 @@ export function DateScrubber({
       {markers
         .filter((m) => m.isMajor)
         .map((m) => (
-          <div key={m.label} className="date-scrubber-tick" style={{ top: `${m.heightFraction * 100}%` }}>
+          <div
+            key={m.label}
+            className="date-scrubber-tick"
+            style={{ top: `calc(${edgeInset}px + ${m.heightFraction} * (100% - ${edgeInset * 2}px))` }}
+          >
             {m.label}
           </div>
         ))}
