@@ -21,7 +21,7 @@ export function SettingsPanel({
   onOpenLibrary: (path: string) => void
   onLibraryContentChanged: (path: string) => void
 }) {
-  const [activeTab, setActiveTab] = useState<'library' | 'integrations'>('library')
+  const [activeTab, setActiveTab] = useState<'library' | 'icloud'>('library')
   const [libraryFolder, setLibraryFolderValue] = useState<string | null>(null)
   const [libraryFolderInput, setLibraryFolderInput] = useState('')
   const [status, setStatus] = useState<iCloudSyncStatus | null>(null)
@@ -97,10 +97,14 @@ export function SettingsPanel({
     }
   }
 
+  // Also opens it immediately (which closes this panel) rather than just
+  // persisting the setting and leaving you to separately find and click an
+  // "Open this library" button to actually see it — that extra step never
+  // did anything Save itself couldn't just do.
   function handleSaveLibraryFolder() {
     return runBusy(async () => {
       await setLibraryFolder(libraryFolderInput)
-      refresh()
+      onOpenLibrary(libraryFolderInput)
     })
   }
 
@@ -231,10 +235,10 @@ export function SettingsPanel({
           </button>
           <button
             type="button"
-            className={`modal-tab ${activeTab === 'integrations' ? 'is-active' : ''}`}
-            onClick={() => setActiveTab('integrations')}
+            className={`modal-tab ${activeTab === 'icloud' ? 'is-active' : ''}`}
+            onClick={() => setActiveTab('icloud')}
           >
-            Integrations
+            iCloud
           </button>
         </div>
         <div className="modal-body">
@@ -258,22 +262,13 @@ export function SettingsPanel({
                   Save
                 </button>
               </div>
-              {libraryFolder && (
-                <p className="settings-meta">
-                  Current: {libraryFolder}{' '}
-                  <button type="button" onClick={() => onOpenLibrary(libraryFolder)} disabled={busy}>
-                    Open this library
-                  </button>
-                </p>
-              )}
+              {libraryFolder && <p className="settings-meta">Current: {libraryFolder}</p>}
             </section>
           )}
 
-          {activeTab === 'integrations' && (
-            <>
-              <section className="settings-section">
-                <h3>iCloud Sync</h3>
-                {!libraryFolder ? (
+          {activeTab === 'icloud' && (
+            <section className="settings-section">
+              {!libraryFolder ? (
           <p className="recyclebin-hint">Set a library folder above first.</p>
         ) : status?.connected ? (
           <>
@@ -392,23 +387,12 @@ export function SettingsPanel({
               value={password}
               onChange={(e) => setPassword(e.target.value)}
             />
-                    <button type="button" onClick={handleICloudLogin} disabled={busy || !username.trim() || !password}>
-                      Connect
-                    </button>
-                  </div>
-                )}
-              </section>
-
-              <section className="settings-section">
-                <h3>Google Photos</h3>
-                <p className="recyclebin-hint">
-                  No direct integration — Google locked down third-party read access to your library in 2025.
-                  Install Google Drive for Desktop, let it sync your Google Photos library to a local folder, then
-                  point the Library Folder setting (or a regular Scan) at that folder — same mechanism as any other
-                  local folder.
-                </p>
-              </section>
-            </>
+            <button type="button" onClick={handleICloudLogin} disabled={busy || !username.trim() || !password}>
+              Connect
+            </button>
+          </div>
+        )}
+            </section>
           )}
         </div>
       </div>

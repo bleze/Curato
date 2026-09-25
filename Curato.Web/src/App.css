@@ -168,7 +168,15 @@ button {
    action in a highlighted .organize-bar — styled to match .account button
    instead of standing out as its own bespoke CTA. */
 .upload-button {
+  display: inline-block;
   padding: 5px 12px;
+  /* A <button> gets its line-height reset to the UA default ("normal") by
+     the browser's own form-control stylesheet; a <label> doesn't, so it was
+     rendering ~12px taller than every real button next to it — inheriting
+     the body's own line-height for its text instead. Confirmed live via
+     getComputedStyle: 38px vs the buttons' 26px, purely from that one
+     property. */
+  line-height: normal;
   font-size: 12.5px;
   border-radius: 6px;
   border: 1px solid var(--border);
@@ -539,19 +547,40 @@ button {
   font-size: 16px;
 }
 
+/* Left unstyled before, this fell back to the browser's native button
+   chrome (a light grey pill) with only its text color patched by the
+   global `button { color: var(--accent) }` rule — every other button in
+   the app gets a real .account/.recyclebin-header rule, this one never
+   did, which is exactly why it looked out of place. */
+.modal-header button {
+  padding: 5px 12px;
+  font-size: 12.5px;
+  border-radius: 6px;
+  border: 1px solid var(--border);
+  background: var(--surface);
+  cursor: pointer;
+}
+
+/* A segmented control (background pill on the active tab) instead of the
+   underline style tried first — an underline sitting right above another
+   border (the one separating the tab row from the body) read as a messy
+   double line rather than a clear selected/unselected state. */
 .modal-tabs {
   display: flex;
-  gap: 4px;
-  padding: 0 18px;
-  border-bottom: 1px solid var(--border-soft);
+  gap: 2px;
+  margin: 0 18px 14px;
+  padding: 3px;
+  background: var(--surface);
+  border-radius: 8px;
   flex-shrink: 0;
 }
 
 .modal-tab {
-  padding: 9px 14px;
-  font-size: 13px;
+  flex: 1;
+  padding: 7px 14px;
+  font-size: 12.5px;
   border: none;
-  border-bottom: 2px solid transparent;
+  border-radius: 6px;
   background: none;
   color: var(--text-muted);
   cursor: pointer;
@@ -562,8 +591,8 @@ button {
 }
 
 .modal-tab.is-active {
-  color: var(--text);
-  border-bottom-color: var(--accent);
+  color: var(--on-accent);
+  background: var(--accent);
 }
 
 .modal-body {
