@@ -161,7 +161,20 @@ public sealed class MediaFileScanner
                 movieHeader.TryGetDateTime(QuickTimeMovieHeaderDirectory.TagCreated, out var created) &&
                 created.Year > 1904) // some encoders write an all-zero "unknown" creation time (decodes to the 1904 epoch itself) rather than omitting the field
             {
-                return (created, TakenAtSource.VideoMetadata);
+                // Unlike EXIF's DateTimeOriginal (a naive local wall-clock
+                // value, no timezone concept — see ReadPhotoTakenAt above),
+                // the QuickTime movie header's creation date is defined by
+                // spec to be UTC. MetadataExtractor hands it back with
+                // Kind=Unspecified rather than Kind=Utc, so storing it
+                // as-is silently skipped the UTC->local conversion every
+                // other TakenAt value already gets for free by being a
+                // genuine local value — reported live as video timestamps
+                // sitting exactly one timezone-offset (2h, CEST) early.
+                // DateTime.ToLocalTime() treats an Unspecified source as
+                // UTC by its own documented contract, which is exactly the
+                // assumption QuickTime's spec makes, so this both converts
+                // and matches what ReadPhotoTakenAt's values already are.
+                return (created.ToLocalTime(), TakenAtSource.VideoMetadata);
             }
         }
         catch (ImageProcessingException)

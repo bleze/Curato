@@ -40,10 +40,18 @@ public class MediaFileScannerDateReadingTests
     [Fact]
     public void Reads_creation_time_from_a_real_quicktime_movie_header()
     {
+        // The fixture's mvhd atom embeds 2019-06-15 14:30:00 UTC (QuickTime's
+        // movie-header creation date is UTC by spec, unlike EXIF's naive
+        // local DateTimeOriginal) — ReadVideoTakenAt converts it to local
+        // wall-clock time so it's consistent with every other TakenAt value.
+        // Computed here rather than hardcoded so the expectation stays
+        // correct regardless of the machine's local timezone.
+        var expectedLocal = new DateTime(2019, 6, 15, 14, 30, 0, DateTimeKind.Utc).ToLocalTime();
+
         WithScannedFixture("quicktime-2019-06-15.mov", item =>
         {
             Assert.Equal(TakenAtSource.VideoMetadata, item.TakenAtSource);
-            Assert.Equal(ExpectedTakenAt, item.TakenAt);
+            Assert.Equal(expectedLocal, item.TakenAt);
         });
     }
 
