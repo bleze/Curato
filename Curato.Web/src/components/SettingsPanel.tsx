@@ -25,11 +25,12 @@ export function SettingsPanel({
   onOpenLibrary: (path: string) => void
   onLibraryContentChanged: (path: string) => void
 }) {
-  const [activeTab, setActiveTab] = useState<'library' | 'icloud' | 'display'>('library')
+  const [activeTab, setActiveTab] = useState<'library' | 'home' | 'icloud' | 'display'>('library')
   const use24Hour = useUse24HourTime()
   const thumbMinWidth = useThumbMinWidth()
   const [libraryFolder, setLibraryFolderValue] = useState<string | null>(null)
   const [libraryFolderInput, setLibraryFolderInput] = useState('')
+  const [homeLocation, setHomeLocationValue] = useState<string | null>(null)
   const [homeLocationInput, setHomeLocationInput] = useState('')
   const [status, setStatus] = useState<iCloudSyncStatus | null>(null)
   const [error, setError] = useState<string | null>(null)
@@ -50,6 +51,7 @@ export function SettingsPanel({
       setLibraryFolderInput((current) => current || path || '')
     })
     getHomeLocation().then((label) => {
+      setHomeLocationValue(label)
       setHomeLocationInput((current) => current || label || '')
     })
     getICloudSyncStatus()
@@ -105,21 +107,6 @@ export function SettingsPanel({
     } finally {
       setBusy(false)
     }
-  }
-
-  // Also opens it immediately (which closes this panel) rather than just
-  // persisting the setting and leaving you to separately find and click an
-  // "Open this library" button to actually see it — that extra step never
-  // did anything Save itself couldn't just do.
-  function handleSaveLibraryFolder() {
-    return runBusy(async () => {
-      await setLibraryFolder(libraryFolderInput)
-      onOpenLibrary(libraryFolderInput)
-    })
-  }
-
-  function handleSaveHomeLocation() {
-    return runBusy(() => setHomeLocation(homeLocationInput))
   }
 
   function handleICloudLogin() {
@@ -191,33 +178,6 @@ export function SettingsPanel({
     })
   }
 
-  function handleSaveScope() {
-    if (!status) return Promise.resolve()
-
-    const days = Number.parseInt(lookbackInput, 10)
-    if (!sinceDateInput && (!Number.isFinite(days) || days <= 0)) {
-      setError('Enter a positive number of days, or pick a specific date.')
-      return Promise.resolve()
-    }
-
-    const cap = Number.parseInt(recentCapInput, 10)
-    if (!Number.isFinite(cap) || cap <= 0) {
-      setError('Enter a positive number for the max files per sync.')
-      return Promise.resolve()
-    }
-
-    return runBusy(async () => {
-      await iCloudUpdateSettings(
-        status.intervalMinutes ?? 360,
-        status.enabled ?? true,
-        days,
-        sinceDateInput || null,
-        cap,
-      )
-      refresh()
-    })
-  }
-
   function handleClearSinceDate() {
     setSinceDateInput('')
   }
@@ -230,14 +190,52 @@ export function SettingsPanel({
     })
   }
 
+  // One Cancel/Save pair for the whole dialog instead of a separate Save
+  // next to every field — Connect/Verify/Disconnect/Sync now/auto-sync
+  // toggle above stay immediate actions (there's nothing to "stage" about
+  // logging in or syncing right now), but plain settings values (library
+  // folder, home location, iCloud sync scope) only take effect here.
+  function handleSaveAll() {
+    return runBusy(async () => {
+      let opened = false
+
+      if (libraryFolderInput.trim() && libraryFolderInput !== (libraryFolder ?? '')) {
+        await setLibraryFolder(libraryFolderInput)
+        onOpenLibrary(libraryFolderInput) // also closes the panel
+        opened = true
+      }
+
+      if (homeLocationInput !== (homeLocation ?? '')) {
+        await setHomeLocation(homeLocationInput)
+      }
+
+      if (status?.connected) {
+        const days = Number.parseInt(lookbackInput, 10)
+        if (!sinceDateInput && (!Number.isFinite(days) || days <= 0)) {
+          throw new Error('Enter a positive number of days, or pick a specific date.')
+        }
+
+        const cap = Number.parseInt(recentCapInput, 10)
+        if (!Number.isFinite(cap) || cap <= 0) {
+          throw new Error('Enter a positive number for the max files per sync.')
+        }
+
+        if (days !== status.lookbackDays || sinceDateInput !== (status.sinceDate ?? '') || cap !== status.recentItemCap) {
+          await iCloudUpdateSettings(status.intervalMinutes ?? 360, status.enabled ?? true, days, sinceDateInput || null, cap)
+        }
+      }
+
+      if (!opened) {
+        onClose()
+      }
+    })
+  }
+
   return (
     <div className="modal-overlay" onClick={onClose}>
       <div className="modal-dialog" onClick={(e) => e.stopPropagation()}>
         <div className="modal-header">
           <h2>Settings</h2>
-          <button type="button" onClick={onClose}>
-            Close
-          </button>
         </div>
         <div className="modal-tabs">
           <button
@@ -246,6 +244,13 @@ export function SettingsPanel({
             onClick={() => setActiveTab('library')}
           >
             Library Folder
+          </button>
+          <button
+            type="button"
+            className={`modal-tab ${activeTab === 'home' ? 'is-active' : ''}`}
+            onClick={() => setActiveTab('home')}
+          >
+            Home Location
           </button>
           <button
             type="button"
@@ -279,13 +284,13 @@ export function SettingsPanel({
                   value={libraryFolderInput}
                   onChange={(e) => setLibraryFolderInput(e.target.value)}
                 />
-                <button type="button" onClick={handleSaveLibraryFolder} disabled={busy || !libraryFolderInput.trim()}>
-                  Save
-                </button>
               </div>
               {libraryFolder && <p className="settings-meta">Current: {libraryFolder}</p>}
+            </section>
+          )}
 
-              <h3>Home location</h3>
+          {activeTab === 'home' && (
+            <section className="settings-section">
               <p className="recyclebin-hint">
                 Shown instead of the reverse-geocoded place name for anything nearby (event/trip locations, default
                 event titles) — useful since that automatic lookup can be as coarse as a whole county for a real
@@ -298,9 +303,6 @@ export function SettingsPanel({
                   value={homeLocationInput}
                   onChange={(e) => setHomeLocationInput(e.target.value)}
                 />
-                <button type="button" onClick={handleSaveHomeLocation} disabled={busy}>
-                  Save
-                </button>
               </div>
             </section>
           )}
@@ -384,16 +386,13 @@ export function SettingsPanel({
                   style={{ width: '90px' }}
                 />
               </label>
-              <button type="button" onClick={handleSaveScope} disabled={busy}>
-                Save
-              </button>
             </div>
             <p className="settings-meta">
               The date setting applies to every sync, not just the first (the specific date wins over "last N days"
               when both are set) — widen it if you want more history, but a never-yet-synced account otherwise won't
               pull years of backlog by surprise. "Max files to check" is a separate performance ceiling: raise it if
               your date range covers more than that many recently-added items, since anything beyond the cap won't
-              even be considered.
+              even be considered. Changes here apply when you Save below.
             </p>
           </>
         ) : awaitingCode ? (
@@ -461,11 +460,16 @@ export function SettingsPanel({
                 />
                 <span className="settings-thumbsize-value">{thumbMinWidth}px</span>
               </div>
-              <p className="recyclebin-hint">
-                The grid behind this window updates live as you drag — close this to see the full effect.
-              </p>
             </section>
           )}
+        </div>
+        <div className="modal-footer">
+          <button type="button" className="modal-footer-cancel" onClick={onClose} disabled={busy}>
+            Cancel
+          </button>
+          <button type="button" className="modal-footer-save" onClick={handleSaveAll} disabled={busy}>
+            {busy ? 'Saving…' : 'Save'}
+          </button>
         </div>
       </div>
     </div>
