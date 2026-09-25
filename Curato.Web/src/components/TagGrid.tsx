@@ -124,7 +124,13 @@ export function TagGrid({
                     }}
                   >
                     <img
-                      src={thumbnailUrl(libraryPath, item.relativePath, item.id)}
+                      // See LibraryGrid's identical isScrolling suspension —
+                      // without it a scrollbar drag across a large distance
+                      // floods the browser's per-origin connection cap with
+                      // requests for every row scrolled past on the way,
+                      // starving the rows actually left on screen once the
+                      // drag stops.
+                      src={virtualizer.isScrolling ? undefined : thumbnailUrl(libraryPath, item.relativePath, item.id)}
                       alt=""
                       loading="lazy"
                       onClick={() => setLightbox(virtualRow.index * columnCount + i)}

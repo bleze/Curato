@@ -362,6 +362,7 @@ export function LibraryGrid({
                       key={item.id}
                       item={item}
                       libraryPath={libraryPath}
+                      suspendLoad={virtualizer.isScrolling}
                       onOpen={() => setLightbox({ items: block.event.items, index: block.startIndex + i })}
                       onDelete={onDelete}
                       onHoverChange={(hovering) => {
@@ -486,12 +487,28 @@ function EditableTitle({ title, onRename }: { title: string; onRename: (newTitle
 function ThumbTile({
   item,
   libraryPath,
+  suspendLoad,
   onOpen,
   onDelete,
   onHoverChange,
 }: {
   item: MediaItemDto
   libraryPath: string
+  // While the virtualizer reports active scrolling (a scrollbar drag across
+  // a large distance fires a real DOM scroll event, and therefore a fresh
+  // batch of newly-mounted row/image elements, on every pixel of travel —
+  // not just once at the final resting position) every row passed through
+  // along the way was mounting an <img> with a real src, so all of them
+  // queued a thumbnail request. The browser's ~6-connections-per-origin cap
+  // then had to drain that whole backlog of requests for rows the user
+  // already scrolled past before it could even start on the rows actually
+  // left on screen — confirmed live: an instant, non-dragged scrollTop jump
+  // loads its thumbnails in under 40ms, but a real scrollbar drag left the
+  // final rows waiting multiple seconds behind that backlog. Omitting `src`
+  // while still scrolling (TanStack Virtual's own recommended pattern for
+  // this) means only the row(s) still on screen once scrolling actually
+  // stops ever ask for an image.
+  suspendLoad: boolean
   onOpen: () => void
   onDelete: (mediaItemId: number) => void
   onHoverChange: (hovering: boolean) => void
@@ -504,7 +521,7 @@ function ThumbTile({
       onMouseLeave={() => onHoverChange(false)}
     >
       <img
-        src={thumbnailUrl(libraryPath, item.relativePath, item.id)}
+        src={suspendLoad ? undefined : thumbnailUrl(libraryPath, item.relativePath, item.id)}
         alt=""
         loading="lazy"
         onClick={onOpen}
