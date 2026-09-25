@@ -367,7 +367,10 @@ function App() {
   return (
     <main className="app-shell">
       <header className="app-header">
-        <h1>Curato</h1>
+        <div className="app-brand">
+          <img src="/favicon.svg" alt="" className="app-logo" width={40} height={40} />
+          <h1>Curato</h1>
+        </div>
         <div className="account">
           {loadedPath && (
             <button type="button" onClick={() => setShowRecycleBin(true)}>

@@ -34,6 +34,16 @@ button {
   margin-bottom: 0;
 }
 
+.app-brand {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+}
+
+.app-logo {
+  border-radius: 10px;
+}
+
 .account {
   display: flex;
   align-items: center;
