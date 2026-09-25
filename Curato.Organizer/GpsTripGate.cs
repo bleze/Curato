@@ -75,6 +75,40 @@ public static class GpsTripGate
         GeoDistance.HaversineKm(h.Lat, h.Lon, loc.Lat, loc.Lon) > AwayFromHomeThresholdKm;
 
     /// <summary>
+    /// Trims a time-contiguous candidate group (Event ids already sorted by
+    /// StartAt, as TripClusterer produces) down to the span from its first
+    /// to its last away-from-home member. Confirmed live as a real gap:
+    /// TripClusterer's own time-gap chaining has no bound on how long a
+    /// contiguous run can grow — a long string of ordinary at-home days can
+    /// bridge all the way to a real trip if no single gap in the chain is
+    /// wide enough to break it — and checking only whether *something,
+    /// anywhere* in that run is away from home doesn't stop weeks of home
+    /// padding on either side from being swept in wholesale once it does. A
+    /// "home" or "unknown" (no GPS) member is kept if it falls *within* the
+    /// trimmed span (plausibly a transit/indoor day of the real trip) but
+    /// dropped if it sits outside it. Empty if nothing in the group is away
+    /// from home at all.
+    /// </summary>
+    public static IReadOnlyList<long> TrimToAwayCore(
+        IReadOnlyList<long> eventIdsSortedByTime,
+        IReadOnlyDictionary<long, (double Lat, double Lon)?> eventLocations,
+        (double Lat, double Lon)? home)
+    {
+        var awayIndexes = eventIdsSortedByTime
+            .Select((id, index) => (Index: index, IsAway: IsAwayFromHome(home, eventLocations[id])))
+            .Where(x => x.IsAway)
+            .Select(x => x.Index)
+            .ToList();
+
+        if (awayIndexes.Count == 0)
+        {
+            return [];
+        }
+
+        return eventIdsSortedByTime.Skip(awayIndexes[0]).Take(awayIndexes[^1] - awayIndexes[0] + 1).ToList();
+    }
+
+    /// <summary>
     /// The user's custom "Home" label (Settings), if <paramref name="point"/>
     /// is close enough to the auto-detected home location to use it instead
     /// of a real reverse-geocode — null (meaning "no override, geocode

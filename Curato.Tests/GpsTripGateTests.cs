@@ -42,4 +42,44 @@ public class GpsTripGateTests
         // two features would contradict each other.
         Assert.True(GpsTripGate.HomeOverrideRadiusKm < GpsTripGate.AwayFromHomeThresholdKm);
     }
+
+    private static readonly (double Lat, double Lon) Home = (HomeLat, HomeLon);
+    private static readonly (double Lat, double Lon) Away = (41.3874, 12.4939); // Rome
+
+    [Fact]
+    public void TrimToAwayCore_keeps_only_the_span_from_first_to_last_away_member()
+    {
+        var ids = new long[] { 1, 2, 3, 4, 5 };
+        var locations = new Dictionary<long, (double Lat, double Lon)?>
+        {
+            [1] = Home, [2] = Home, [3] = Away, [4] = Away, [5] = Home,
+        };
+
+        var trimmed = GpsTripGate.TrimToAwayCore(ids, locations, Home);
+
+        Assert.Equal([3L, 4L], trimmed);
+    }
+
+    [Fact]
+    public void TrimToAwayCore_keeps_a_no_gps_member_sandwiched_between_two_away_members()
+    {
+        var ids = new long[] { 1, 2, 3, 4 };
+        var locations = new Dictionary<long, (double Lat, double Lon)?>
+        {
+            [1] = Home, [2] = Away, [3] = null, [4] = Away,
+        };
+
+        var trimmed = GpsTripGate.TrimToAwayCore(ids, locations, Home);
+
+        Assert.Equal([2L, 3L, 4L], trimmed);
+    }
+
+    [Fact]
+    public void TrimToAwayCore_returns_empty_when_nothing_is_away()
+    {
+        var ids = new long[] { 1, 2 };
+        var locations = new Dictionary<long, (double Lat, double Lon)?> { [1] = Home, [2] = null };
+
+        Assert.Empty(GpsTripGate.TrimToAwayCore(ids, locations, Home));
+    }
 }

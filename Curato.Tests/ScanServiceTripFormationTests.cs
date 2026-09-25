@@ -126,6 +126,47 @@ public class ScanServiceTripFormationTests
     }
 
     [Fact]
+    public void Home_days_chained_onto_a_real_trip_by_time_alone_are_trimmed_out_of_it()
+    {
+        // The exact failure reported live: TripClusterer's own time-gap
+        // chaining has no bound on how long a contiguous run can grow, and
+        // checking only whether *something* in that run is away from home
+        // used to sweep in every home-Denmark day chained onto the edges of
+        // a real trip too, as long as no single gap in the whole run was
+        // wide enough to break it. Home1/2/3 here are each under 36h from
+        // their neighbor, bridging all the way to the two genuinely-away
+        // Rome days — only those two should end up in the resulting Trip.
+        WithGpsAwareLibrary((repository, query, service, client) =>
+        {
+            var items = new List<MediaItem>
+            {
+                Item("home1.jpg", new DateTime(2026, 1, 1, 20, 0, 0), HomeLat, HomeLon),
+                Item("home2.jpg", new DateTime(2026, 1, 2, 18, 0, 0), HomeLat, HomeLon),
+                Item("rome1.jpg", new DateTime(2026, 1, 3, 10, 0, 0), FarAwayLat, FarAwayLon),
+                Item("rome2.jpg", new DateTime(2026, 1, 4, 10, 0, 0), FarAwayLat, FarAwayLon),
+                Item("home3.jpg", new DateTime(2026, 1, 5, 20, 0, 0), HomeLat, HomeLon),
+            };
+
+            service.ScanItems(items);
+
+            var trip = Assert.Single(query.GetAllTripGroups());
+            Assert.Equal("Rome, Italy", trip.Title);
+            Assert.Equal(2, trip.EventIds.Count);
+
+            var events = query.GetAllEvents();
+            var tripEventTitles = trip.EventIds
+                .Select(id => events.Single(e => e.Id == id))
+                .Select(e => e.StartAt)
+                .ToList();
+            Assert.All(tripEventTitles, d => Assert.True(d.Day is 3 or 4));
+
+            // The three home days never joined the Trip and stayed standalone.
+            var standaloneCount = events.Count(e => e.TripGroupId is null);
+            Assert.Equal(3, standaloneCount);
+        });
+    }
+
+    [Fact]
     public void A_far_away_event_with_no_neighbors_never_forms_a_trip_alone()
     {
         // TripClusterer's own MinSpanDays=2 rule still applies — one far-away

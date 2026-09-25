@@ -249,14 +249,46 @@ public sealed class ScanService(
         var candidateEvents = query.GetAllEvents()
             .Where(e => e.NamingMode == NamingMode.CuratoManaged && e.TripGroupId is null)
             .ToList();
+        var candidateEventsById = candidateEvents.ToDictionary(e => e.Id);
 
         var eventLocations = candidateEvents.ToDictionary(
             e => e.Id, e => GpsTripGate.RepresentativeLocation(e, itemsById));
 
-        var qualifyingTrips = new TripClusterer()
-            .Cluster(candidateEvents)
-            .Where(trip => trip.EventIds.Any(id => GpsTripGate.IsAwayFromHome(homeLocation, eventLocations[id])))
-            .ToList();
+        var clusterer = new TripClusterer();
+        var qualifyingTrips = new List<TripGroup>();
+
+        foreach (var candidate in clusterer.Cluster(candidateEvents))
+        {
+            // TripClusterer's own time-gap chaining has no bound on how long
+            // a run can grow, and a candidate qualifying because *something*
+            // in it is away from home doesn't mean *every* member is — trim
+            // back to just the away-anchored core (see TrimToAwayCore) before
+            // accepting it, rather than sweeping in whatever home-Denmark
+            // padding happened to chain onto the real trip on either side.
+            var trimmedIds = GpsTripGate.TrimToAwayCore(candidate.EventIds, eventLocations, homeLocation);
+            if (trimmedIds.Count == 0)
+            {
+                continue;
+            }
+
+            var members = trimmedIds.Select(id => candidateEventsById[id]).OrderBy(e => e.StartAt).ToList();
+            var startDate = DateOnly.FromDateTime(members[0].StartAt);
+            var endDate = DateOnly.FromDateTime(members[^1].EndAt);
+            if (endDate.DayNumber - startDate.DayNumber + 1 < clusterer.MinSpanDays)
+            {
+                continue; // trimming collapsed it below a real multi-day trip
+            }
+
+            qualifyingTrips.Add(new TripGroup
+            {
+                StartDate = startDate,
+                EndDate = endDate,
+                Title = $"{startDate:yyyy-MM-dd} to {endDate:yyyy-MM-dd}",
+                TitleIsAuto = true,
+                NamingMode = NamingMode.CuratoManaged,
+                EventIds = members.Select(e => e.Id).ToList()
+            });
+        }
 
         foreach (var trip in qualifyingTrips)
         {
