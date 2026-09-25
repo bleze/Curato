@@ -13,6 +13,7 @@ import {
   setHomeLocation,
   setLibraryFolder,
 } from '../api'
+import { formatTakenAt } from '../format'
 import { MAX_THUMB_MIN_WIDTH, MIN_THUMB_MIN_WIDTH, setThumbMinWidth, useThumbMinWidth } from '../thumbSize'
 import { setUse24HourTime, useUse24HourTime } from '../timeFormat'
 
@@ -318,7 +319,7 @@ export function SettingsPanel({
                       </p>
                       <p className="settings-meta">
                         {status.lastSyncAt
-                          ? `Last synced ${new Date(status.lastSyncAt).toLocaleString()} — ${status.lastSyncItemCount ?? 0} item(s) (${status.lastSyncStatus})`
+                          ? `Last synced ${formatTakenAt(status.lastSyncAt, use24Hour)} — ${status.lastSyncItemCount ?? 0} item(s)`
                           : 'Never synced yet — the first sync may take a while.'}
                       </p>
                     </div>
