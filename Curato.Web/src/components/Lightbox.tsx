@@ -1,6 +1,8 @@
 import { useCallback, useEffect, useRef, useState } from 'react'
 import type { MediaItemDto } from '../api'
 import { bumpImageVersion, fullImageUrl, rawFileUrl, rotateMediaItem } from '../api'
+import type { EventSummary } from './EventPicker'
+import { EventPicker } from './EventPicker'
 import { formatTakenAt } from '../format'
 import { useUse24HourTime } from '../timeFormat'
 
@@ -18,20 +20,12 @@ function toDatetimeLocalValue(takenAt: string): string {
   return `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}T${pad(d.getHours())}:${pad(d.getMinutes())}`
 }
 
-export interface EventSummary {
-  id: number
-  title: string
-  startAt: string
-  endAt: string
-  /** Already organized into a real on-disk folder — MoveMediaItemToEvent refuses these as a target. */
-  isOrganized: boolean
-}
-
 export function Lightbox({
   items,
   index,
   libraryPath,
   allEvents,
+  currentEventId,
   onClose,
   onNavigate,
   onTakenAtChanged,
@@ -41,13 +35,15 @@ export function Lightbox({
   items: MediaItemDto[]
   index: number
   libraryPath: string
-  /** Every Event in the library (standalone or nested under a Trip) — powers the "Move to Event" picker below. */
-  allEvents: EventSummary[]
+  /** Every Event in the library (standalone or nested under a Trip) — powers the "Move to Event" picker below. Omit (along with currentEventId/onMoveToEvent) to hide that feature entirely — e.g. TagGrid's items can span many different Events, so there's no single "current Event" to exclude. */
+  allEvents?: EventSummary[]
+  /** The Event these items are currently shown under — excluded from the picker (moving "to" the event it's already in is a no-op). */
+  currentEventId?: number
   onClose: () => void
   onNavigate: (index: number) => void
   onTakenAtChanged: (mediaItemId: number, takenAt: string) => void
   onRotated: (mediaItemId: number) => void
-  onMoveToEvent: (mediaItemId: number, targetEventId: number | null) => void
+  onMoveToEvent?: (mediaItemId: number, targetEventId: number | null) => void
 }) {
   const item = items[index]
   const use24Hour = useUse24HourTime()
@@ -203,30 +199,36 @@ export function Lightbox({
             </button>
           </>
         )}
-        <button
-          type="button"
-          className="lightbox-move-btn"
-          onClick={() => setMovingToEvent((v) => !v)}
-          title="Move this item to a different Event — fixes a wrong grouping (e.g. a corrected timestamp)"
-          aria-label="Move to Event"
-        >
-          <svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-            <path d="M9 5l7 7-7 7" />
-          </svg>
-          Move
-        </button>
-        {movingToEvent && (
-          <MoveToEventPicker
-            allEvents={allEvents}
-            search={moveSearch}
-            onSearchChange={setMoveSearch}
-            onPick={(targetEventId) => {
-              onMoveToEvent(item.id, targetEventId)
-              setMovingToEvent(false)
-              setMoveSearch('')
-            }}
-            onCancel={() => setMovingToEvent(false)}
-          />
+        {allEvents && onMoveToEvent && (
+          <>
+            <button
+              type="button"
+              className="lightbox-move-btn"
+              onClick={() => setMovingToEvent((v) => !v)}
+              title="Move this item to a different Event — fixes a wrong grouping (e.g. a corrected timestamp)"
+              aria-label="Move to Event"
+            >
+              <svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                <path d="M9 5l7 7-7 7" />
+              </svg>
+              Move
+            </button>
+            {movingToEvent && (
+              <EventPicker
+                allEvents={allEvents}
+                referenceTakenAt={item.takenAt}
+                excludeEventIds={currentEventId === undefined ? undefined : [currentEventId]}
+                search={moveSearch}
+                onSearchChange={setMoveSearch}
+                onPick={(targetEventId) => {
+                  onMoveToEvent(item.id, targetEventId)
+                  setMovingToEvent(false)
+                  setMoveSearch('')
+                }}
+                onCancel={() => setMovingToEvent(false)}
+              />
+            )}
+          </>
         )}
       </div>
       {index > 0 && (
@@ -354,59 +356,3 @@ export function Lightbox({
   )
 }
 
-/**
- * The "Move to Event" toolbar button's dropdown — a searchable list of every
- * Event in the library (already-organized ones included, but disabled: see
- * EventSummary.isOrganized/LibraryRepository.MoveMediaItemToEvent) plus a
- * "move to a new Event" option at the top, so an item can jump any distance
- * rather than just to an adjacent day.
- */
-function MoveToEventPicker({
-  allEvents,
-  search,
-  onSearchChange,
-  onPick,
-  onCancel,
-}: {
-  allEvents: EventSummary[]
-  search: string
-  onSearchChange: (value: string) => void
-  onPick: (targetEventId: number | null) => void
-  onCancel: () => void
-}) {
-  const query = search.trim().toLowerCase()
-  const matches = query
-    ? allEvents.filter((e) => e.title.toLowerCase().includes(query))
-    : allEvents
-  const sorted = [...matches].sort((a, b) => b.startAt.localeCompare(a.startAt))
-
-  return (
-    <div className="move-to-event-picker" onClick={(e) => e.stopPropagation()}>
-      <input
-        type="text"
-        placeholder="Search events by title…"
-        value={search}
-        onChange={(e) => onSearchChange(e.target.value)}
-        autoFocus
-      />
-      <ul>
-        <li>
-          <button type="button" onClick={() => onPick(null)}>
-            + Move to a new Event
-          </button>
-        </li>
-        {sorted.map((e) => (
-          <li key={e.id}>
-            <button type="button" disabled={e.isOrganized} onClick={() => onPick(e.id)} title={e.isOrganized ? 'Already organized into a real folder — can\'t move items into it here' : undefined}>
-              {e.title} <span className="move-to-event-date">{new Date(e.startAt).toLocaleDateString()}</span>
-            </button>
-          </li>
-        ))}
-        {sorted.length === 0 && <li className="move-to-event-empty">No matching events</li>}
-      </ul>
-      <button type="button" className="move-to-event-cancel" onClick={onCancel}>
-        Cancel
-      </button>
-    </div>
-  )
-}

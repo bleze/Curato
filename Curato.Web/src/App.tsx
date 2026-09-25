@@ -8,6 +8,7 @@ import {
   getLibrary,
   getLibraryFolder,
   logout,
+  mergeEventInto,
   moveMediaItemToEvent,
   organizeLibrary,
   renameEvent,
@@ -369,6 +370,23 @@ function App() {
     }
   }
 
+  // Sequential, not fired-off-in-parallel: several merges hitting the same
+  // library.db concurrently risked overlapping write transactions, and this
+  // also means one final library refresh instead of one per source Event.
+  async function handleMergeEventsInto(sourceEventIds: number[], targetEventId: number) {
+    if (!loadedPath) return
+    setError(null)
+    try {
+      for (const sourceEventId of sourceEventIds) {
+        await mergeEventInto(loadedPath, sourceEventId, targetEventId)
+      }
+      const lib = await getLibrary(loadedPath)
+      setLibrary(lib)
+    } catch (err) {
+      setError(err instanceof Error ? err.message : String(err))
+    }
+  }
+
   async function handleLogout() {
     await logout()
     setLibrary(null)
@@ -525,6 +543,7 @@ function App() {
             onMoveMediaItemToEvent={handleMoveMediaItemToEvent}
             onCreateTripGroup={handleCreateTripGroup}
             onUngroupTripGroup={handleUngroupTripGroup}
+            onMergeEventsInto={handleMergeEventsInto}
           />
         </div>
       )}

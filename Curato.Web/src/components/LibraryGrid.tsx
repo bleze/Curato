@@ -4,6 +4,8 @@ import type { EventDto, LibraryDto, MediaItemDto, TripGroupDto } from '../api'
 import { bumpImageVersion, rotateMediaItem, thumbnailUrl } from '../api'
 import type { DateMarker } from './DateScrubber'
 import { DateScrubber } from './DateScrubber'
+import type { EventSummary } from './EventPicker'
+import { EventPicker } from './EventPicker'
 import { formatTakenAt } from '../format'
 import { Lightbox } from './Lightbox'
 import { useThumbMinWidth } from '../thumbSize'
@@ -193,6 +195,7 @@ export function LibraryGrid({
   onMoveMediaItemToEvent,
   onCreateTripGroup,
   onUngroupTripGroup,
+  onMergeEventsInto,
 }: {
   library: LibraryDto
   libraryPath: string
@@ -204,6 +207,7 @@ export function LibraryGrid({
   onMoveMediaItemToEvent: (mediaItemId: number, targetEventId: number | null) => void
   onCreateTripGroup: (eventIds: number[]) => void
   onUngroupTripGroup: (tripGroupId: number) => void
+  onMergeEventsInto: (sourceEventIds: number[], targetEventId: number) => void
 }) {
   const scrollRef = useRef<HTMLDivElement>(null)
   // null = not yet measured. Deliberately never guess a fallback column
@@ -247,7 +251,7 @@ export function LibraryGrid({
   // prop's own doc comment in DateScrubber.tsx for why a separately-measured
   // "container height" state wasn't the same reference frame.
   const scrubberRailRef = useRef<HTMLDivElement>(null)
-  const [lightbox, setLightbox] = useState<{ items: MediaItemDto[]; index: number } | null>(null)
+  const [lightbox, setLightbox] = useState<{ items: MediaItemDto[]; index: number; eventId: number } | null>(null)
   // A ref, not state — this changes on every mouse move between thumbnails,
   // and none of that needs to trigger a re-render of the (potentially huge)
   // virtualized grid; a keydown handler only ever needs its *current* value
@@ -280,6 +284,22 @@ export function LibraryGrid({
       else next.add(eventId)
       return next
     })
+  }
+  // Backs the shared "pick an Event" popup for both a single photo's own
+  // Move icon (grid tile, item mode) and the selection bar's "Merge into
+  // another Event" action (event mode — merges every checked Event into
+  // whichever target gets picked, so it works the same whether one or
+  // several are checked; "Group into Trip" is offered alongside it once 2+
+  // are checked, since that action alone needs more than one source).
+  const [moveTarget, setMoveTarget] = useState<
+    | { kind: 'item'; item: MediaItemDto; eventId: number }
+    | { kind: 'event'; eventIds: number[]; referenceStartAt: string }
+    | null
+  >(null)
+  const [moveSearch, setMoveSearch] = useState('')
+  function closeMovePicker() {
+    setMoveTarget(null)
+    setMoveSearch('')
   }
   // Flattened once per library load for the Lightbox's "Move to Event"
   // picker — it needs every Event's id/title/date range regardless of
@@ -528,8 +548,9 @@ export function LibraryGrid({
                       suspendLoad={virtualizer.isScrolling}
                       requestedIdsRef={requestedIdsRef}
                       use24Hour={use24Hour}
-                      onOpen={() => setLightbox({ items: block.event.items, index: block.startIndex + i })}
+                      onOpen={() => setLightbox({ items: block.event.items, index: block.startIndex + i, eventId: block.event.id })}
                       onDelete={onDelete}
+                      onMove={() => setMoveTarget({ kind: 'item', item, eventId: block.event.id })}
                       onHoverChange={(hovering) => {
                         hoveredPhotoRef.current = hovering && item.kind === 'Photo' ? item : null
                       }}
@@ -557,15 +578,53 @@ export function LibraryGrid({
           <button
             type="button"
             onClick={() => {
-              onCreateTripGroup([...selectedEventIds])
-              setSelectedEventIds(new Set())
+              const ids = [...selectedEventIds]
+              const earliest = ids
+                .map((id) => allEventSummaries.find((e) => e.id === id))
+                .filter((e): e is EventSummary => e !== undefined)
+                .sort((a, b) => a.startAt.localeCompare(b.startAt))[0]
+              if (earliest) setMoveTarget({ kind: 'event', eventIds: ids, referenceStartAt: earliest.startAt })
             }}
           >
-            Group into Trip
+            Merge into another Event
           </button>
+          {selectedEventIds.size >= 2 && (
+            <button
+              type="button"
+              onClick={() => {
+                onCreateTripGroup([...selectedEventIds])
+                setSelectedEventIds(new Set())
+              }}
+            >
+              Group into Trip
+            </button>
+          )}
           <button type="button" onClick={() => setSelectedEventIds(new Set())}>
             Cancel
           </button>
+        </div>
+      )}
+
+      {moveTarget && (
+        <div className="event-picker-overlay" onClick={closeMovePicker}>
+          <EventPicker
+            allEvents={allEventSummaries}
+            referenceTakenAt={moveTarget.kind === 'item' ? moveTarget.item.takenAt : moveTarget.referenceStartAt}
+            excludeEventIds={moveTarget.kind === 'item' ? [moveTarget.eventId] : moveTarget.eventIds}
+            allowNewEvent={moveTarget.kind === 'item'}
+            search={moveSearch}
+            onSearchChange={setMoveSearch}
+            onPick={(targetEventId) => {
+              if (moveTarget.kind === 'item') {
+                onMoveMediaItemToEvent(moveTarget.item.id, targetEventId)
+              } else if (targetEventId !== null) {
+                onMergeEventsInto(moveTarget.eventIds, targetEventId)
+                setSelectedEventIds(new Set())
+              }
+              closeMovePicker()
+            }}
+            onCancel={closeMovePicker}
+          />
         </div>
       )}
 
@@ -575,6 +634,7 @@ export function LibraryGrid({
           index={lightbox.index}
           libraryPath={libraryPath}
           allEvents={allEventSummaries}
+          currentEventId={lightbox.eventId}
           onClose={() => setLightbox(null)}
           onNavigate={(index) => setLightbox((current) => (current ? { ...current, index } : current))}
           onTakenAtChanged={onTakenAtChanged}
@@ -679,6 +739,7 @@ function ThumbTile({
   use24Hour,
   onOpen,
   onDelete,
+  onMove,
   onHoverChange,
 }: {
   item: MediaItemDto
@@ -706,6 +767,7 @@ function ThumbTile({
   requestedIdsRef: React.RefObject<Set<number>>
   onOpen: () => void
   onDelete: (mediaItemId: number) => void
+  onMove: () => void
   onHoverChange: (hovering: boolean) => void
 }) {
   // Deliberately reading/writing the ref synchronously during render rather
@@ -762,6 +824,19 @@ function ThumbTile({
         </div>
       )}
       {item.liveVideoRelativePath && <span className="live-badge">LIVE</span>}
+      <button
+        type="button"
+        className="thumb-move"
+        title="Move to a different Event"
+        onClick={(e) => {
+          e.stopPropagation()
+          onMove()
+        }}
+      >
+        <svg viewBox="0 0 24 24" width="12" height="12" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
+          <path d="M9 5l7 7-7 7" />
+        </svg>
+      </button>
       <button type="button" className="thumb-delete" title="Move to Recycle Bin" onClick={() => onDelete(item.id)}>
         &times;
       </button>

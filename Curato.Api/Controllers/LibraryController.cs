@@ -294,6 +294,38 @@ public sealed class LibraryController(LibraryOperationGate gate, ServerDatabase 
             : NotFound($"No TripGroup with id {tripGroupId}");
     }
 
+    public sealed record MergeEventRequest(string Path, long SourceEventId, long TargetEventId);
+
+    /// <summary>
+    /// Gathers a wrongly-split Event's members into another Event in one
+    /// action — e.g. a bad clustering gap, or a batch of photos someone else
+    /// shared with wrong iCloud dates that landed in their own Event instead
+    /// of joining the real one. See LibraryRepository.MergeEventInto.
+    /// </summary>
+    [HttpPost("events/merge")]
+    public IActionResult MergeEventInto([FromBody] MergeEventRequest request)
+    {
+        if (!Directory.Exists(request.Path))
+        {
+            return NotFound($"Folder not found: {request.Path}");
+        }
+
+        var database = new LibraryDatabase(request.Path);
+        database.EnsureSchema();
+        var result = new LibraryRepository(database).MergeEventInto(request.SourceEventId, request.TargetEventId);
+
+        return result switch
+        {
+            MergeEventResult.Success => NoContent(),
+            MergeEventResult.SourceEqualsTarget => BadRequest("An Event can't be merged into itself."),
+            MergeEventResult.SourceEventNotFound => NotFound($"No Event with id {request.SourceEventId}"),
+            MergeEventResult.TargetEventNotFound => NotFound($"No Event with id {request.TargetEventId}"),
+            MergeEventResult.SourceEventOrganized => Conflict("This Event has already been organized into a real folder — merging it here would desync the database from what's actually on disk."),
+            MergeEventResult.TargetEventOrganized => Conflict("That Event has already been organized into a real folder — merging into it isn't supported here."),
+            _ => StatusCode(500)
+        };
+    }
+
     public sealed record RenameEventRequest(string Path, long EventId, string Title);
     public sealed record RenameTripGroupRequest(string Path, long TripGroupId, string Title);
 

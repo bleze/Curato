@@ -9,6 +9,8 @@ public enum MoveMediaItemResult { Success, MediaItemNotFound, TargetEventNotFoun
 
 public enum CreateTripGroupResult { Success, NoEventsGiven, EventNotFound, EventAlreadyInATrip }
 
+public enum MergeEventResult { Success, SourceEqualsTarget, SourceEventNotFound, TargetEventNotFound, SourceEventOrganized, TargetEventOrganized }
+
 /// <summary>
 /// First, minimal persistence slice for Phase 1: save a scan's MediaItems and
 /// the Events/TripGroups clustered from them. Re-scanning the same folder is
@@ -431,6 +433,67 @@ public sealed class LibraryRepository(LibraryDatabase database)
 
         transaction.Commit();
         return MoveMediaItemResult.Success;
+    }
+
+    /// <summary>
+    /// Merges every MediaItem out of <paramref name="sourceEventId"/> into
+    /// <paramref name="targetEventId"/> in one pass and deletes the
+    /// now-empty source — the bulk counterpart to <see cref="MoveMediaItemToEvent"/>
+    /// for "these were wrongly split into two Events" (a bad clustering gap,
+    /// or a batch of photos someone else shared with wrong iCloud dates that
+    /// landed in their own Event instead of joining the real one). Same
+    /// safety rule as a single-item move: refuses if either Event already has
+    /// a real on-disk FolderPath, since Curato never auto-moves files for
+    /// content it hasn't been told to Organize.
+    /// </summary>
+    public MergeEventResult MergeEventInto(long sourceEventId, long targetEventId)
+    {
+        if (sourceEventId == targetEventId)
+        {
+            return MergeEventResult.SourceEqualsTarget;
+        }
+
+        using var connection = database.OpenConnection();
+        using var transaction = connection.BeginTransaction();
+
+        var sourceRow = connection.QuerySingleOrDefault(
+            "SELECT FolderPath FROM Event WHERE Id = @Id", new { Id = sourceEventId }, transaction);
+        if (sourceRow is null)
+        {
+            transaction.Rollback();
+            return MergeEventResult.SourceEventNotFound;
+        }
+
+        string? sourceFolderPath = sourceRow.FolderPath;
+        if (sourceFolderPath is not null)
+        {
+            transaction.Rollback();
+            return MergeEventResult.SourceEventOrganized;
+        }
+
+        var targetRow = connection.QuerySingleOrDefault(
+            "SELECT FolderPath FROM Event WHERE Id = @Id", new { Id = targetEventId }, transaction);
+        if (targetRow is null)
+        {
+            transaction.Rollback();
+            return MergeEventResult.TargetEventNotFound;
+        }
+
+        string? targetFolderPath = targetRow.FolderPath;
+        if (targetFolderPath is not null)
+        {
+            transaction.Rollback();
+            return MergeEventResult.TargetEventOrganized;
+        }
+
+        connection.Execute(
+            "UPDATE EventMediaItem SET EventId = @TargetId WHERE EventId = @SourceId",
+            new { TargetId = targetEventId, SourceId = sourceEventId }, transaction);
+        ResortEventMembership(connection, transaction, targetEventId);
+        connection.Execute("DELETE FROM Event WHERE Id = @SourceId", new { SourceId = sourceEventId }, transaction);
+
+        transaction.Commit();
+        return MergeEventResult.Success;
     }
 
     private static DateTime ParseDateTime(string value) =>

@@ -292,6 +292,15 @@ export function ungroupTripGroup(path: string, tripGroupId: number): Promise<voi
   }).then(expectOk)
 }
 
+/** Merges every item out of sourceEventId into targetEventId and deletes the now-empty source. Refused (409) if either Event is already organized into a real folder. */
+export function mergeEventInto(path: string, sourceEventId: number, targetEventId: number): Promise<void> {
+  return fetch('/api/events/merge', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ path, sourceEventId, targetEventId }),
+  }).then(expectOk)
+}
+
 // An edit (e.g. Lightbox rotate) changes what a MediaItem's thumbnail/full
 // image render to without changing its URL at all, so the browser happily
 // keeps showing its old cached response everywhere that URL is used —

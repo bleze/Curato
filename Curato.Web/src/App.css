@@ -733,6 +733,47 @@ button {
   opacity: 1;
 }
 
+/* Mirrors .thumb-delete exactly (same size/shape/theme-independent styling),
+   just the opposite corner — left for Move, right for Delete. */
+.thumb-move {
+  position: absolute;
+  top: 4px;
+  left: 4px;
+  width: 20px;
+  height: 20px;
+  padding: 0;
+  border: none;
+  border-radius: 50%;
+  background: rgba(0, 0, 0, 0.55);
+  color: white;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  cursor: pointer;
+  opacity: 0;
+  transition: opacity 0.15s;
+}
+
+.thumb:hover .thumb-move {
+  opacity: 1;
+}
+
+.event-picker-overlay {
+  position: fixed;
+  inset: 0;
+  background: rgba(0, 0, 0, 0.5);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  z-index: 200;
+}
+
+.event-picker-overlay .move-to-event-picker {
+  position: static;
+  width: 320px;
+  max-height: 60vh;
+}
+
 .recyclebin-panel {
   margin: 16px 0;
   padding: 14px 18px;
@@ -1212,9 +1253,6 @@ button {
 }
 
 .move-to-event-picker {
-  position: absolute;
-  top: 44px;
-  left: 0;
   width: 260px;
   max-height: 320px;
   display: flex;
@@ -1225,6 +1263,17 @@ button {
   border-radius: 8px;
   box-shadow: 0 8px 24px rgba(0, 0, 0, 0.35);
   padding: 8px;
+}
+
+/* Only the Lightbox toolbar's popup is anchored as a dropdown under its
+   trigger button — the grid tile Move icon and the "Merge into another
+   Event" action both use .event-picker-overlay instead (a centered modal),
+   since a dropdown anchored to a small, densely-packed grid tile would risk
+   getting clipped by neighboring content. */
+.lightbox-toolbar .move-to-event-picker {
+  position: absolute;
+  top: 44px;
+  left: 0;
   z-index: 10;
 }
 
@@ -1282,14 +1331,24 @@ button {
   padding: 6px 8px;
 }
 
-.move-to-event-cancel {
+/* Same visual treatment as the Settings dialog's own Cancel button
+   (.modal-footer-cancel) for consistency. Qualified with its parent class
+   (not just `.move-to-event-cancel` alone) so this beats `.lightbox-toolbar
+   button`'s 36px-circle icon-button sizing on specificity — without that,
+   the cancel button rendered as a tiny near-invisible circle instead of a
+   proper full-width bar (confirmed live). */
+.move-to-event-picker .move-to-event-cancel {
   margin-top: 6px;
   width: 100%;
-  padding: 6px !important;
-  border-radius: 6px !important;
-  background: var(--surface-muted) !important;
-  color: var(--text-muted) !important;
-  font-size: 12.5px;
+  height: auto;
+  padding: 7px 16px;
+  border-radius: 6px;
+  border: 1px solid var(--border);
+  background: var(--surface);
+  color: var(--text-muted);
+  font-size: 13px;
+  font-weight: 600;
+  cursor: pointer;
 }
 
 .lightbox-toolbar button {
