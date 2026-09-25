@@ -322,6 +322,12 @@ button {
   min-height: 0;
   overflow-y: auto;
   overflow-x: hidden;
+  /* Without this, scrolling past this element's own bottom "chains" into
+     whatever scrollable ancestor is next (the page/body here) — reported
+     live as the browser's own outer scrollbar suddenly appearing, and the
+     page itself visibly jumping, when scrolling past the end of the grid.
+     contain stops the overscroll here instead of leaking it upward. */
+  overscroll-behavior: contain;
   padding-bottom: 48px;
   /* A hovered .thumb scales up (transform: scale(1.08)) around its own
      center, so it grows a few px past its own box on every side —
@@ -396,8 +402,19 @@ button {
    a click happened to start on top of the thumb. */
 .date-scrubber-thumb {
   position: absolute;
+  top: 0;
   left: 2px;
   right: 2px;
+  /* Moved via transform (LibraryGrid writes translateY on every scroll
+     event), never top — reported live as "not smooth, jumps in big
+     steps" even after the position write was already moved off React
+     state. top is a layout-triggering property: writing it on every
+     scroll event forces the browser to recompute layout for this element
+     each time, competing with the virtualized grid's own much heavier
+     per-scroll DOM churn for the same main-thread time. transform is
+     compositor-only — no layout, no repaint of anything else — which is
+     the standard fix for exactly this class of jank. */
+  will-change: transform;
   /* No min-height here on purpose, even though a very tall library makes
      this render just a few pixels tall — clamping it in CSS without also
      adjusting the travelFraction math in DateScrubber.tsx would silently

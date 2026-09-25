@@ -236,6 +236,11 @@ export function LibraryGrid({
   // virtualized grid on every single scroll event, the same class of
   // problem hoveredPhotoRef/requestedIdsRef below already exist to avoid.
   const scrubberThumbRef = useRef<HTMLDivElement>(null)
+  // Owned here (not inside DateScrubber) so its real rendered height can be
+  // read directly for the thumb's pixel-based transform below — see that
+  // prop's own doc comment in DateScrubber.tsx for why a separately-measured
+  // "container height" state wasn't the same reference frame.
+  const scrubberRailRef = useRef<HTMLDivElement>(null)
   const [lightbox, setLightbox] = useState<{ items: MediaItemDto[]; index: number } | null>(null)
   // A ref, not state — this changes on every mouse move between thumbnails,
   // and none of that needs to trigger a re-render of the (potentially huge)
@@ -331,14 +336,28 @@ export function LibraryGrid({
   // themselves change (a resize, a thumbnail-size change, content loading
   // in), not just on every scroll event, so the thumb never sits stale
   // relative to a range that just changed out from under it.
+  //
+  // Writes transform, never top — still reported as "not smooth, jumps in
+  // big steps" even after moving this off React state: top is a layout-
+  // triggering property, forcing a layout recompute on every single scroll
+  // event, right when the virtualized grid's own much heavier per-scroll
+  // DOM churn is already competing for that same main-thread time.
+  // transform is compositor-only. Reads the rail's own real height on each
+  // call (via scrubberRailRef, not the separately-measured containerHeight
+  // state) — confirmed live as a real bug when containerHeight was used
+  // instead: it's the *scroll element's* content-box height, excluding that
+  // element's own padding, which isn't the same box every label's
+  // percentage-based position is relative to.
   useEffect(() => {
     const el = scrollRef.current
     if (!el) return
     function updateThumbPosition() {
       const thumb = scrubberThumbRef.current
-      if (!el || !thumb) return
+      const rail = scrubberRailRef.current
+      if (!el || !thumb || !rail) return
       const fraction = scrollableRange > 0 ? Math.min(1, el.scrollTop / scrollableRange) : 0
-      thumb.style.top = `${fraction * scrubberTravelFraction * 100}%`
+      const pixelOffset = fraction * scrubberTravelFraction * rail.getBoundingClientRect().height
+      thumb.style.transform = `translateY(${pixelOffset}px)`
     }
     updateThumbPosition()
     el.addEventListener('scroll', updateThumbPosition, { passive: true })
@@ -478,6 +497,7 @@ export function LibraryGrid({
         onJump={(fraction) => virtualizer.scrollToOffset(fraction * scrollableRange, { align: 'start' })}
         thumbSizeFraction={scrubberThumbSizeFraction}
         thumbRef={scrubberThumbRef}
+        railRef={scrubberRailRef}
       />
 
       {lightbox && (

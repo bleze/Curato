@@ -1,4 +1,4 @@
-import { useRef, useState } from 'react'
+import { useState } from 'react'
 
 export interface DateMarker {
   /** 0-1 position within the grid's scrollable range — see LibraryGrid's blockHeight/buildDateMarkers. */
@@ -29,6 +29,7 @@ export function DateScrubber({
   onJump,
   thumbSizeFraction,
   thumbRef,
+  railRef,
 }: {
   markers: DateMarker[]
   /** Fraction (0-1) of the grid's scrollable range to jump to — see LibraryGrid's onJump wiring (virtualizer.scrollToOffset). */
@@ -36,18 +37,32 @@ export function DateScrubber({
   /** clientHeight / totalContentHeight — how much of the rail's length the thumb itself occupies. */
   thumbSizeFraction: number
   /**
-   * LibraryGrid writes the thumb's `top` directly via this ref on every
-   * scroll event, instead of passing it down as a prop — reported live as
-   * "jumps in big steps": a scroll-driven prop meant a React state update
-   * (and a re-render of this whole heavy virtualized grid) on every single
-   * scroll event, which is exactly the kind of high-frequency update this
-   * codebase already avoids elsewhere (see hoveredPhotoRef/requestedIdsRef
-   * in LibraryGrid) for the same reason. Same fix here: bypass React for
-   * this one high-frequency write and mutate the DOM node directly.
+   * LibraryGrid writes the thumb's `transform` directly via this ref on
+   * every scroll event, instead of passing it down as a prop — reported
+   * live as "jumps in big steps": a scroll-driven prop meant a React state
+   * update (and a re-render of this whole heavy virtualized grid) on every
+   * single scroll event, which is exactly the kind of high-frequency update
+   * this codebase already avoids elsewhere (see hoveredPhotoRef/
+   * requestedIdsRef in LibraryGrid) for the same reason. Same fix here:
+   * bypass React for this one high-frequency write and mutate the DOM node
+   * directly.
    */
   thumbRef: React.RefObject<HTMLDivElement | null>
+  /**
+   * Owned by LibraryGrid (not created internally here) so it can read this
+   * exact element's real rendered height for the thumb's pixel-based
+   * transform — confirmed live as a real bug when a separately-measured
+   * "container height" state was used instead: it was the *scroll
+   * element's* content-box height, excluding that element's own padding
+   * (~52px, padding-top + padding-bottom), which is not the same box this
+   * rail's own height (and therefore every label's percentage-based
+   * position) is relative to. Reading this ref's own getBoundingClientRect()
+   * instead guarantees the same reference frame as the labels, by
+   * construction, the same way sharing thumbSizeFraction/travelFraction
+   * already does.
+   */
+  railRef: React.RefObject<HTMLDivElement | null>
 }) {
-  const railRef = useRef<HTMLDivElement>(null)
   const [hover, setHover] = useState<{ y: number; label: string } | null>(null)
 
   if (markers.length < 2) {
