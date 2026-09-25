@@ -19,7 +19,7 @@ namespace Curato.Api.Controllers;
 /// </summary>
 [ApiController]
 [Route("api/[controller]")]
-public sealed class ScanController(LibraryOperationGate gate) : ControllerBase
+public sealed class ScanController(LibraryOperationGate gate, ServerDatabase serverDatabase) : ControllerBase
 {
     public sealed record ScanRequest(string Path);
     public sealed record ScanResponse(ScanResult Scan, PicasaImportResult PicasaImport);
@@ -32,12 +32,14 @@ public sealed class ScanController(LibraryOperationGate gate) : ControllerBase
             return NotFound($"Folder not found: {request.Path}");
         }
 
+        var homeLabel = new HomeLocationRepository(serverDatabase).Get();
+
         using var release = await gate.AcquireAsync(request.Path);
         var database = new LibraryDatabase(request.Path);
         database.EnsureSchema();
         var query = new LibraryQueryService(database);
 
-        var scanResult = new ScanService(new LibraryRepository(database), query, database).Scan(request.Path);
+        var scanResult = new ScanService(new LibraryRepository(database), query, database, homeLabel: homeLabel).Scan(request.Path);
         var picasaResult = new PicasaImportService(database, query, new PicasaImportRepository(database)).Import();
 
         return Ok(new ScanResponse(scanResult, picasaResult));

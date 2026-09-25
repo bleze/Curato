@@ -81,6 +81,18 @@ public sealed class ServerDatabase
                 LastSyncMessage TEXT NULL,
                 LastSyncItemCount INTEGER NULL
             );
+
+            -- A user-supplied label for wherever "home" actually is (e.g.
+            -- "Kirke Hyllinge" rather than whatever county-level name
+            -- Nominatim's reverse-geocoding happens to return for that area)
+            -- — see ReverseGeocoder's home-override params and
+            -- GpsTripGate.HomeOverrideLabel. Optional: with no row here,
+            -- location display/auto-titling falls back to the plain
+            -- reverse-geocoded name everywhere, same as before this existed.
+            CREATE TABLE IF NOT EXISTS HomeLocation (
+                Id INTEGER PRIMARY KEY CHECK (Id = 1),
+                Label TEXT NOT NULL
+            );
             """;
         command.ExecuteNonQuery();
 

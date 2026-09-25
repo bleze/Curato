@@ -1,4 +1,5 @@
 using Curato.Data;
+using Curato.Organizer;
 
 namespace Curato.Api;
 
@@ -56,6 +57,10 @@ public sealed class GeocodeWarmupBackgroundService(
         var geocoder = new ReverseGeocoder(database, new NominatimClient());
         var query = new LibraryQueryService(database);
 
+        var homeLabel = new HomeLocationRepository(serverDatabase).Get();
+        var mediaItems = query.GetAllMediaItems();
+        var homeLocation = GpsTripGate.DetectHomeLocation(mediaItems);
+
         // Every distinct ~1km bucket any GPS-tagged MediaItem falls into —
         // resolving by bucket (not by item, and not by each item's own exact
         // coordinate, which almost never repeats bit-for-bit even for two
@@ -65,7 +70,7 @@ public sealed class GeocodeWarmupBackgroundService(
         // ReverseGeocoder's own bucket size exactly, so resolving this
         // rounded point warms the same cache row a GetLibrary lookup for any
         // of that bucket's real items will find.
-        var buckets = query.GetAllMediaItems()
+        var buckets = mediaItems
             .Where(m => m.Latitude is not null && m.Longitude is not null)
             .Select(m => (Lat: Math.Round(m.Latitude!.Value, 2), Lon: Math.Round(m.Longitude!.Value, 2)))
             .Distinct()
@@ -73,6 +78,11 @@ public sealed class GeocodeWarmupBackgroundService(
 
         foreach (var (lat, lon) in buckets)
         {
+            if (GpsTripGate.HomeOverrideLabel(homeLocation, homeLabel, (lat, lon)) is not null)
+            {
+                continue; // the user's own Home label always wins here — no need to ever resolve/cache a real name
+            }
+
             if (geocoder.TryGetCached(lat, lon) is not null)
             {
                 continue; // already warmed by a previous pass

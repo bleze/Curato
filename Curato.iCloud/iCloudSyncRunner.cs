@@ -247,19 +247,22 @@ public sealed class iCloudSyncRunner(
                 ScanResult: null);
         }
 
-        using var release = await gate.AcquireAsync(libraryFolder, cancellationToken);
-        var database = new LibraryDatabase(libraryFolder);
-        database.EnsureSchema();
-        var query = new LibraryQueryService(database);
+        var homeLabel = new HomeLocationRepository(database).Get();
 
-        var redownloadsRemoved = RemoveExactRedownloads(libraryFolder, database, query);
+        using var release = await gate.AcquireAsync(libraryFolder, cancellationToken);
+        var libraryDatabase = new LibraryDatabase(libraryFolder);
+        libraryDatabase.EnsureSchema();
+        var query = new LibraryQueryService(libraryDatabase);
+
+        var redownloadsRemoved = RemoveExactRedownloads(libraryFolder, libraryDatabase, query);
         if (redownloadsRemoved > 0)
         {
             logger.LogInformation(
                 "Discarded {Count} re-downloaded file(s) already indexed elsewhere in the library.", redownloadsRemoved);
         }
 
-        var scanResult = new ScanService(new LibraryRepository(database), query, database).Scan(libraryFolder);
+        var scanResult = new ScanService(new LibraryRepository(libraryDatabase), query, libraryDatabase, homeLabel: homeLabel)
+            .Scan(libraryFolder);
 
         return new iCloudSyncResult(Success: true, ErrorMessage: null, itemsDownloaded, scanResult);
     }

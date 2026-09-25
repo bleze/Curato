@@ -16,6 +16,15 @@ public static class GpsTripGate
     /// before it's treated as a real trip rather than everyday life nearby.</summary>
     public const double AwayFromHomeThresholdKm = 50.0;
 
+    /// <summary>How close a point has to be to "home" for the user's own
+    /// <see cref="Curato.Data.HomeLocationRepository"/> label to override
+    /// whatever Nominatim would otherwise return for it — wide enough to
+    /// cover the county-level area Nominatim tends to collapse a real home
+    /// address into, narrow enough to stay well clear of
+    /// <see cref="AwayFromHomeThresholdKm"/> (nothing that would ever
+    /// qualify as "away" should also be eligible for the home override).</summary>
+    public const double HomeOverrideRadiusKm = 15.0;
+
     /// <summary>An Event's representative point — the average of whichever of
     /// its members actually carry GPS coordinates; null if none do (an Event
     /// with no GPS-tagged members has no location opinion of its own, but can
@@ -60,4 +69,17 @@ public static class GpsTripGate
     public static bool IsAwayFromHome((double Lat, double Lon)? home, (double Lat, double Lon)? location) =>
         home is { } h && location is { } loc &&
         GeoDistance.HaversineKm(h.Lat, h.Lon, loc.Lat, loc.Lon) > AwayFromHomeThresholdKm;
+
+    /// <summary>
+    /// The user's custom "Home" label (Settings), if <paramref name="point"/>
+    /// is close enough to the auto-detected home location to use it instead
+    /// of a real reverse-geocode — null (meaning "no override, geocode
+    /// normally") whenever there's no home location, no custom label set, or
+    /// the point is too far away to plausibly still be "home".
+    /// </summary>
+    public static string? HomeOverrideLabel((double Lat, double Lon)? home, string? homeLabel, (double Lat, double Lon) point) =>
+        home is { } h && homeLabel is not null &&
+        GeoDistance.HaversineKm(h.Lat, h.Lon, point.Lat, point.Lon) <= HomeOverrideRadiusKm
+            ? homeLabel
+            : null;
 }

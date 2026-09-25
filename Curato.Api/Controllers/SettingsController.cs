@@ -40,4 +40,35 @@ public sealed class SettingsController(ServerDatabase database) : ControllerBase
         new LibraryFolderRepository(database).Set(Path.GetFullPath(request.Path));
         return Ok();
     }
+
+    public sealed record HomeLocationResponse(string? Label);
+    public sealed record SetHomeLocationRequest(string? Label);
+
+    /// <summary>
+    /// A custom label for wherever "home" actually is (e.g. "Kirke Hyllinge"),
+    /// shown instead of Nominatim's own reverse-geocoded name for anything
+    /// GpsTripGate detects as nearby — confirmed live that Nominatim's result
+    /// for a real home address can be as coarse as a whole county. Optional;
+    /// clearing it (empty/whitespace) reverts to plain reverse-geocoding
+    /// everywhere. See GpsTripGate.HomeOverrideLabel for how it's applied.
+    /// </summary>
+    [HttpGet("home-location")]
+    public ActionResult<HomeLocationResponse> GetHomeLocation() =>
+        Ok(new HomeLocationResponse(new HomeLocationRepository(database).Get()));
+
+    [HttpPut("home-location")]
+    public IActionResult SetHomeLocation([FromBody] SetHomeLocationRequest request)
+    {
+        var repository = new HomeLocationRepository(database);
+        if (string.IsNullOrWhiteSpace(request.Label))
+        {
+            repository.Clear();
+        }
+        else
+        {
+            repository.Set(request.Label.Trim());
+        }
+
+        return Ok();
+    }
 }

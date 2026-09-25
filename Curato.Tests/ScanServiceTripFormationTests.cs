@@ -14,15 +14,23 @@ public class ScanServiceTripFormationTests
     private const double FarAwayLat = 41.3874; // Rome — genuinely another country
     private const double FarAwayLon = 12.4939;
 
-    private sealed class FakeNominatimClient(string? response = "Rome, Italy") : INominatimClient
+    private sealed class FakeNominatimClient : INominatimClient
     {
         public int CallCount;
-        public string? Response { get; set; } = response;
 
         public string? ReverseGeocode(double latitude, double longitude)
         {
             CallCount++;
-            return Response;
+
+            // Rounded match against the two named test coordinates above —
+            // real enough that Home vs. Rome events resolve to genuinely
+            // different (and correctly distinguishable) place names.
+            return (Math.Round(latitude, 1), Math.Round(longitude, 1)) switch
+            {
+                (55.7, 12.6) => "Copenhagen, Denmark", // rounds like HomeLat/HomeLon
+                (41.4, 12.5) => "Rome, Italy", // rounds like FarAwayLat/FarAwayLon
+                _ => "Nowhere in particular"
+            };
         }
     }
 
@@ -81,11 +89,17 @@ public class ScanServiceTripFormationTests
             var trip = Assert.Single(query.GetAllTripGroups());
             Assert.Equal("Rome, Italy", trip.Title);
             Assert.Equal(2, trip.EventIds.Count);
-            Assert.Equal(1, client.CallCount);
+            // 2 real lookups, not 4: EnrichAutoTitlesWithLocation resolves
+            // once per *distinct* location (the two home days share one
+            // cached lookup, the two Rome days share another) before
+            // FormGpsAwareTrips's own trip-titling call reuses that same
+            // now-cached Rome entry.
+            Assert.Equal(2, client.CallCount);
 
             // The two nearby days never joined the trip and stayed standalone.
-            var standaloneEvents = query.GetAllEvents().Where(e => e.TripGroupId is null);
-            Assert.Equal(2, standaloneEvents.Count());
+            var standaloneEvents = query.GetAllEvents().Where(e => e.TripGroupId is null).ToList();
+            Assert.Equal(2, standaloneEvents.Count);
+            Assert.All(standaloneEvents, e => Assert.EndsWith("Copenhagen, Denmark", e.Title));
         });
     }
 
@@ -103,7 +117,11 @@ public class ScanServiceTripFormationTests
             service.ScanItems(items);
 
             Assert.Empty(query.GetAllTripGroups());
-            Assert.Equal(0, client.CallCount); // never even asked to geocode — nothing was away from home
+            // Still resolved once for the title enrichment (all 5 days share
+            // one cached lookup) even though nothing ever qualified as "away
+            // from home" for Trip formation.
+            Assert.Equal(1, client.CallCount);
+            Assert.All(query.GetAllEvents(), e => Assert.EndsWith("Copenhagen, Denmark", e.Title));
         });
     }
 
@@ -242,7 +260,8 @@ public class ScanServiceTripFormationTests
     /// (never-hits-the-network) Nominatim client into the ScanService under
     /// test, and hands it back so a test can assert on how many times it was
     /// actually called.</summary>
-    private static void WithGpsAwareLibrary(Action<LibraryRepository, LibraryQueryService, ScanService, FakeNominatimClient> test)
+    private static void WithGpsAwareLibrary(
+        Action<LibraryRepository, LibraryQueryService, ScanService, FakeNominatimClient> test, string? homeLabel = null)
     {
         var tempDir = Directory.CreateTempSubdirectory("curato-gpstriptest-");
         try
@@ -252,12 +271,76 @@ public class ScanServiceTripFormationTests
             var repository = new LibraryRepository(database);
             var query = new LibraryQueryService(database);
             var client = new FakeNominatimClient();
-            test(repository, query, new ScanService(repository, query, database, client), client);
+            test(repository, query, new ScanService(repository, query, database, client, homeLabel), client);
         }
         finally
         {
             Microsoft.Data.Sqlite.SqliteConnection.ClearAllPools();
             Directory.Delete(tempDir.FullName, recursive: true);
         }
+    }
+
+    [Fact]
+    public void Auto_titled_events_append_the_resolved_location()
+    {
+        WithGpsAwareLibrary((repository, query, service, client) =>
+        {
+            service.ScanItems([Item("home1.jpg", new DateTime(2026, 1, 1, 9, 0, 0), HomeLat, HomeLon)]);
+
+            var @event = Assert.Single(query.GetAllEvents());
+            Assert.Equal("Morning · Copenhagen, Denmark", @event.Title);
+        });
+    }
+
+    [Fact]
+    public void Auto_titled_events_without_gps_keep_the_plain_time_of_day_title()
+    {
+        WithGpsAwareLibrary((repository, query, service, client) =>
+        {
+            service.ScanItems([Item("noloc.jpg", new DateTime(2026, 1, 1, 9, 0, 0))]); // no lat/lon
+
+            var @event = Assert.Single(query.GetAllEvents());
+            Assert.Equal("Morning", @event.Title);
+            Assert.Equal(0, client.CallCount); // never even asked to geocode
+        });
+    }
+
+    [Fact]
+    public void A_configured_Home_label_replaces_geocoding_for_nearby_events()
+    {
+        WithGpsAwareLibrary(
+            (repository, query, service, client) =>
+            {
+                service.ScanItems([Item("home1.jpg", new DateTime(2026, 1, 1, 9, 0, 0), HomeLat, HomeLon)]);
+
+                var @event = Assert.Single(query.GetAllEvents());
+                Assert.Equal("Morning · Kirke Hyllinge", @event.Title);
+                Assert.Equal(0, client.CallCount); // the label short-circuits the real geocode entirely
+            },
+            homeLabel: "Kirke Hyllinge");
+    }
+
+    [Fact]
+    public void A_configured_Home_label_does_not_affect_a_genuinely_far_away_event()
+    {
+        WithGpsAwareLibrary(
+            (repository, query, service, client) =>
+            {
+                // Enough home-area photos to actually establish a home
+                // cluster for GpsTripGate.DetectHomeLocation to find — a
+                // single far-away item on its own would trivially become
+                // its own "most common location" and wrongly qualify for
+                // the override, which isn't the real-world scenario.
+                service.ScanItems(
+                [
+                    Item("home1.jpg", new DateTime(2025, 1, 1, 9, 0, 0), HomeLat, HomeLon),
+                    Item("home2.jpg", new DateTime(2025, 1, 5, 9, 0, 0), HomeLat, HomeLon),
+                    Item("rome1.jpg", new DateTime(2026, 1, 1, 9, 0, 0), FarAwayLat, FarAwayLon),
+                ]);
+
+                var romeEvent = query.GetAllEvents().Single(e => e.Title.StartsWith("Morning · Rome"));
+                Assert.Equal("Morning · Rome, Italy", romeEvent.Title);
+            },
+            homeLabel: "Kirke Hyllinge");
     }
 }

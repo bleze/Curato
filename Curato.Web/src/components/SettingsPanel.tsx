@@ -1,6 +1,7 @@
 import { useEffect, useState } from 'react'
 import type { iCloudSyncStatus } from '../api'
 import {
+  getHomeLocation,
   getICloudSyncStatus,
   getLibraryFolder,
   iCloudCancelLogin,
@@ -9,6 +10,7 @@ import {
   iCloudSyncNow,
   iCloudUpdateSettings,
   iCloudVerifyTwoFactor,
+  setHomeLocation,
   setLibraryFolder,
 } from '../api'
 import { MAX_THUMB_MIN_WIDTH, MIN_THUMB_MIN_WIDTH, setThumbMinWidth, useThumbMinWidth } from '../thumbSize'
@@ -28,6 +30,7 @@ export function SettingsPanel({
   const thumbMinWidth = useThumbMinWidth()
   const [libraryFolder, setLibraryFolderValue] = useState<string | null>(null)
   const [libraryFolderInput, setLibraryFolderInput] = useState('')
+  const [homeLocationInput, setHomeLocationInput] = useState('')
   const [status, setStatus] = useState<iCloudSyncStatus | null>(null)
   const [error, setError] = useState<string | null>(null)
   const [busy, setBusy] = useState(false)
@@ -45,6 +48,9 @@ export function SettingsPanel({
     getLibraryFolder().then((path) => {
       setLibraryFolderValue(path)
       setLibraryFolderInput((current) => current || path || '')
+    })
+    getHomeLocation().then((label) => {
+      setHomeLocationInput((current) => current || label || '')
     })
     getICloudSyncStatus()
       .then((s) => {
@@ -110,6 +116,10 @@ export function SettingsPanel({
       await setLibraryFolder(libraryFolderInput)
       onOpenLibrary(libraryFolderInput)
     })
+  }
+
+  function handleSaveHomeLocation() {
+    return runBusy(() => setHomeLocation(homeLocationInput))
   }
 
   function handleICloudLogin() {
@@ -274,6 +284,24 @@ export function SettingsPanel({
                 </button>
               </div>
               {libraryFolder && <p className="settings-meta">Current: {libraryFolder}</p>}
+
+              <h3>Home location</h3>
+              <p className="recyclebin-hint">
+                Shown instead of the reverse-geocoded place name for anything nearby (event/trip locations, default
+                event titles) — useful since that automatic lookup can be as coarse as a whole county for a real
+                home address. Leave blank to use the automatic name everywhere.
+              </p>
+              <div className="settings-row">
+                <input
+                  type="text"
+                  placeholder="e.g. Kirke Hyllinge"
+                  value={homeLocationInput}
+                  onChange={(e) => setHomeLocationInput(e.target.value)}
+                />
+                <button type="button" onClick={handleSaveHomeLocation} disabled={busy}>
+                  Save
+                </button>
+              </div>
             </section>
           )}
 

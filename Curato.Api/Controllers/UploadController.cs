@@ -21,7 +21,7 @@ namespace Curato.Api.Controllers;
 /// </summary>
 [ApiController]
 [Route("api/upload")]
-public sealed class UploadController(LibraryOperationGate gate) : ControllerBase
+public sealed class UploadController(LibraryOperationGate gate, ServerDatabase serverDatabase) : ControllerBase
 {
     // Generous enough for RAW photos and short 4K clips without opening the
     // door to arbitrary-size uploads exhausting server disk space unchecked.
@@ -76,12 +76,14 @@ public sealed class UploadController(LibraryOperationGate gate) : ControllerBase
             filesSaved++;
         }
 
+        var homeLabel = new HomeLocationRepository(serverDatabase).Get();
+
         using var release = await gate.AcquireAsync(libraryRoot);
         var database = new LibraryDatabase(libraryRoot);
         database.EnsureSchema();
         var query = new LibraryQueryService(database);
 
-        var scanResult = new ScanService(new LibraryRepository(database), query, database).Scan(libraryRoot);
+        var scanResult = new ScanService(new LibraryRepository(database), query, database, homeLabel: homeLabel).Scan(libraryRoot);
         var picasaResult = new PicasaImportService(database, query, new PicasaImportRepository(database)).Import();
 
         return Ok(new UploadResponse(filesSaved, filesSkipped, scanResult, picasaResult));

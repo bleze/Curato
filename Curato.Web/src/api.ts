@@ -117,6 +117,22 @@ export function setLibraryFolder(path: string): Promise<void> {
   }).then(expectOk)
 }
 
+/** A custom label for "home" (e.g. "Kirke Hyllinge") shown instead of a real reverse-geocode for anything nearby — see GpsTripGate.HomeOverrideLabel. */
+export function getHomeLocation(): Promise<string | null> {
+  return fetch('/api/settings/home-location')
+    .then(asJson<{ label: string | null }>)
+    .then((r) => r.label)
+}
+
+/** Pass null/empty to clear the override and go back to plain reverse-geocoding everywhere. */
+export function setHomeLocation(label: string | null): Promise<void> {
+  return fetch('/api/settings/home-location', {
+    method: 'PUT',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ label }),
+  }).then(expectOk)
+}
+
 export interface iCloudSyncStatus {
   libraryFolderConfigured: boolean
   connected: boolean

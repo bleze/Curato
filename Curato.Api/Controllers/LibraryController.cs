@@ -17,7 +17,7 @@ namespace Curato.Api.Controllers;
 /// </summary>
 [ApiController]
 [Route("api")]
-public sealed class LibraryController(LibraryOperationGate gate) : ControllerBase
+public sealed class LibraryController(LibraryOperationGate gate, ServerDatabase serverDatabase) : ControllerBase
 {
     public sealed record MediaItemDto(
         long Id, string RelativePath, string Kind, DateTime TakenAt, string TakenAtSource,
@@ -49,6 +49,13 @@ public sealed class LibraryController(LibraryOperationGate gate) : ControllerBas
 
         var mediaById = query.GetAllMediaItems().ToDictionary(m => m.Id);
 
+        // The user's own "Home" label (Settings) wins over a real
+        // reverse-geocode for anything GpsTripGate considers nearby —
+        // confirmed live that Nominatim's own result for a real home address
+        // can be as coarse as a whole county. Computed once per request.
+        var homeLabel = new HomeLocationRepository(serverDatabase).Get();
+        var homeLocation = GpsTripGate.DetectHomeLocation(mediaById.Values);
+
         // Cache-only (see ReverseGeocoder.TryGetCached) — a library view must
         // stay fast, not synchronously resolve every distinct place it was
         // ever photographed at, one at a time at Nominatim's 1 req/sec limit,
@@ -70,7 +77,7 @@ public sealed class LibraryController(LibraryOperationGate gate) : ControllerBas
             var bucket = (Math.Round(loc.Lat, 2), Math.Round(loc.Lon, 2));
             if (!locationCache.TryGetValue(bucket, out var placeName))
             {
-                placeName = geocoder.TryGetCached(loc.Lat, loc.Lon);
+                placeName = GpsTripGate.HomeOverrideLabel(homeLocation, homeLabel, loc) ?? geocoder.TryGetCached(loc.Lat, loc.Lon);
                 locationCache[bucket] = placeName;
             }
 

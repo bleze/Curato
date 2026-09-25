@@ -35,15 +35,16 @@ public sealed record ScanResult(
 /// real but narrow enough to leave as a follow-up rather than block on.)
 /// </summary>
 public sealed class ScanService(
-    LibraryRepository repository, LibraryQueryService query, LibraryDatabase database, INominatimClient? nominatimClient = null)
+    LibraryRepository repository, LibraryQueryService query, LibraryDatabase database,
+    INominatimClient? nominatimClient = null, string? homeLabel = null)
 {
     // Self-constructed (not required in the constructor) so the ~25 existing
     // call sites across controllers/tests don't need updating — matches how
     // this method already self-constructs a fresh MediaFileScanner below.
-    // Only actually invoked (see FormGpsAwareTrips) when a candidate Trip's
-    // gate check finds a real away-from-home location to name itself after,
-    // which no existing test's fixtures ever trigger, so `nominatimClient`
-    // only matters to tests that specifically exercise GPS-based formation.
+    // Only actually invoked (see FormGpsAwareTrips/EnrichAutoTitlesWithLocation)
+    // when an Event/Trip has a real GPS location to name itself after, which
+    // no existing test's fixtures ever trigger, so `nominatimClient` only
+    // matters to tests that specifically exercise GPS-based formation.
     private readonly ReverseGeocoder geocoder = new(database, nominatimClient ?? new NominatimClient());
 
     /// <summary>
@@ -156,11 +157,19 @@ public sealed class ScanService(
         var newAutoEvents = new EventClusterer().Cluster(newLooseItems);
         var newAdoptedEvents = AdoptedFolderPlanner.PlanEvents(newFolderGroups);
 
+        // Shared by both the title enrichment below and GPS-aware Trip
+        // formation after saving — computed once from the library's full
+        // current MediaItem state (already committed by UpsertMediaItems
+        // above, regardless of Event-saving order), not just this scan's items.
+        var itemsById = savedItems.ToDictionary(i => i.Id);
+        var homeLocation = GpsTripGate.DetectHomeLocation(query.GetAllMediaItems());
+        EnrichAutoTitlesWithLocation(newAutoEvents, itemsById, homeLocation);
+
         var allNewEvents = newAutoEvents.Concat(newAdoptedEvents).ToList();
         repository.SaveEvents(allNewEvents); // assigns real Ids, needed before trip-grouping
 
         var adoptedTrips = AdoptedFolderPlanner.PlanTrips(newAdoptedEvents);
-        var gpsTrips = FormGpsAwareTrips(newAutoEvents, savedItems);
+        var gpsTrips = FormGpsAwareTrips(newAutoEvents, itemsById, homeLocation);
         var allNewTrips = adoptedTrips.Concat(gpsTrips).ToList();
         repository.SaveTripGroups(allNewTrips);
 
@@ -217,15 +226,14 @@ public sealed class ScanService(
     /// gate never passes and behavior is unchanged (zero auto-formed Trips).
     /// <paramref name="newAutoEvents"/> must already have real ids (saved).
     /// </summary>
-    private IReadOnlyList<TripGroup> FormGpsAwareTrips(IReadOnlyList<Event> newAutoEvents, IReadOnlyList<MediaItem> savedItems)
+    private IReadOnlyList<TripGroup> FormGpsAwareTrips(
+        IReadOnlyList<Event> newAutoEvents, IReadOnlyDictionary<long, MediaItem> itemsById, (double Lat, double Lon)? homeLocation)
     {
-        var homeLocation = GpsTripGate.DetectHomeLocation(query.GetAllMediaItems());
         if (homeLocation is null)
         {
             return [];
         }
 
-        var itemsById = savedItems.ToDictionary(i => i.Id);
         var eventLocations = newAutoEvents.ToDictionary(
             e => e.Id, e => GpsTripGate.RepresentativeLocation(e, itemsById));
 
@@ -247,6 +255,39 @@ public sealed class ScanService(
         }
 
         return qualifyingTrips;
+    }
+
+    /// <summary>
+    /// Appends a resolved place name to each newly-clustered loose Event's
+    /// plain time-of-day auto-title (e.g. "Afternoon" becomes
+    /// "Afternoon · Lejre Kommune") whenever it has at least one GPS-tagged
+    /// member — confirmed live as wanted once location display existed
+    /// elsewhere (Trip titles, the library view's location text) but the
+    /// default Event name itself still didn't say where. Prefers the user's
+    /// own Settings-configured "Home" label (<see cref="GpsTripGate.HomeOverrideLabel"/>)
+    /// over a real reverse-geocode when the Event is near home — confirmed
+    /// live that Nominatim's own result for a real home address can be as
+    /// coarse as a whole county, not useful as a title. Never touches an
+    /// Adopted Event (its title always comes from a real folder name, not
+    /// this clusterer) or an Event with no GPS-tagged members at all.
+    /// </summary>
+    private void EnrichAutoTitlesWithLocation(
+        IReadOnlyList<Event> autoEvents, IReadOnlyDictionary<long, MediaItem> itemsById, (double Lat, double Lon)? homeLocation)
+    {
+        foreach (var @event in autoEvents)
+        {
+            var location = GpsTripGate.RepresentativeLocation(@event, itemsById);
+            if (location is not { } loc)
+            {
+                continue;
+            }
+
+            var placeName = GpsTripGate.HomeOverrideLabel(homeLocation, homeLabel, loc) ?? geocoder.Resolve(loc.Lat, loc.Lon);
+            if (placeName is not null)
+            {
+                @event.Title = $"{@event.Title} · {placeName}";
+            }
+        }
     }
 
     /// <summary>
