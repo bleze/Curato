@@ -190,6 +190,9 @@ export function LibraryGrid({
   onRotated,
   onRenameEvent,
   onRenameTrip,
+  onMoveMediaItemToEvent,
+  onCreateTripGroup,
+  onUngroupTripGroup,
 }: {
   library: LibraryDto
   libraryPath: string
@@ -198,6 +201,9 @@ export function LibraryGrid({
   onRotated: (mediaItemId: number) => void
   onRenameEvent: (eventId: number, title: string) => void
   onRenameTrip: (tripGroupId: number, title: string) => void
+  onMoveMediaItemToEvent: (mediaItemId: number, targetEventId: number | null) => void
+  onCreateTripGroup: (eventIds: number[]) => void
+  onUngroupTripGroup: (tripGroupId: number) => void
 }) {
   const scrollRef = useRef<HTMLDivElement>(null)
   // null = not yet measured. Deliberately never guess a fallback column
@@ -260,6 +266,32 @@ export function LibraryGrid({
   const requestedIdsRef = useRef<Set<number>>(new Set())
   const use24Hour = useUse24HourTime()
   const thumbMinWidth = useThumbMinWidth()
+  // Checkboxes on standalone Event headers (never on ones already inside a
+  // Trip — ungrouping the whole Trip is the way to change those) feed this,
+  // and a floating action bar appears once it's non-empty. Plain component
+  // state, not a ref: unlike the high-frequency refs above, this only
+  // changes on an explicit click and a handful of headers re-rendering in
+  // response is completely fine.
+  const [selectedEventIds, setSelectedEventIds] = useState<Set<number>>(new Set())
+  function toggleEventSelected(eventId: number) {
+    setSelectedEventIds((current) => {
+      const next = new Set(current)
+      if (next.has(eventId)) next.delete(eventId)
+      else next.add(eventId)
+      return next
+    })
+  }
+  // Flattened once per library load for the Lightbox's "Move to Event"
+  // picker — it needs every Event's id/title/date range regardless of
+  // whether it's standalone or nested under a Trip, but never the
+  // (potentially huge) per-event item lists that come with them.
+  const allEventSummaries = useMemo(
+    () => [
+      ...library.standaloneEvents,
+      ...library.trips.flatMap((t) => t.events),
+    ].map((e) => ({ id: e.id, title: e.title, startAt: e.startAt, endAt: e.endAt, isOrganized: e.folderPath !== null })),
+    [library],
+  )
 
   // Lets you rotate a photo by hovering its grid thumbnail and pressing
   // L/R, without opening the fullscreen viewer first — same non-destructive
@@ -437,6 +469,15 @@ export function LibraryGrid({
                       onRename={(title) => onRenameTrip(block.trip.id, title)}
                     />
                     {block.trip.namingMode === 'Adopted' && <span className="badge">Adopted</span>}
+                    {block.trip.location && <span className="trip-location">&middot; {block.trip.location}</span>}
+                    <button
+                      type="button"
+                      className="trip-ungroup-btn"
+                      title="Ungroup — its Events become standalone again (no file is moved)"
+                      onClick={() => onUngroupTripGroup(block.trip.id)}
+                    >
+                      Ungroup
+                    </button>
                   </h2>
                   {block.trip.proposedFolderPath && (
                     <p className="proposed-path">Will move to: {block.trip.proposedFolderPath}</p>
@@ -447,6 +488,15 @@ export function LibraryGrid({
               {block.type === 'event-header' && (
                 <header className="event-header">
                   <div className="event-header-row">
+                    {block.event.tripGroupId === null && (
+                      <input
+                        type="checkbox"
+                        className="event-select-checkbox"
+                        title="Select to group with other Events into a Trip"
+                        checked={selectedEventIds.has(block.event.id)}
+                        onChange={() => toggleEventSelected(block.event.id)}
+                      />
+                    )}
                     <h3>
                       <EditableTitle
                         title={block.event.title}
@@ -457,6 +507,7 @@ export function LibraryGrid({
                       {formatRange(block.event.startAt, block.event.endAt)} &middot;{' '}
                       {block.event.items.length} items
                       {block.event.namingMode === 'Adopted' && <span className="badge">Adopted</span>}
+                      {block.event.location && <> &middot; {block.event.location}</>}
                     </span>
                     {block.event.proposedFolderPath && (
                       <p className="proposed-path" title={`Will move to: ${block.event.proposedFolderPath}`}>
@@ -500,15 +551,35 @@ export function LibraryGrid({
         railRef={scrubberRailRef}
       />
 
+      {selectedEventIds.size > 0 && (
+        <div className="trip-select-bar">
+          <span>{selectedEventIds.size} event(s) selected</span>
+          <button
+            type="button"
+            onClick={() => {
+              onCreateTripGroup([...selectedEventIds])
+              setSelectedEventIds(new Set())
+            }}
+          >
+            Group into Trip
+          </button>
+          <button type="button" onClick={() => setSelectedEventIds(new Set())}>
+            Cancel
+          </button>
+        </div>
+      )}
+
       {lightbox && (
         <Lightbox
           items={lightbox.items}
           index={lightbox.index}
           libraryPath={libraryPath}
+          allEvents={allEventSummaries}
           onClose={() => setLightbox(null)}
           onNavigate={(index) => setLightbox((current) => (current ? { ...current, index } : current))}
           onTakenAtChanged={onTakenAtChanged}
           onRotated={onRotated}
+          onMoveToEvent={onMoveMediaItemToEvent}
         />
       )}
     </div>

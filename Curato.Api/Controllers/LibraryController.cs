@@ -49,12 +49,16 @@ public sealed class LibraryController(LibraryOperationGate gate) : ControllerBas
 
         var mediaById = query.GetAllMediaItems().ToDictionary(m => m.Id);
 
-        // Memoizes Resolve() per ~1km bucket for the lifetime of this one
-        // request — ReverseGeocoder's own GeocodeCache table already avoids a
-        // real network call for anything resolved by a past request, but
-        // this avoids redundant round-trips to that cache within a single
-        // library view that might reference the same place hundreds of times
-        // (every photo from the same trip).
+        // Cache-only (see ReverseGeocoder.TryGetCached) — a library view must
+        // stay fast, not synchronously resolve every distinct place it was
+        // ever photographed at, one at a time at Nominatim's 1 req/sec limit,
+        // the first time anyone opens it after new GPS data lands. Real
+        // resolution happens out-of-band in GeocodeWarmupBackgroundService;
+        // an unresolved location is simply null here until that catches up,
+        // and the next library view picks up whatever it filled in since.
+        // Memoized per ~1km bucket for this one request only to skip
+        // redundant SQLite round-trips within a single view that might
+        // reference the same place hundreds of times (every photo of a trip).
         var locationCache = new Dictionary<(double, double), string?>();
         string? ResolveLocation((double Lat, double Lon)? location)
         {
@@ -66,7 +70,7 @@ public sealed class LibraryController(LibraryOperationGate gate) : ControllerBas
             var bucket = (Math.Round(loc.Lat, 2), Math.Round(loc.Lon, 2));
             if (!locationCache.TryGetValue(bucket, out var placeName))
             {
-                placeName = geocoder.Resolve(loc.Lat, loc.Lon);
+                placeName = geocoder.TryGetCached(loc.Lat, loc.Lon);
                 locationCache[bucket] = placeName;
             }
 

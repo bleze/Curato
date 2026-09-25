@@ -2,16 +2,19 @@ import { useEffect, useRef, useState } from 'react'
 import './App.css'
 import type { AuthStatus, LibraryDto, PicasaImportResult } from './api'
 import {
+  createTripGroup,
   deleteMediaItem,
   getAuthStatus,
   getLibrary,
   getLibraryFolder,
   logout,
+  moveMediaItemToEvent,
   organizeLibrary,
   renameEvent,
   renameTripGroup,
   scanLibrary,
   setTakenAt,
+  ungroupTripGroup,
   uploadFiles,
 } from './api'
 import { AlbumsPanel } from './components/AlbumsPanel'
@@ -49,14 +52,6 @@ function formatPicasaSummary(result: PicasaImportResult): string {
     ` Picasa data: ${result.photosWithNewData} photo(s) newly imported ` +
     `(${result.facesImported} face(s), ${result.editsImported} edit(s), ${result.tagsApplied} tag(s)).`
   )
-}
-
-// Auto-Trip formation (a pure time-gap guess, no location signal) has been
-// disabled — this only has anything to say the one time a library scanned
-// before that change gets its leftover bogus Trips cleaned up.
-function formatRemovedTripsNote(removedAutoTripGroupCount: number): string {
-  if (removedAutoTripGroupCount === 0) return ''
-  return ` Removed ${removedAutoTripGroupCount} old auto-generated trip grouping(s) that were never based on real location data.`
 }
 
 function formatRemovedBareYearTripsNote(removedBareYearTripGroupCount: number): string {
@@ -206,7 +201,6 @@ function App() {
           `${result.scan.newAdoptedEventCount} adopted event(s), ` +
           `${result.scan.newTripGroupCount} trip(s), ` +
           `${result.scan.itemsAddedToExistingEvents} item(s) added to existing events.` +
-          formatRemovedTripsNote(result.scan.removedAutoTripGroupCount) +
           formatRemovedBareYearTripsNote(result.scan.removedBareYearTripGroupCount) +
           formatRemovedEmptyEventsNote(result.scan.removedEmptyEventCount) +
           formatRemovedMissingFilesNote(result.scan.removedMissingFileCount) +
@@ -269,7 +263,6 @@ function App() {
           (result.filesSkipped > 0 ? ` (${result.filesSkipped} skipped — unsupported type or too large)` : '') +
           `. ${result.scan.newAutoOrganizedEventCount} new event(s), ` +
           `${result.scan.itemsAddedToExistingEvents} item(s) added to existing events.` +
-          formatRemovedTripsNote(result.scan.removedAutoTripGroupCount) +
           formatRemovedBareYearTripsNote(result.scan.removedBareYearTripGroupCount) +
           formatRemovedEmptyEventsNote(result.scan.removedEmptyEventCount) +
           formatPicasaSummary(result.picasaImport),
@@ -333,6 +326,42 @@ function App() {
     setError(null)
     try {
       await renameTripGroup(loadedPath, tripGroupId, title)
+      const lib = await getLibrary(loadedPath)
+      setLibrary(lib)
+    } catch (err) {
+      setError(err instanceof Error ? err.message : String(err))
+    }
+  }
+
+  async function handleMoveMediaItemToEvent(mediaItemId: number, targetEventId: number | null) {
+    if (!loadedPath) return
+    setError(null)
+    try {
+      await moveMediaItemToEvent(loadedPath, mediaItemId, targetEventId)
+      const lib = await getLibrary(loadedPath)
+      setLibrary(lib)
+    } catch (err) {
+      setError(err instanceof Error ? err.message : String(err))
+    }
+  }
+
+  async function handleCreateTripGroup(eventIds: number[]) {
+    if (!loadedPath) return
+    setError(null)
+    try {
+      await createTripGroup(loadedPath, eventIds)
+      const lib = await getLibrary(loadedPath)
+      setLibrary(lib)
+    } catch (err) {
+      setError(err instanceof Error ? err.message : String(err))
+    }
+  }
+
+  async function handleUngroupTripGroup(tripGroupId: number) {
+    if (!loadedPath) return
+    setError(null)
+    try {
+      await ungroupTripGroup(loadedPath, tripGroupId)
       const lib = await getLibrary(loadedPath)
       setLibrary(lib)
     } catch (err) {
@@ -493,6 +522,9 @@ function App() {
             onRotated={handleRotated}
             onRenameEvent={handleRenameEvent}
             onRenameTrip={handleRenameTrip}
+            onMoveMediaItemToEvent={handleMoveMediaItemToEvent}
+            onCreateTripGroup={handleCreateTripGroup}
+            onUngroupTripGroup={handleUngroupTripGroup}
           />
         </div>
       )}

@@ -7,6 +7,8 @@ export interface MediaItemDto {
   takenAtSource: 'ExifDateTaken' | 'ExifModifyDate' | 'VideoMetadata' | 'FileSystem' | 'Manual'
   /** Set when this is the still frame of an Apple Live Photo — the paired .MOV's relative path. */
   liveVideoRelativePath: string | null
+  /** Reverse-geocoded from this item's own GPS Exif, if it has any — null for most video and any photo with no GPS tag. */
+  location: string | null
 }
 
 export interface EventDto {
@@ -18,6 +20,10 @@ export interface EventDto {
   proposedFolderPath: string | null
   startAt: string
   endAt: string
+  /** Reverse-geocoded from the average GPS position of whichever members have coordinates — null if none do. */
+  location: string | null
+  /** Non-null once this Event has been grouped into a Trip (auto or manual) — lets the UI disable re-grouping it. */
+  tripGroupId: number | null
   items: MediaItemDto[]
 }
 
@@ -29,6 +35,7 @@ export interface TripGroupDto {
   proposedFolderPath: string | null
   startDate: string
   endDate: string
+  location: string | null
   events: EventDto[]
 }
 
@@ -43,8 +50,6 @@ export interface ScanResult {
   newAdoptedEventCount: number
   newTripGroupCount: number
   itemsAddedToExistingEvents: number
-  /** Leftover auto-formed (time-gap-only) Trips from before that heuristic was disabled, ungrouped this scan. */
-  removedAutoTripGroupCount: number
   /** Leftover fictitious "2019"-style bare-year Trips from before that heuristic was fixed, ungrouped this scan. */
   removedBareYearTripGroupCount: number
   /** Events left with zero items (e.g. from before RecycleBin deletes started cleaning them up), removed this scan. */
@@ -236,6 +241,38 @@ export function renameTripGroup(path: string, tripGroupId: number, title: string
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify({ path, tripGroupId, title }),
+  }).then(expectOk)
+}
+
+/**
+ * Moves a MediaItem into a different Event (or, with targetEventId null, into
+ * a brand new standalone Event of its own) — the Lightbox's "Move to Event"
+ * fix for a wrong grouping. Refused (409) if either Event has already been
+ * organized into a real on-disk folder.
+ */
+export function moveMediaItemToEvent(path: string, mediaItemId: number, targetEventId: number | null): Promise<void> {
+  return fetch('/api/media-items/move-to-event', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ path, mediaItemId, targetEventId }),
+  }).then(expectOk)
+}
+
+/** Manually groups a range of Events into a new Trip. Refused (409) if any Event already belongs to one. */
+export function createTripGroup(path: string, eventIds: number[]): Promise<TripGroupDto> {
+  return fetch('/api/trips', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ path, eventIds }),
+  }).then(asJson<TripGroupDto>)
+}
+
+/** Undoes a Trip grouping (manual or auto-formed) — its Events become standalone again. */
+export function ungroupTripGroup(path: string, tripGroupId: number): Promise<void> {
+  return fetch(`/api/trips/${tripGroupId}/ungroup`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ path }),
   }).then(expectOk)
 }
 

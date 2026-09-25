@@ -109,9 +109,13 @@ public sealed class MediaFileScanner
     /// paired video (<see cref="MediaItem.LivePhotoVideoItemId"/>) is treated
     /// as sharing its still-frame photo's location wherever a location is
     /// displayed, rather than duplicating the column for a value that's
-    /// always derivable from the pairing.
+    /// always derivable from the pairing. Public so a one-time backfill for
+    /// a library scanned before GPS extraction existed can re-read each
+    /// already-indexed photo's coordinates without duplicating this logic —
+    /// UpsertMediaItems' own `ON CONFLICT DO NOTHING` never touches an
+    /// existing row's Latitude/Longitude on an ordinary re-scan.
     /// </summary>
-    private static (double? Latitude, double? Longitude) ReadGpsLocation(string filePath)
+    public static (double? Latitude, double? Longitude) ReadGpsLocation(string filePath)
     {
         try
         {

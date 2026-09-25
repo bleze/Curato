@@ -39,6 +39,12 @@ builder.Services.AddSingleton<iCloudAuthClient>();
 builder.Services.AddSingleton<iCloudSyncRunner>();
 builder.Services.AddHostedService<iCloudSyncBackgroundService>();
 
+// Resolves place names for GPS coordinates out-of-band from any page load —
+// see GeocodeWarmupBackgroundService's own doc comment for why the library
+// view itself (LibraryController.GetLibrary) only ever reads the cache this
+// fills, never calls Nominatim directly.
+builder.Services.AddHostedService<GeocodeWarmupBackgroundService>();
+
 // Reads X-Forwarded-Proto/X-Forwarded-For from the reverse proxy PLAN.md
 // §15 expects in front for any internet-facing deployment (Synology DSM's
 // built-in proxy + its Let's Encrypt integration, primarily), so

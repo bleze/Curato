@@ -32,19 +32,33 @@ public sealed class ReverseGeocoder(LibraryDatabase database, INominatimClient c
     private readonly object _rateLimitLock = new();
     private DateTime _nextCallAllowedAtUtc = DateTime.MinValue;
 
+    /// <summary>
+    /// Cache-only — never calls Nominatim, never blocks on the rate limit.
+    /// For a latency-sensitive read path (the library view) that would
+    /// otherwise have to synchronously resolve every distinct place a whole
+    /// library was ever photographed at, one at a time at 1 req/sec, the
+    /// first time anyone loads it after new GPS data lands. Real resolution
+    /// happens out-of-band instead — see GeocodeWarmupBackgroundService
+    /// (Curato.Api) — so a location simply isn't shown yet for anything the
+    /// warmer hasn't gotten to, rather than the page hanging until it has.
+    /// </summary>
+    public string? TryGetCached(double latitude, double longitude)
+    {
+        var (latBucket, lonBucket) = Bucket(latitude, longitude);
+        using var connection = database.OpenConnection();
+        return connection.QuerySingleOrDefault<string?>("""
+            SELECT PlaceName FROM GeocodeCache WHERE LatBucket = @LatBucket AND LonBucket = @LonBucket
+            """, new { LatBucket = latBucket, LonBucket = lonBucket });
+    }
+
     public string? Resolve(double latitude, double longitude)
     {
         var (latBucket, lonBucket) = Bucket(latitude, longitude);
 
-        using (var connection = database.OpenConnection())
+        var cached = TryGetCached(latitude, longitude);
+        if (cached is not null)
         {
-            var cached = connection.QuerySingleOrDefault<string?>("""
-                SELECT PlaceName FROM GeocodeCache WHERE LatBucket = @LatBucket AND LonBucket = @LonBucket
-                """, new { LatBucket = latBucket, LonBucket = lonBucket });
-            if (cached is not null)
-            {
-                return cached;
-            }
+            return cached;
         }
 
         EnforceRateLimit();

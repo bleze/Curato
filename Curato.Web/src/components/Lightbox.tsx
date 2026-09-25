@@ -18,22 +18,36 @@ function toDatetimeLocalValue(takenAt: string): string {
   return `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}T${pad(d.getHours())}:${pad(d.getMinutes())}`
 }
 
+export interface EventSummary {
+  id: number
+  title: string
+  startAt: string
+  endAt: string
+  /** Already organized into a real on-disk folder — MoveMediaItemToEvent refuses these as a target. */
+  isOrganized: boolean
+}
+
 export function Lightbox({
   items,
   index,
   libraryPath,
+  allEvents,
   onClose,
   onNavigate,
   onTakenAtChanged,
   onRotated,
+  onMoveToEvent,
 }: {
   items: MediaItemDto[]
   index: number
   libraryPath: string
+  /** Every Event in the library (standalone or nested under a Trip) — powers the "Move to Event" picker below. */
+  allEvents: EventSummary[]
   onClose: () => void
   onNavigate: (index: number) => void
   onTakenAtChanged: (mediaItemId: number, takenAt: string) => void
   onRotated: (mediaItemId: number) => void
+  onMoveToEvent: (mediaItemId: number, targetEventId: number | null) => void
 }) {
   const item = items[index]
   const use24Hour = useUse24HourTime()
@@ -44,6 +58,8 @@ export function Lightbox({
   const [editingDate, setEditingDate] = useState(false)
   const [draftDate, setDraftDate] = useState('')
   const [rotating, setRotating] = useState(false)
+  const [movingToEvent, setMovingToEvent] = useState(false)
+  const [moveSearch, setMoveSearch] = useState('')
   // bumpImageVersion (api.ts) is keyed by mediaItemId, shared across every
   // view of this item (grid thumbnails included) — this local counter just
   // forces Lightbox itself to re-render and pick up the new version after a
@@ -61,6 +77,8 @@ export function Lightbox({
     setZoom(1)
     setPan({ x: 0, y: 0 })
     setEditingDate(false)
+    setMovingToEvent(false)
+    setMoveSearch('')
   }, [index])
 
   const handleRotate = useCallback(
@@ -156,34 +174,61 @@ export function Lightbox({
       <button type="button" className="lightbox-close" onClick={onClose} aria-label="Close">
         &times;
       </button>
-      {item.kind === 'Photo' && (
-        <div className="lightbox-toolbar" onClick={(e) => e.stopPropagation()}>
-          <button
-            type="button"
-            onClick={() => handleRotate(-90)}
-            disabled={rotating}
-            title="Rotate left (L) — a saved edit, the original file is never touched"
-            aria-label="Rotate left"
-          >
-            <svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-              <path d="M1 4v6h6" />
-              <path d="M3.51 15a9 9 0 1 0 2.13-9.36L1 10" />
-            </svg>
-          </button>
-          <button
-            type="button"
-            onClick={() => handleRotate(90)}
-            disabled={rotating}
-            title="Rotate right (R) — a saved edit, the original file is never touched"
-            aria-label="Rotate right"
-          >
-            <svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-              <path d="M23 4v6h-6" />
-              <path d="M20.49 15a9 9 0 1 1-2.13-9.36L23 10" />
-            </svg>
-          </button>
-        </div>
-      )}
+      <div className="lightbox-toolbar" onClick={(e) => e.stopPropagation()}>
+        {item.kind === 'Photo' && (
+          <>
+            <button
+              type="button"
+              onClick={() => handleRotate(-90)}
+              disabled={rotating}
+              title="Rotate left (L) — a saved edit, the original file is never touched"
+              aria-label="Rotate left"
+            >
+              <svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                <path d="M1 4v6h6" />
+                <path d="M3.51 15a9 9 0 1 0 2.13-9.36L1 10" />
+              </svg>
+            </button>
+            <button
+              type="button"
+              onClick={() => handleRotate(90)}
+              disabled={rotating}
+              title="Rotate right (R) — a saved edit, the original file is never touched"
+              aria-label="Rotate right"
+            >
+              <svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                <path d="M23 4v6h-6" />
+                <path d="M20.49 15a9 9 0 1 1-2.13-9.36L23 10" />
+              </svg>
+            </button>
+          </>
+        )}
+        <button
+          type="button"
+          className="lightbox-move-btn"
+          onClick={() => setMovingToEvent((v) => !v)}
+          title="Move this item to a different Event — fixes a wrong grouping (e.g. a corrected timestamp)"
+          aria-label="Move to Event"
+        >
+          <svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+            <path d="M9 5l7 7-7 7" />
+          </svg>
+          Move
+        </button>
+        {movingToEvent && (
+          <MoveToEventPicker
+            allEvents={allEvents}
+            search={moveSearch}
+            onSearchChange={setMoveSearch}
+            onPick={(targetEventId) => {
+              onMoveToEvent(item.id, targetEventId)
+              setMovingToEvent(false)
+              setMoveSearch('')
+            }}
+            onCancel={() => setMovingToEvent(false)}
+          />
+        )}
+      </div>
       {index > 0 && (
         <button
           type="button"
@@ -274,6 +319,7 @@ export function Lightbox({
         ) : (
           <>
             {formatTakenAt(item.takenAt, use24Hour)}
+            {item.location && <> &middot; {item.location}</>}
             {item.takenAtSource === 'FileSystem' && (
               <span className="lightbox-caption-hint" title="No Exif or video creation date was found — this is just the file's last-modified timestamp, which can be wrong (e.g. after a copy or download).">
                 {' '}(file date, not confirmed)
@@ -304,6 +350,63 @@ export function Lightbox({
           </>
         )}
       </div>
+    </div>
+  )
+}
+
+/**
+ * The "Move to Event" toolbar button's dropdown — a searchable list of every
+ * Event in the library (already-organized ones included, but disabled: see
+ * EventSummary.isOrganized/LibraryRepository.MoveMediaItemToEvent) plus a
+ * "move to a new Event" option at the top, so an item can jump any distance
+ * rather than just to an adjacent day.
+ */
+function MoveToEventPicker({
+  allEvents,
+  search,
+  onSearchChange,
+  onPick,
+  onCancel,
+}: {
+  allEvents: EventSummary[]
+  search: string
+  onSearchChange: (value: string) => void
+  onPick: (targetEventId: number | null) => void
+  onCancel: () => void
+}) {
+  const query = search.trim().toLowerCase()
+  const matches = query
+    ? allEvents.filter((e) => e.title.toLowerCase().includes(query))
+    : allEvents
+  const sorted = [...matches].sort((a, b) => b.startAt.localeCompare(a.startAt))
+
+  return (
+    <div className="move-to-event-picker" onClick={(e) => e.stopPropagation()}>
+      <input
+        type="text"
+        placeholder="Search events by title…"
+        value={search}
+        onChange={(e) => onSearchChange(e.target.value)}
+        autoFocus
+      />
+      <ul>
+        <li>
+          <button type="button" onClick={() => onPick(null)}>
+            + Move to a new Event
+          </button>
+        </li>
+        {sorted.map((e) => (
+          <li key={e.id}>
+            <button type="button" disabled={e.isOrganized} onClick={() => onPick(e.id)} title={e.isOrganized ? 'Already organized into a real folder — can\'t move items into it here' : undefined}>
+              {e.title} <span className="move-to-event-date">{new Date(e.startAt).toLocaleDateString()}</span>
+            </button>
+          </li>
+        ))}
+        {sorted.length === 0 && <li className="move-to-event-empty">No matching events</li>}
+      </ul>
+      <button type="button" className="move-to-event-cancel" onClick={onCancel}>
+        Cancel
+      </button>
     </div>
   )
 }
