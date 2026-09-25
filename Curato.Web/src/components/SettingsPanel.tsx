@@ -11,6 +11,8 @@ import {
   iCloudVerifyTwoFactor,
   setLibraryFolder,
 } from '../api'
+import { MAX_THUMB_MIN_WIDTH, MIN_THUMB_MIN_WIDTH, setThumbMinWidth, useThumbMinWidth } from '../thumbSize'
+import { setUse24HourTime, useUse24HourTime } from '../timeFormat'
 
 export function SettingsPanel({
   onClose,
@@ -21,7 +23,9 @@ export function SettingsPanel({
   onOpenLibrary: (path: string) => void
   onLibraryContentChanged: (path: string) => void
 }) {
-  const [activeTab, setActiveTab] = useState<'library' | 'icloud'>('library')
+  const [activeTab, setActiveTab] = useState<'library' | 'icloud' | 'display'>('library')
+  const use24Hour = useUse24HourTime()
+  const thumbMinWidth = useThumbMinWidth()
   const [libraryFolder, setLibraryFolderValue] = useState<string | null>(null)
   const [libraryFolderInput, setLibraryFolderInput] = useState('')
   const [status, setStatus] = useState<iCloudSyncStatus | null>(null)
@@ -240,6 +244,13 @@ export function SettingsPanel({
           >
             iCloud
           </button>
+          <button
+            type="button"
+            className={`modal-tab ${activeTab === 'display' ? 'is-active' : ''}`}
+            onClick={() => setActiveTab('display')}
+          >
+            Display
+          </button>
         </div>
         <div className="modal-body">
           {error && <p className="error">{error}</p>}
@@ -392,6 +403,39 @@ export function SettingsPanel({
             </button>
           </div>
         )}
+            </section>
+          )}
+
+          {activeTab === 'display' && (
+            <section className="settings-section">
+              <label className="settings-checkbox-row">
+                <input
+                  type="checkbox"
+                  checked={use24Hour}
+                  onChange={(e) => setUse24HourTime(e.target.checked)}
+                />
+                Use 24-hour time (14:30 instead of 2:30 PM)
+              </label>
+              <p className="recyclebin-hint">
+                Overrides your browser's own locale default, which is where AM/PM was coming from.
+              </p>
+
+              <div className="settings-thumbsize-row">
+                <label htmlFor="thumb-size-slider">Thumbnail size</label>
+                <input
+                  id="thumb-size-slider"
+                  type="range"
+                  min={MIN_THUMB_MIN_WIDTH}
+                  max={MAX_THUMB_MIN_WIDTH}
+                  step={10}
+                  value={thumbMinWidth}
+                  onChange={(e) => setThumbMinWidth(Number(e.target.value))}
+                />
+                <span className="settings-thumbsize-value">{thumbMinWidth}px</span>
+              </div>
+              <p className="recyclebin-hint">
+                The grid behind this window updates live as you drag — close this to see the full effect.
+              </p>
             </section>
           )}
         </div>

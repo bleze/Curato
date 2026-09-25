@@ -2,6 +2,7 @@ import { useCallback, useEffect, useRef, useState } from 'react'
 import type { MediaItemDto } from '../api'
 import { bumpImageVersion, fullImageUrl, rawFileUrl, rotateMediaItem } from '../api'
 import { formatTakenAt } from '../format'
+import { useUse24HourTime } from '../timeFormat'
 
 const MIN_ZOOM = 1
 const MAX_ZOOM = 4
@@ -35,6 +36,7 @@ export function Lightbox({
   onRotated: (mediaItemId: number) => void
 }) {
   const item = items[index]
+  const use24Hour = useUse24HourTime()
   const [playingLive, setPlayingLive] = useState(false)
   const [zoom, setZoom] = useState(1)
   const [pan, setPan] = useState({ x: 0, y: 0 })
@@ -271,7 +273,7 @@ export function Lightbox({
           </span>
         ) : (
           <>
-            {formatTakenAt(item.takenAt)}
+            {formatTakenAt(item.takenAt, use24Hour)}
             {item.takenAtSource === 'FileSystem' && (
               <span className="lightbox-caption-hint" title="No Exif or video creation date was found — this is just the file's last-modified timestamp, which can be wrong (e.g. after a copy or download).">
                 {' '}(file date, not confirmed)

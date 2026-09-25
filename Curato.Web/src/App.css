@@ -836,6 +836,37 @@ button {
   margin: 4px 0 0;
 }
 
+.settings-checkbox-row {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font-size: 13px;
+  cursor: pointer;
+}
+
+.settings-thumbsize-row {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  margin-top: 18px;
+}
+
+.settings-thumbsize-row label {
+  font-size: 13px;
+  white-space: nowrap;
+}
+
+.settings-thumbsize-row input[type='range'] {
+  flex: 1;
+}
+
+.settings-thumbsize-value {
+  font-size: 12.5px;
+  color: var(--text-muted);
+  width: 40px;
+  text-align: right;
+}
+
 .recyclebin-item-actions {
   display: flex;
   gap: 6px;

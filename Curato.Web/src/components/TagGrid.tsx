@@ -4,12 +4,13 @@ import type { MediaItemDto } from '../api'
 import { bumpImageVersion, rotateMediaItem, thumbnailUrl } from '../api'
 import { formatTakenAt } from '../format'
 import { Lightbox } from './Lightbox'
+import { useThumbMinWidth } from '../thumbSize'
+import { useUse24HourTime } from '../timeFormat'
 
 // Mirrors LibraryGrid's sizing — kept in sync manually since the two grids'
 // block shapes differ enough (this one has no trip/event headers) that
 // sharing one component would need more indirection than the duplication
-// it'd save.
-const THUMB_MIN_WIDTH = 120
+// it'd save. The minimum itself is a user preference now (thumbSize.ts).
 const GAP = 6
 
 export function TagGrid({
@@ -39,6 +40,8 @@ export function TagGrid({
   // including ones already showing a loaded thumbnail, flickering them out
   // and back in on even a small scroll.
   const requestedIdsRef = useRef<Set<number>>(new Set())
+  const use24Hour = useUse24HourTime()
+  const thumbMinWidth = useThumbMinWidth()
 
   useEffect(() => {
     async function onKeyDown(e: KeyboardEvent) {
@@ -64,8 +67,8 @@ export function TagGrid({
     return () => observer.disconnect()
   }, [])
 
-  const columnCount = containerWidth !== null ? Math.max(1, Math.floor((containerWidth + GAP) / (THUMB_MIN_WIDTH + GAP))) : 1
-  const thumbSize = containerWidth !== null ? (containerWidth - (columnCount - 1) * GAP) / columnCount : THUMB_MIN_WIDTH
+  const columnCount = containerWidth !== null ? Math.max(1, Math.floor((containerWidth + GAP) / (thumbMinWidth + GAP))) : 1
+  const thumbSize = containerWidth !== null ? (containerWidth - (columnCount - 1) * GAP) / columnCount : thumbMinWidth
   const rowHeight = thumbSize + GAP
 
   const rows = useMemo(() => {
@@ -130,7 +133,7 @@ export function TagGrid({
                   <div
                     className="thumb"
                     key={item.id}
-                    title={`${item.relativePath}\n${formatTakenAt(item.takenAt)}`}
+                    title={`${item.relativePath}\n${formatTakenAt(item.takenAt, use24Hour)}`}
                     onMouseEnter={() => {
                       hoveredPhotoRef.current = item.kind === 'Photo' ? item : null
                     }}

@@ -6,11 +6,13 @@ import type { DateMarker } from './DateScrubber'
 import { DateScrubber } from './DateScrubber'
 import { formatTakenAt } from '../format'
 import { Lightbox } from './Lightbox'
+import { useThumbMinWidth } from '../thumbSize'
+import { useUse24HourTime } from '../timeFormat'
 
 // Mirrors the old CSS grid's `repeat(auto-fill, minmax(120px, 1fr))` — kept
 // in JS now so row height can be computed for virtualization instead of
-// letting the browser lay out an unbounded number of rows at once.
-const THUMB_MIN_WIDTH = 120
+// letting the browser lay out an unbounded number of rows at once. The
+// minimum itself is a user preference now (thumbSize.ts), not a constant.
 const GAP = 6
 // These are exact, not generous guesses — see the getItemKey/estimateSize
 // comment below for why headers are never remeasured against reality once
@@ -229,6 +231,8 @@ export function LibraryGrid({
   // requested once just keep rendering through any later isScrolling spans,
   // so only tiles that have genuinely never been requested before suspend.
   const requestedIdsRef = useRef<Set<number>>(new Set())
+  const use24Hour = useUse24HourTime()
+  const thumbMinWidth = useThumbMinWidth()
 
   // Lets you rotate a photo by hovering its grid thumbnail and pressing
   // L/R, without opening the fullscreen viewer first — same non-destructive
@@ -276,8 +280,8 @@ export function LibraryGrid({
   const DATE_SCRUBBER_WIDTH = 16
   const scrollGutter = scrollbarWidth + DATE_SCRUBBER_WIDTH
 
-  const columnCount = containerWidth !== null ? Math.max(1, Math.floor((containerWidth + GAP) / (THUMB_MIN_WIDTH + GAP))) : 1
-  const thumbSize = containerWidth !== null ? (containerWidth - (columnCount - 1) * GAP) / columnCount : THUMB_MIN_WIDTH
+  const columnCount = containerWidth !== null ? Math.max(1, Math.floor((containerWidth + GAP) / (thumbMinWidth + GAP))) : 1
+  const thumbSize = containerWidth !== null ? (containerWidth - (columnCount - 1) * GAP) / columnCount : thumbMinWidth
   const rowHeight = thumbSize + GAP
 
   const blocks = useMemo(() => buildBlocks(library, columnCount), [library, columnCount])
@@ -395,6 +399,7 @@ export function LibraryGrid({
                       libraryPath={libraryPath}
                       suspendLoad={virtualizer.isScrolling}
                       requestedIdsRef={requestedIdsRef}
+                      use24Hour={use24Hour}
                       onOpen={() => setLightbox({ items: block.event.items, index: block.startIndex + i })}
                       onDelete={onDelete}
                       onHoverChange={(hovering) => {
@@ -521,12 +526,14 @@ function ThumbTile({
   libraryPath,
   suspendLoad,
   requestedIdsRef,
+  use24Hour,
   onOpen,
   onDelete,
   onHoverChange,
 }: {
   item: MediaItemDto
   libraryPath: string
+  use24Hour: boolean
   // While the virtualizer reports active scrolling (a scrollbar drag across
   // a large distance fires a real DOM scroll event, and therefore a fresh
   // batch of newly-mounted row/image elements, on every pixel of travel —
@@ -567,7 +574,7 @@ function ThumbTile({
   return (
     <div
       className="thumb"
-      title={`${item.relativePath}\n${formatTakenAt(item.takenAt)}`}
+      title={`${item.relativePath}\n${formatTakenAt(item.takenAt, use24Hour)}`}
       onMouseEnter={() => onHoverChange(true)}
       onMouseLeave={() => onHoverChange(false)}
     >
