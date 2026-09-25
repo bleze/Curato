@@ -912,7 +912,7 @@ button {
    overflow-y still covers the rare case a tab's content grows past it, and
    flexes down on short viewports since modal-dialog's own max-height wins. */
 .modal-body {
-  height: 363px;
+  height: 380px;
   padding: 14px 18px;
   overflow-y: auto;
   box-sizing: border-box;
@@ -1142,7 +1142,19 @@ button {
   font-size: 13.5px;
 }
 
-.icloud-sync-row {
+.icloud-header-actions {
+  display: flex;
+  flex-direction: column;
+  align-items: stretch;
+  gap: 6px;
+  flex-shrink: 0;
+}
+
+.icloud-header-actions button {
+  white-space: nowrap;
+}
+
+.icloud-autosync-row {
   margin-top: 10px;
 }
 

@@ -322,9 +322,14 @@ export function SettingsPanel({
                           : 'Never synced yet — the first sync may take a while.'}
                       </p>
                     </div>
-                    <button type="button" className="modal-footer-cancel" onClick={handleDisconnect} disabled={busy}>
-                      Disconnect
-                    </button>
+                    <div className="icloud-header-actions">
+                      <button type="button" className="modal-footer-cancel" onClick={handleDisconnect} disabled={busy}>
+                        Disconnect
+                      </button>
+                      <button type="button" className="modal-footer-cancel" onClick={handleSyncNow} disabled={busy}>
+                        {busy ? 'Syncing…' : 'Sync now'}
+                      </button>
+                    </div>
                   </div>
 
                   {status.lastSyncStatus === 'Error' && status.lastSyncMessage && (
@@ -336,20 +341,15 @@ export function SettingsPanel({
                     </p>
                   )}
 
-                  <div className="settings-row icloud-sync-row">
-                    <button type="button" onClick={handleSyncNow} disabled={busy}>
-                      {busy ? 'Syncing…' : 'Sync now'}
-                    </button>
-                    <label className="settings-checkbox-row">
-                      <input
-                        type="checkbox"
-                        checked={status.enabled ?? false}
-                        onChange={handleToggleEnabled}
-                        disabled={busy}
-                      />
-                      Auto-sync every {Math.round((status.intervalMinutes ?? 360) / 60)}h
-                    </label>
-                  </div>
+                  <label className="settings-checkbox-row icloud-autosync-row">
+                    <input
+                      type="checkbox"
+                      checked={status.enabled ?? false}
+                      onChange={handleToggleEnabled}
+                      disabled={busy}
+                    />
+                    Auto-sync every {Math.round((status.intervalMinutes ?? 360) / 60)}h
+                  </label>
 
                   <div className="settings-subsection">
                     <h3 className="settings-subheading">Sync scope</h3>
@@ -380,7 +380,12 @@ export function SettingsPanel({
                           onChange={(e) => setSinceDateInput(e.target.value)}
                         />
                         {sinceDateInput && (
-                          <button type="button" onClick={handleClearSinceDate} disabled={busy}>
+                          <button
+                            type="button"
+                            className="modal-footer-cancel"
+                            onClick={handleClearSinceDate}
+                            disabled={busy}
+                          >
                             Clear
                           </button>
                         )}
