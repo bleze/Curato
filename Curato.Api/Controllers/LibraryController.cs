@@ -339,8 +339,6 @@ public sealed class LibraryController(LibraryOperationGate gate, ServerDatabase 
             MergeEventResult.SourceEqualsTarget => BadRequest("An Event can't be merged into itself."),
             MergeEventResult.SourceEventNotFound => NotFound($"No Event with id {request.SourceEventId}"),
             MergeEventResult.TargetEventNotFound => NotFound($"No Event with id {request.TargetEventId}"),
-            MergeEventResult.SourceEventOrganized => Conflict("This Event has already been organized into a real folder — merging it here would desync the database from what's actually on disk."),
-            MergeEventResult.TargetEventOrganized => Conflict("That Event has already been organized into a real folder — merging into it isn't supported here."),
             _ => StatusCode(500)
         };
     }

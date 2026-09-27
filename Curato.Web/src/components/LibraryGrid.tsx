@@ -356,7 +356,6 @@ export function LibraryGrid({
       title: e.title,
       startAt: e.startAt,
       endAt: e.endAt,
-      isOrganized: e.folderPath !== null,
       tripGroupId: e.tripGroupId,
     })),
     [library],
@@ -686,7 +685,6 @@ export function LibraryGrid({
             referenceTakenAt={moveTarget.kind === 'item' ? moveTarget.item.takenAt : moveTarget.referenceStartAt}
             excludeEventIds={moveTarget.kind === 'item' ? [moveTarget.eventId] : moveTarget.eventIds}
             allowNewEvent={moveTarget.kind === 'item'}
-            allowOrganizedTargets={moveTarget.kind === 'item'}
             search={moveSearch}
             onSearchChange={setMoveSearch}
             onPick={(targetEventId) => {

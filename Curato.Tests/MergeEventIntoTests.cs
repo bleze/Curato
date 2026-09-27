@@ -106,7 +106,7 @@ public class MergeEventIntoTests
     }
 
     [Fact]
-    public void Merging_an_already_organized_source_is_refused_and_changes_nothing()
+    public void Merging_out_of_an_organized_source_into_an_unorganized_target_leaves_files_where_they_are()
     {
         WithTempLibrary((repository, query, database) =>
         {
@@ -120,28 +120,111 @@ public class MergeEventIntoTests
 
             var result = repository.MergeEventInto(events[0].Id, events[1].Id);
 
-            Assert.Equal(MergeEventResult.SourceEventOrganized, result);
-            Assert.Equal(2, query.GetAllEvents().Count); // untouched
+            Assert.Equal(MergeEventResult.Success, result);
+            // The target has no real folder yet, so nothing physically
+            // moves — RelativePath (and therefore the file's real location)
+            // is untouched, even though it's still inside the old organized
+            // source folder.
+            var moved = query.GetAllMediaItems().Single(m => m.RelativePath.EndsWith("day1.jpg"));
+            Assert.Equal("day1.jpg", moved.RelativePath);
         });
     }
 
     [Fact]
-    public void Merging_into_an_already_organized_target_is_refused_and_changes_nothing()
+    public void Merging_into_an_organized_target_physically_relocates_every_member_and_removes_the_empty_source_folder()
     {
         WithTempLibrary((repository, query, database) =>
         {
             RunScanPass(repository, query, database,
             [
-                Item("day1.jpg", new DateTime(2026, 1, 1, 9, 0, 0)),
-                Item("day5.jpg", new DateTime(2026, 1, 5, 9, 0, 0)),
+                Item("2026-01-01 Morning/day1-a.jpg", new DateTime(2026, 1, 1, 9, 0, 0)),
+                Item("2026-01-01 Morning/day1-b.jpg", new DateTime(2026, 1, 1, 9, 5, 0)),
+                Item("2026-01-05 Evening/day5.jpg", new DateTime(2026, 1, 5, 9, 0, 0)),
             ]);
             var events = query.GetAllEvents();
-            MarkOrganized(database, events[1].Id, "2026-01-05 Morning");
+            var source = events.Single(e => e.MediaItemIds.Count == 2);
+            var target = events.Single(e => e.Id != source.Id);
+            MarkOrganized(database, source.Id, "2026-01-01 Morning");
+            MarkOrganized(database, target.Id, "2026-01-05 Evening");
 
-            var result = repository.MergeEventInto(events[0].Id, events[1].Id);
+            var libraryRoot = database.LibraryRoot;
+            Directory.CreateDirectory(Path.Combine(libraryRoot, "2026-01-01 Morning"));
+            File.WriteAllText(Path.Combine(libraryRoot, "2026-01-01 Morning", "day1-a.jpg"), "a");
+            File.WriteAllText(Path.Combine(libraryRoot, "2026-01-01 Morning", "day1-b.jpg"), "b");
 
-            Assert.Equal(MergeEventResult.TargetEventOrganized, result);
-            Assert.Equal(2, query.GetAllEvents().Count); // untouched
+            var result = repository.MergeEventInto(source.Id, target.Id);
+
+            Assert.Equal(MergeEventResult.Success, result);
+            Assert.False(Directory.Exists(Path.Combine(libraryRoot, "2026-01-01 Morning"))); // now-empty source folder removed
+            var relativePaths = query.GetAllMediaItems().Select(m => m.RelativePath).OrderBy(p => p).ToList();
+            Assert.Equal(
+                new[] { "2026-01-05 Evening/day1-a.jpg", "2026-01-05 Evening/day1-b.jpg", "2026-01-05 Evening/day5.jpg" },
+                relativePaths);
+            Assert.True(File.Exists(Path.Combine(libraryRoot, "2026-01-05 Evening", "day1-a.jpg")));
+            Assert.True(File.Exists(Path.Combine(libraryRoot, "2026-01-05 Evening", "day1-b.jpg")));
+        });
+    }
+
+    [Fact]
+    public void Merging_into_an_organized_target_gets_collision_free_names()
+    {
+        WithTempLibrary((repository, query, database) =>
+        {
+            RunScanPass(repository, query, database,
+            [
+                Item("source/photo.jpg", new DateTime(2026, 1, 1, 9, 0, 0)),
+                Item("target/other.jpg", new DateTime(2026, 1, 5, 9, 0, 0)),
+            ]);
+            var events = query.GetAllEvents();
+            var source = events.Single(e => e.MediaItemIds.Single() == query.GetAllMediaItems().Single(m => m.RelativePath == "source/photo.jpg").Id);
+            var target = events.Single(e => e.Id != source.Id);
+            MarkOrganized(database, source.Id, "source");
+            MarkOrganized(database, target.Id, "target");
+
+            var libraryRoot = database.LibraryRoot;
+            Directory.CreateDirectory(Path.Combine(libraryRoot, "source"));
+            File.WriteAllText(Path.Combine(libraryRoot, "source", "photo.jpg"), "the file being moved");
+            Directory.CreateDirectory(Path.Combine(libraryRoot, "target"));
+            File.WriteAllText(Path.Combine(libraryRoot, "target", "other.jpg"), "unrelated");
+            // Something already occupies the exact destination name.
+            File.WriteAllText(Path.Combine(libraryRoot, "target", "photo.jpg"), "existing file");
+
+            var result = repository.MergeEventInto(source.Id, target.Id);
+
+            Assert.Equal(MergeEventResult.Success, result);
+            var moved = query.GetAllMediaItems().Single(m => m.RelativePath.Contains("photo (1)"));
+            Assert.Equal("target/photo (1).jpg", moved.RelativePath);
+        });
+    }
+
+    [Fact]
+    public void Merging_leaves_an_unexpectedly_nonempty_source_folder_alone()
+    {
+        WithTempLibrary((repository, query, database) =>
+        {
+            RunScanPass(repository, query, database,
+            [
+                Item("source/photo.jpg", new DateTime(2026, 1, 1, 9, 0, 0)),
+                Item("target/other.jpg", new DateTime(2026, 1, 5, 9, 0, 0)),
+            ]);
+            var events = query.GetAllEvents();
+            var source = events.Single(e => e.MediaItemIds.Single() == query.GetAllMediaItems().Single(m => m.RelativePath == "source/photo.jpg").Id);
+            var target = events.Single(e => e.Id != source.Id);
+            MarkOrganized(database, source.Id, "source");
+            MarkOrganized(database, target.Id, "target");
+
+            var libraryRoot = database.LibraryRoot;
+            Directory.CreateDirectory(Path.Combine(libraryRoot, "source"));
+            File.WriteAllText(Path.Combine(libraryRoot, "source", "photo.jpg"), "the file being moved");
+            // Untracked leftover content Curato never put there.
+            File.WriteAllText(Path.Combine(libraryRoot, "source", "notes.txt"), "not a MediaItem");
+            Directory.CreateDirectory(Path.Combine(libraryRoot, "target"));
+
+            var result = repository.MergeEventInto(source.Id, target.Id);
+
+            Assert.Equal(MergeEventResult.Success, result);
+            Assert.True(Directory.Exists(Path.Combine(libraryRoot, "source"))); // left alone, not guessed at
+            Assert.True(File.Exists(Path.Combine(libraryRoot, "source", "notes.txt")));
         });
     }
 

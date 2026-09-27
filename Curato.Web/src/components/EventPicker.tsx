@@ -3,8 +3,6 @@ export interface EventSummary {
   title: string
   startAt: string
   endAt: string
-  /** Already organized into a real on-disk folder — refused as a move/merge target (see LibraryRepository.MoveMediaItemToEvent/MergeEventInto). */
-  isOrganized: boolean
   /** Non-null when already grouped into a Trip — unused by the picker itself, but shared with LibraryGrid's selection-bar logic (e.g. offering "Remove from Trip" only when the selection includes one). */
   tripGroupId: number | null
 }
@@ -35,7 +33,6 @@ export function EventPicker({
   onPick,
   onCancel,
   allowNewEvent = true,
-  allowOrganizedTargets = false,
 }: {
   allEvents: EventSummary[]
   referenceTakenAt: string
@@ -47,8 +44,6 @@ export function EventPicker({
   onCancel: () => void
   /** Hide the "+ move to a new Event" option — meaningless for a whole-Event merge, where there's nothing to merge a new empty Event into. */
   allowNewEvent?: boolean
-  /** A single item's Move can target an already-organized Event (the file physically relocates there); a whole-Event Merge still can't. */
-  allowOrganizedTargets?: boolean
 }) {
   const query = search.trim().toLowerCase()
   const candidates = excludeEventIds ? allEvents.filter((e) => !excludeEventIds.includes(e.id)) : allEvents
@@ -78,12 +73,7 @@ export function EventPicker({
         )}
         {sorted.map((e) => (
           <li key={e.id}>
-            <button
-              type="button"
-              disabled={e.isOrganized && !allowOrganizedTargets}
-              onClick={() => onPick(e.id)}
-              title={e.isOrganized && !allowOrganizedTargets ? "Already organized into a real folder — can't merge into it here" : undefined}
-            >
+            <button type="button" onClick={() => onPick(e.id)}>
               {e.title} <span className="move-to-event-date">{new Date(e.startAt).toLocaleDateString()}</span>
             </button>
           </li>

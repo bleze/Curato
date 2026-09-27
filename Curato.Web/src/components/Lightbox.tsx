@@ -218,7 +218,6 @@ export function Lightbox({
                 allEvents={allEvents}
                 referenceTakenAt={item.takenAt}
                 excludeEventIds={currentEventId === undefined ? undefined : [currentEventId]}
-                allowOrganizedTargets
                 search={moveSearch}
                 onSearchChange={setMoveSearch}
                 onPick={(targetEventId) => {

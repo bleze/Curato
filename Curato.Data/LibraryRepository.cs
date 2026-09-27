@@ -9,7 +9,7 @@ public enum MoveMediaItemResult { Success, MediaItemNotFound, TargetEventNotFoun
 
 public enum CreateTripGroupResult { Success, NoEventsGiven, EventNotFound, EventAlreadyInATrip }
 
-public enum MergeEventResult { Success, SourceEqualsTarget, SourceEventNotFound, TargetEventNotFound, SourceEventOrganized, TargetEventOrganized }
+public enum MergeEventResult { Success, SourceEqualsTarget, SourceEventNotFound, TargetEventNotFound }
 
 /// <summary>
 /// First, minimal persistence slice for Phase 1: save a scan's MediaItems and
@@ -458,10 +458,16 @@ public sealed class LibraryRepository(LibraryDatabase database)
     /// now-empty source — the bulk counterpart to <see cref="MoveMediaItemToEvent"/>
     /// for "these were wrongly split into two Events" (a bad clustering gap,
     /// or a batch of photos someone else shared with wrong iCloud dates that
-    /// landed in their own Event instead of joining the real one). Same
-    /// safety rule as a single-item move: refuses if either Event already has
-    /// a real on-disk FolderPath, since Curato never auto-moves files for
-    /// content it hasn't been told to Organize.
+    /// landed in their own Event instead of joining the real one). Same rule
+    /// as a single-item move: a target that's already organized gets every
+    /// member physically relocated into its real folder right now
+    /// (collision-free); a target that isn't organized yet needs no physical
+    /// move — members just stay wherever they are (even inside an
+    /// already-organized source's real folder) until some future Organize
+    /// run gives the target its own folder. Once every member has actually
+    /// been relocated out, the now-empty source folder is removed too —
+    /// never recursively, so any unexpected leftover content (something
+    /// Curato doesn't track) is left alone rather than guessed at.
     /// </summary>
     public MergeEventResult MergeEventInto(long sourceEventId, long targetEventId)
     {
@@ -482,11 +488,6 @@ public sealed class LibraryRepository(LibraryDatabase database)
         }
 
         string? sourceFolderPath = sourceRow.FolderPath;
-        if (sourceFolderPath is not null)
-        {
-            transaction.Rollback();
-            return MergeEventResult.SourceEventOrganized;
-        }
 
         var targetRow = connection.QuerySingleOrDefault(
             "SELECT FolderPath FROM Event WHERE Id = @Id", new { Id = targetEventId }, transaction);
@@ -497,10 +498,37 @@ public sealed class LibraryRepository(LibraryDatabase database)
         }
 
         string? targetFolderPath = targetRow.FolderPath;
+
         if (targetFolderPath is not null)
         {
-            transaction.Rollback();
-            return MergeEventResult.TargetEventOrganized;
+            var libraryRoot = database.LibraryRoot;
+            var claimedPaths = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+            var members = connection.Query("""
+                SELECT MediaItem.Id AS MediaItemId, MediaItem.RelativePath AS RelativePath
+                FROM EventMediaItem
+                JOIN MediaItem ON MediaItem.Id = EventMediaItem.MediaItemId
+                WHERE EventMediaItem.EventId = @SourceId
+                """, new { SourceId = sourceEventId }, transaction);
+
+            foreach (var member in members)
+            {
+                long mediaItemId = member.MediaItemId;
+                string currentRelativePath = member.RelativePath;
+                var oldFullPath = Path.Combine(libraryRoot, currentRelativePath);
+                var fileName = Path.GetFileName(currentRelativePath);
+                var newRelativePath = CollisionFreePath.Resolve(libraryRoot, targetFolderPath, fileName, claimedPaths);
+                claimedPaths.Add(newRelativePath);
+                var newFullPath = Path.Combine(libraryRoot, newRelativePath);
+
+                if (!string.Equals(Path.GetFullPath(oldFullPath), Path.GetFullPath(newFullPath), StringComparison.OrdinalIgnoreCase))
+                {
+                    Directory.CreateDirectory(Path.GetDirectoryName(newFullPath)!);
+                    File.Move(oldFullPath, newFullPath);
+                    connection.Execute(
+                        "UPDATE MediaItem SET RelativePath = @Path WHERE Id = @Id",
+                        new { Path = newRelativePath, Id = mediaItemId }, transaction);
+                }
+            }
         }
 
         connection.Execute(
@@ -510,6 +538,26 @@ public sealed class LibraryRepository(LibraryDatabase database)
         connection.Execute("DELETE FROM Event WHERE Id = @SourceId", new { SourceId = sourceEventId }, transaction);
 
         transaction.Commit();
+
+        // Only reached a genuinely empty state when every member's file was
+        // actually relocated out (target was organized) — otherwise the
+        // source folder still holds every member's real file.
+        if (targetFolderPath is not null && sourceFolderPath is not null)
+        {
+            var sourceFullPath = Path.Combine(database.LibraryRoot, sourceFolderPath);
+            try
+            {
+                if (Directory.Exists(sourceFullPath))
+                {
+                    Directory.Delete(sourceFullPath);
+                }
+            }
+            catch (IOException)
+            {
+                // Not actually empty (unexpected untracked content) — leave it rather than guess.
+            }
+        }
+
         return MergeEventResult.Success;
     }
 
