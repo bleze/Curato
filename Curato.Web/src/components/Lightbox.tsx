@@ -152,6 +152,15 @@ export function Lightbox({
 
   if (!item) return null
 
+  // The Event title when it's known (more meaningful than a raw filename,
+  // and already how the rest of the app refers to a group of photos) —
+  // falls back to the bare filename alone, never the full relative path:
+  // the caption already shows the real date/time, so the folder structure
+  // underneath it is redundant, just extra text to read past.
+  const currentEventTitle = allEvents?.find((e) => e.id === currentEventId)?.title
+  const bareFileName = item.relativePath.split('/').pop()
+  const captionLabel = currentEventTitle ?? bareFileName
+
   function clampZoom(z: number) {
     return Math.min(MAX_ZOOM, Math.max(MIN_ZOOM, z))
   }
@@ -445,7 +454,7 @@ export function Lightbox({
             >
               &#9998;
             </button>{' '}
-            &middot; {item.relativePath} &middot; {index + 1} / {items.length}
+            &middot; {captionLabel} &middot; {index + 1} / {items.length}
           </>
         )}
       </div>
