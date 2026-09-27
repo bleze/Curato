@@ -226,14 +226,22 @@ function SlideLayer({
   const videoRef = useRef<HTMLVideoElement>(null)
 
   useEffect(() => {
-    // A CSS transition never animates a property that's already at its
-    // target value on first paint — flipping the class one frame after
-    // mount (not synchronously) is what makes the crossfade actually run,
-    // for both directions (hidden→visible and visible→hidden).
-    const raf = requestAnimationFrame(() => setVisible(!startVisible))
+    // The outgoing layer is already loaded and on screen — no need to wait
+    // for anything, just start its exit animation next frame (same
+    // one-frame-after-mount reasoning as below, so the CSS transition
+    // actually animates instead of snapping straight to its end state).
+    if (!startVisible) return
+    const raf = requestAnimationFrame(() => setVisible(false))
     return () => cancelAnimationFrame(raf)
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [])
+  }, [startVisible])
+
+  // The incoming layer only reveals once its own image/video has actually
+  // finished loading (onLoad/onLoadedData below) — confirmed live as a real
+  // bug: revealing on a bare mount-timer let a still-downloading/decoding
+  // slide fade in before it had any pixels to show, flashing plain black
+  // (the overlay's own background showing through) for however long the
+  // load took. onError also reveals rather than leaving the slide stuck
+  // invisible forever if a file genuinely fails to load.
 
   // The <video> element's own `autoPlay` attribute only ever fires once, at
   // mount — toggling the Play/Pause button afterward has to drive an
@@ -252,17 +260,32 @@ function SlideLayer({
     }
   }, [playing])
 
+  function handleReady() {
+    if (startVisible || visible) return // outgoing layer, or already revealed — nothing to do
+    requestAnimationFrame(() => setVisible(true))
+  }
+
   return (
     <div
       className={`slideshow-slide slideshow-slide--${role} slideshow-transition--${transition} ${visible ? 'is-visible' : ''}`}
     >
       {item.kind === 'Video' ? (
-        <video ref={videoRef} src={rawFileUrl(libraryPath, item.relativePath)} autoPlay onEnded={onVideoEnded} playsInline />
+        <video
+          ref={videoRef}
+          src={rawFileUrl(libraryPath, item.relativePath)}
+          autoPlay
+          onEnded={onVideoEnded}
+          onLoadedData={handleReady}
+          onError={handleReady}
+          playsInline
+        />
       ) : (
         <img
           src={fullImageUrl(libraryPath, item.relativePath, item.id)}
           alt=""
           className="slideshow-kenburns"
+          onLoad={handleReady}
+          onError={handleReady}
           style={{ '--slideshow-duration': `${durationSeconds + TRANSITION_MS / 1000}s` } as React.CSSProperties}
         />
       )}

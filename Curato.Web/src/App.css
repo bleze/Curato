@@ -559,6 +559,14 @@ button {
 }
 
 .trip-header-row h2 {
+  /* Flexed (not the bare heading's default block/inline flow) so the
+     EditableTitle's rename icon centers against the title text instead of
+     the two aligning by the browser's own inline-baseline rules, which
+     always sat the icon a little too low relative to the text — the same
+     fix .event-header h3 already had, just never applied here too. */
+  display: flex;
+  align-items: center;
+  gap: 4px;
   margin: 10px 0 4px;
   font-size: 18px;
   min-width: 0;
@@ -650,20 +658,23 @@ button {
 
 .event-header-row {
   display: flex;
-  align-items: baseline;
+  /* Was baseline — fragile with a checkbox and an icon+label pill button
+     mixed in with text (neither has a well-defined text baseline), and
+     inconsistent with .trip-header-row's own center anyway. Center handles
+     every mix of content the same, predictable way. */
+  align-items: center;
   gap: 10px;
   min-width: 0;
 }
 
 .event-select-checkbox {
   flex-shrink: 0;
-  align-self: center;
   cursor: pointer;
 }
 
 .event-header h3 {
   display: flex;
-  align-items: baseline;
+  align-items: center;
   gap: 4px;
   margin: 0;
   font-size: 15px;
@@ -1501,6 +1512,22 @@ button {
   font-size: 13px;
 }
 
+/* .lightbox-toolbar button's own background/color (the translucent-white
+   toolbar look every other button here keeps) otherwise wins by
+   specificity over a bare .slideshow-start-btn class — same fix this
+   codebase already needed once before for .move-to-event-cancel. Scoped
+   so the grid header's own plain .slideshow-start-btn (not nested in
+   .lightbox-toolbar) is unaffected and keeps its own base rule. */
+.lightbox-toolbar .slideshow-start-btn {
+  background: var(--accent);
+  color: var(--on-accent);
+}
+
+.lightbox-toolbar .slideshow-start-btn:hover {
+  background: var(--accent);
+  filter: brightness(1.1);
+}
+
 .move-to-event-picker {
   width: 260px;
   max-height: 320px;
@@ -1837,6 +1864,16 @@ button {
 .slideshow-kenburns {
   animation: slideshow-kenburns var(--slideshow-duration, 5s) linear forwards;
   transform-origin: center;
+  /* A CSS animation starts progressing the instant the element exists,
+     regardless of visibility — paused here until the slide is actually
+     revealed (.is-visible, only set once SlideLayer's onLoad fires) so the
+     zoom doesn't silently advance in the background while still loading
+     and then visibly "jump ahead" the moment it's finally shown. */
+  animation-play-state: paused;
+}
+
+.slideshow-slide.is-visible .slideshow-kenburns {
+  animation-play-state: running;
 }
 
 .slideshow-transition--pan-tl .slideshow-kenburns {

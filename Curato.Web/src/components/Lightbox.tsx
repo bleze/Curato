@@ -235,7 +235,7 @@ export function Lightbox({
         )}
         <button
           type="button"
-          className="lightbox-move-btn"
+          className="lightbox-move-btn slideshow-start-btn"
           onClick={onStartSlideshow}
           title="Start a slideshow from here"
           aria-label="Slideshow"

@@ -981,8 +981,8 @@ function ThumbTile({
         >
           <svg
             viewBox="0 0 24 24"
-            width="13"
-            height="13"
+            width="11"
+            height="11"
             fill={item.favoriteCategoryId !== null ? 'currentColor' : 'none'}
             stroke="currentColor"
             strokeWidth="1.5"
