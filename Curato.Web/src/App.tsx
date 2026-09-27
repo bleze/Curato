@@ -505,17 +505,17 @@ function App() {
               </button>
               <button
                 type="button"
-                className={activeView === 'recycleBin' ? 'is-active' : ''}
-                onClick={() => setActiveView('recycleBin')}
-              >
-                Recycle Bin
-              </button>
-              <button
-                type="button"
                 className={activeView === 'persons' ? 'is-active' : ''}
                 onClick={() => setActiveView('persons')}
               >
                 Persons
+              </button>
+              <button
+                type="button"
+                className={activeView === 'recycleBin' ? 'is-active' : ''}
+                onClick={() => setActiveView('recycleBin')}
+              >
+                Recycle Bin
               </button>
             </div>
           )}
