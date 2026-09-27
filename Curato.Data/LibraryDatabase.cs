@@ -34,6 +34,16 @@ public sealed class LibraryDatabase
         LibraryRoot = Path.GetFullPath(libraryRoot);
         var curatoDir = Path.Combine(LibraryRoot, ".curato");
         Directory.CreateDirectory(curatoDir);
+        // The leading dot already hides it on Unix-y file managers; Windows
+        // Explorer needs the actual Hidden attribute too, so a user browsing
+        // the library folder doesn't run into Curato's own database/cache
+        // dir. Set on every construction (idempotent, cheap) rather than
+        // only right after CreateDirectory, so it's restored even if some
+        // outside process (backup tool, sync client) clears it.
+        if (OperatingSystem.IsWindows())
+        {
+            File.SetAttributes(curatoDir, File.GetAttributes(curatoDir) | FileAttributes.Hidden);
+        }
         DatabasePath = Path.Combine(curatoDir, "library.db");
     }
 

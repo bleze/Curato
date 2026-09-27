@@ -43,7 +43,7 @@ export function FolderBrowser({
             {data?.path !== null && data?.path !== undefined && (
               <li>
                 <button type="button" onClick={() => load(data.parentPath)}>
-                  .. (up)
+                  ..
                 </button>
               </li>
             )}

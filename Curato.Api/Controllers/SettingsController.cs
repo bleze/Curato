@@ -88,7 +88,13 @@ public sealed class SettingsController(ServerDatabase database) : ControllerBase
         {
             foreach (var dir in Directory.GetDirectories(fullPath).OrderBy(d => d, StringComparer.OrdinalIgnoreCase))
             {
-                entries.Add(new BrowseFolderEntry(Path.GetFileName(dir), dir));
+                var name = Path.GetFileName(dir);
+                if (name.StartsWith('.') || IsHidden(dir))
+                {
+                    continue;
+                }
+
+                entries.Add(new BrowseFolderEntry(name, dir));
             }
         }
         catch (UnauthorizedAccessException)
@@ -97,6 +103,23 @@ public sealed class SettingsController(ServerDatabase database) : ControllerBase
         }
 
         return Ok(new BrowseFoldersResponse(fullPath, parentPath, entries));
+    }
+
+    // Dot-prefixed names are the cross-platform convention (also catches
+    // .curato itself, see LibraryDatabase); the attribute check additionally
+    // hides Windows folders marked Hidden some other way (e.g. "System Volume
+    // Information"). Swallow failures reading attributes rather than letting
+    // one unreadable entry take down the whole listing.
+    private static bool IsHidden(string dir)
+    {
+        try
+        {
+            return (System.IO.File.GetAttributes(dir) & FileAttributes.Hidden) != 0;
+        }
+        catch
+        {
+            return false;
+        }
     }
 
     public sealed record HomeLocationResponse(string? Label);
