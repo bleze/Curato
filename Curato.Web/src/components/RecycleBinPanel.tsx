@@ -1,11 +1,8 @@
 import { useEffect, useState } from 'react'
 import type { DeletedItemDto } from '../api'
 import { getRecycleBin, purgeDeletedItem, recycleBinThumbnailUrl, restoreDeletedItem } from '../api'
-
-function daysRemaining(purgeAt: string): number {
-  const ms = new Date(purgeAt).getTime() - Date.now()
-  return Math.max(0, Math.ceil(ms / (1000 * 60 * 60 * 24)))
-}
+import { RecycleBinLightbox } from './RecycleBinLightbox'
+import { daysRemaining } from '../recycleBin'
 
 export function RecycleBinPanel({ libraryPath }: { libraryPath: string }) {
   const [items, setItems] = useState<DeletedItemDto[] | null>(null)
@@ -15,6 +12,7 @@ export function RecycleBinPanel({ libraryPath }: { libraryPath: string }) {
   // original soft-delete) — a confirm step guards against a stray click on
   // an icon button doing something Restore can't take back.
   const [confirmPurgeId, setConfirmPurgeId] = useState<number | null>(null)
+  const [lightboxIndex, setLightboxIndex] = useState<number | null>(null)
 
   function refresh() {
     getRecycleBin(libraryPath)
@@ -62,13 +60,30 @@ export function RecycleBinPanel({ libraryPath }: { libraryPath: string }) {
       {items && items.length === 0 && <p>Recycle Bin is empty.</p>}
       {items && items.length > 0 && (
         <div className="recyclebin-grid">
-          {items.map((item) => (
+          {items.map((item, i) => (
             <div className="recyclebin-item" key={item.id}>
               <div className="thumb">
-                {item.kind === 'Photo' ? (
-                  <img src={recycleBinThumbnailUrl(libraryPath, item.id)} alt="" loading="lazy" />
-                ) : (
-                  <div className="thumb-fallback">Video</div>
+                <img
+                  src={recycleBinThumbnailUrl(libraryPath, item.id)}
+                  alt=""
+                  loading="lazy"
+                  onClick={() => setLightboxIndex(i)}
+                  onError={(e) => {
+                    e.currentTarget.replaceWith(
+                      Object.assign(document.createElement('div'), {
+                        className: 'thumb-fallback',
+                        textContent: item.kind === 'Photo' ? 'No preview' : '',
+                      }),
+                    )
+                  }}
+                />
+                {item.kind === 'Video' && (
+                  <div className="video-play-badge" aria-hidden="true">
+                    <svg viewBox="0 0 24 24" width="32" height="32">
+                      <circle cx="12" cy="12" r="11" fill="rgba(0,0,0,0.55)" />
+                      <path d="M9.5 7.5v9l7-4.5z" fill="white" />
+                    </svg>
+                  </div>
                 )}
                 <button
                   type="button"
@@ -88,8 +103,8 @@ export function RecycleBinPanel({ libraryPath }: { libraryPath: string }) {
                   disabled={busyId === item.id}
                   onClick={() => setConfirmPurgeId(item.id)}
                 >
-                  <svg viewBox="0 0 24 24" width="12" height="12" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round">
-                    <path d="M6 6l12 12M18 6L6 18" />
+                  <svg viewBox="0 0 24 24" width="12" height="12" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
+                    <path d="M3 6h18M8 6V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2m3 0-1 14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2L4 6h16z" />
                   </svg>
                 </button>
               </div>
@@ -121,6 +136,18 @@ export function RecycleBinPanel({ libraryPath }: { libraryPath: string }) {
             </div>
           </div>
         </div>
+      )}
+
+      {lightboxIndex !== null && items && (
+        <RecycleBinLightbox
+          items={items}
+          index={lightboxIndex}
+          libraryPath={libraryPath}
+          onClose={() => setLightboxIndex(null)}
+          onNavigate={setLightboxIndex}
+          onRestore={handleRestore}
+          onPurge={handlePurge}
+        />
       )}
     </div>
   )

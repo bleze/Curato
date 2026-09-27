@@ -1,6 +1,8 @@
 using Curato.Data;
+using Curato.Media;
 using Curato.Organizer;
 using Microsoft.AspNetCore.Mvc;
+using Microsoft.AspNetCore.StaticFiles;
 
 namespace Curato.Api.Controllers;
 
@@ -18,6 +20,8 @@ public sealed class RecycleBinController : ControllerBase
 {
     public sealed record DeleteRequest(string Path, long MediaItemId, string Source = "Manual");
     public sealed record ItemIdRequest(string Path, long DeletedItemId);
+
+    private static readonly FileExtensionContentTypeProvider ContentTypeProvider = new();
 
     public sealed record DeletedItemDto(
         long Id, string OriginalRelativePath, string Kind, DateTime DeletedAt, DateTime PurgeAt, string Source);
@@ -102,12 +106,45 @@ public sealed class RecycleBinController : ControllerBase
 
         try
         {
-            var jpegBytes = Curato.Media.ThumbnailGenerator.GenerateJpeg(trashedFullPath, size);
+            var isVideo = MediaFileScanner.IsVideoExtension(Path.GetExtension(trashedFullPath));
+            var jpegBytes = isVideo
+                ? VideoThumbnailGenerator.GenerateJpeg(trashedFullPath, size)
+                : ThumbnailGenerator.GenerateJpeg(trashedFullPath, size);
             return File(jpegBytes, "image/jpeg");
         }
         catch (Exception) when (!System.Diagnostics.Debugger.IsAttached)
         {
             return NotFound();
         }
+    }
+
+    /// <summary>
+    /// The unmodified trashed file — backs the Recycle Bin's fullscreen
+    /// viewer (photo full-size and video playback both use this, no Edit
+    /// pipeline: a deleted MediaItem's Edit rows don't survive
+    /// <see cref="RecycleBinService.DeleteMediaItem"/> anyway). Mirrors
+    /// MediaController's own /raw endpoint, just resolved against the trash
+    /// location instead of the library root + relativePath.
+    /// </summary>
+    [HttpGet("raw")]
+    public IActionResult GetRawFile([FromQuery] string path, [FromQuery] long deletedItemId)
+    {
+        if (OpenLibrary(path) is not { } opened)
+        {
+            return NotFound($"Folder not found: {path}");
+        }
+
+        var trashedFullPath = opened.Service.GetTrashedFileFullPath(deletedItemId);
+        if (trashedFullPath is null || !System.IO.File.Exists(trashedFullPath))
+        {
+            return NotFound();
+        }
+
+        if (!ContentTypeProvider.TryGetContentType(trashedFullPath, out var contentType))
+        {
+            contentType = "application/octet-stream";
+        }
+
+        return PhysicalFile(trashedFullPath, contentType, enableRangeProcessing: true);
     }
 }

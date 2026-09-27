@@ -422,9 +422,15 @@ export function purgeDeletedItem(path: string, deletedItemId: number): Promise<v
   }).then(expectOk)
 }
 
-export function recycleBinThumbnailUrl(libraryPath: string, deletedItemId: number): string {
+export function recycleBinThumbnailUrl(libraryPath: string, deletedItemId: number, size?: number): string {
   const params = new URLSearchParams({ path: libraryPath, deletedItemId: String(deletedItemId) })
+  if (size !== undefined) params.set('size', String(size))
   return `/api/recyclebin/thumbnail?${params.toString()}`
+}
+
+export function recycleBinRawUrl(libraryPath: string, deletedItemId: number): string {
+  const params = new URLSearchParams({ path: libraryPath, deletedItemId: String(deletedItemId) })
+  return `/api/recyclebin/raw?${params.toString()}`
 }
 
 export interface UploadResult {
