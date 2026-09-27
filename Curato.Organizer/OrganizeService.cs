@@ -88,7 +88,7 @@ public sealed class OrganizeService(LibraryDatabase database, LibraryQueryServic
         var oldRelativePath = item.RelativePath;
         var oldFullPath = Path.Combine(libraryRoot, oldRelativePath);
         var fileName = Path.GetFileName(oldRelativePath);
-        var newRelativePath = ResolveCollisionFreePath(libraryRoot, eventFolderPath, fileName, claimedPaths);
+        var newRelativePath = CollisionFreePath.Resolve(libraryRoot, eventFolderPath, fileName, claimedPaths);
         claimedPaths.Add(newRelativePath);
 
         var newFullPath = Path.Combine(libraryRoot, newRelativePath);
@@ -106,25 +106,4 @@ public sealed class OrganizeService(LibraryDatabase database, LibraryQueryServic
         return true;
     }
 
-    private static string ResolveCollisionFreePath(
-        string libraryRoot, string folderPath, string fileName, HashSet<string> claimedPaths)
-    {
-        var candidate = $"{folderPath}/{fileName}";
-        if (!claimedPaths.Contains(candidate) && !File.Exists(Path.Combine(libraryRoot, candidate)))
-        {
-            return candidate;
-        }
-
-        var nameWithoutExtension = Path.GetFileNameWithoutExtension(fileName);
-        var extension = Path.GetExtension(fileName);
-        var counter = 1;
-        string suffixed;
-        do
-        {
-            suffixed = $"{folderPath}/{nameWithoutExtension} ({counter}){extension}";
-            counter++;
-        } while (claimedPaths.Contains(suffixed) || File.Exists(Path.Combine(libraryRoot, suffixed)));
-
-        return suffixed;
-    }
 }

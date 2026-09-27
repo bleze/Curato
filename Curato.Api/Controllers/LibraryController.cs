@@ -242,8 +242,6 @@ public sealed class LibraryController(LibraryOperationGate gate, ServerDatabase 
             MoveMediaItemResult.Success => NoContent(),
             MoveMediaItemResult.MediaItemNotFound => NotFound($"No MediaItem with id {request.MediaItemId}"),
             MoveMediaItemResult.TargetEventNotFound => NotFound($"No Event with id {request.TargetEventId}"),
-            MoveMediaItemResult.SourceEventOrganized => Conflict("This item's current Event has already been organized into a real folder — moving it here would desync the database from what's actually on disk."),
-            MoveMediaItemResult.TargetEventOrganized => Conflict("That Event has already been organized into a real folder — moving a file into it isn't supported here."),
             _ => StatusCode(500)
         };
     }

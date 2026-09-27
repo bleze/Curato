@@ -5,7 +5,7 @@ using Dapper;
 
 namespace Curato.Data;
 
-public enum MoveMediaItemResult { Success, MediaItemNotFound, TargetEventNotFound, SourceEventOrganized, TargetEventOrganized }
+public enum MoveMediaItemResult { Success, MediaItemNotFound, TargetEventNotFound }
 
 public enum CreateTripGroupResult { Success, NoEventsGiven, EventNotFound, EventAlreadyInATrip }
 
@@ -345,29 +345,22 @@ public sealed class LibraryRepository(LibraryDatabase database)
         using var connection = database.OpenConnection();
         using var transaction = connection.BeginTransaction();
 
-        var takenAtRaw = connection.ExecuteScalar<string?>(
-            "SELECT TakenAt FROM MediaItem WHERE Id = @Id", new { Id = mediaItemId }, transaction);
-        if (takenAtRaw is null)
+        var itemRow = connection.QuerySingleOrDefault<(string TakenAt, string RelativePath)?>(
+            "SELECT TakenAt, RelativePath FROM MediaItem WHERE Id = @Id", new { Id = mediaItemId }, transaction);
+        if (itemRow is null)
         {
             transaction.Rollback();
             return MoveMediaItemResult.MediaItemNotFound;
         }
 
+        var takenAtRaw = itemRow.Value.TakenAt;
+        var currentRelativePath = itemRow.Value.RelativePath;
+
         var sourceEventId = connection.ExecuteScalar<long?>(
             "SELECT EventId FROM EventMediaItem WHERE MediaItemId = @Id", new { Id = mediaItemId }, transaction);
 
-        if (sourceEventId is { } srcId)
-        {
-            var sourceFolderPath = connection.ExecuteScalar<string?>(
-                "SELECT FolderPath FROM Event WHERE Id = @Id", new { Id = srcId }, transaction);
-            if (sourceFolderPath is not null)
-            {
-                transaction.Rollback();
-                return MoveMediaItemResult.SourceEventOrganized;
-            }
-        }
-
         long resolvedTargetId;
+        string? targetFolderPath;
         if (targetEventId is { } requestedTargetId)
         {
             var targetRow = connection.QuerySingleOrDefault<(string? FolderPath, bool Found)?>("""
@@ -380,13 +373,8 @@ public sealed class LibraryRepository(LibraryDatabase database)
                 return MoveMediaItemResult.TargetEventNotFound;
             }
 
-            if (targetRow.Value.FolderPath is not null)
-            {
-                transaction.Rollback();
-                return MoveMediaItemResult.TargetEventOrganized;
-            }
-
             resolvedTargetId = requestedTargetId;
+            targetFolderPath = targetRow.Value.FolderPath;
         }
         else
         {
@@ -401,6 +389,35 @@ public sealed class LibraryRepository(LibraryDatabase database)
                 Title = Curato.Core.EventClusterer.AutoTitle(takenAt),
                 NamingMode = nameof(Curato.Core.NamingMode.CuratoManaged)
             }, transaction);
+            targetFolderPath = null;
+        }
+
+        // A real on-disk folder on either side no longer refuses the move
+        // outright — Curato never lets its database and the real filesystem
+        // disagree about where a file lives (PLAN.md §4), so a target that's
+        // already organized gets the file physically moved into it right
+        // now, the same collision-free way Organize itself would. A target
+        // that ISN'T organized yet needs no physical move at all: the file
+        // just stays exactly where it is (even if that's inside an
+        // already-organized source's real folder) until some future
+        // Organize run gives the target its own folder and picks it up —
+        // identical to how a never-yet-moved item already works today.
+        if (targetFolderPath is not null)
+        {
+            var libraryRoot = database.LibraryRoot;
+            var oldFullPath = Path.Combine(libraryRoot, currentRelativePath);
+            var fileName = Path.GetFileName(currentRelativePath);
+            var newRelativePath = CollisionFreePath.Resolve(libraryRoot, targetFolderPath, fileName, new HashSet<string>());
+            var newFullPath = Path.Combine(libraryRoot, newRelativePath);
+
+            if (!string.Equals(Path.GetFullPath(oldFullPath), Path.GetFullPath(newFullPath), StringComparison.OrdinalIgnoreCase))
+            {
+                Directory.CreateDirectory(Path.GetDirectoryName(newFullPath)!);
+                File.Move(oldFullPath, newFullPath);
+                connection.Execute(
+                    "UPDATE MediaItem SET RelativePath = @Path WHERE Id = @Id",
+                    new { Path = newRelativePath, Id = mediaItemId }, transaction);
+            }
         }
 
         if (sourceEventId is { } sourceIdToLeave)

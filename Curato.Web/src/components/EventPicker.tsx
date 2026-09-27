@@ -35,6 +35,7 @@ export function EventPicker({
   onPick,
   onCancel,
   allowNewEvent = true,
+  allowOrganizedTargets = false,
 }: {
   allEvents: EventSummary[]
   referenceTakenAt: string
@@ -46,6 +47,8 @@ export function EventPicker({
   onCancel: () => void
   /** Hide the "+ move to a new Event" option — meaningless for a whole-Event merge, where there's nothing to merge a new empty Event into. */
   allowNewEvent?: boolean
+  /** A single item's Move can target an already-organized Event (the file physically relocates there); a whole-Event Merge still can't. */
+  allowOrganizedTargets?: boolean
 }) {
   const query = search.trim().toLowerCase()
   const candidates = excludeEventIds ? allEvents.filter((e) => !excludeEventIds.includes(e.id)) : allEvents
@@ -77,9 +80,9 @@ export function EventPicker({
           <li key={e.id}>
             <button
               type="button"
-              disabled={e.isOrganized}
+              disabled={e.isOrganized && !allowOrganizedTargets}
               onClick={() => onPick(e.id)}
-              title={e.isOrganized ? "Already organized into a real folder — can't move/merge into it here" : undefined}
+              title={e.isOrganized && !allowOrganizedTargets ? "Already organized into a real folder — can't merge into it here" : undefined}
             >
               {e.title} <span className="move-to-event-date">{new Date(e.startAt).toLocaleDateString()}</span>
             </button>

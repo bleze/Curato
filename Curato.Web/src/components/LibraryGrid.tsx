@@ -686,6 +686,7 @@ export function LibraryGrid({
             referenceTakenAt={moveTarget.kind === 'item' ? moveTarget.item.takenAt : moveTarget.referenceStartAt}
             excludeEventIds={moveTarget.kind === 'item' ? [moveTarget.eventId] : moveTarget.eventIds}
             allowNewEvent={moveTarget.kind === 'item'}
+            allowOrganizedTargets={moveTarget.kind === 'item'}
             search={moveSearch}
             onSearchChange={setMoveSearch}
             onPick={(targetEventId) => {
@@ -951,10 +952,10 @@ function ThumbTile({
             height="13"
             fill={item.favoriteCategoryId !== null ? 'currentColor' : 'none'}
             stroke="currentColor"
-            strokeWidth="2"
+            strokeWidth="1.5"
             strokeLinejoin="round"
           >
-            <path d="M12 3.5l2.6 5.6 6.1.6-4.6 4.1 1.3 6-5.4-3.2-5.4 3.2 1.3-6-4.6-4.1 6.1-.6z" />
+            <path d="M12 .587l3.668 7.568 8.332 1.151-6.064 5.828 1.48 8.279-7.416-3.967-7.416 3.967 1.481-8.279-6.064-5.828 8.332-1.151z" />
           </svg>
         </button>
       )}

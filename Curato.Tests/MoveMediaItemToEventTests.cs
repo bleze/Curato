@@ -116,7 +116,7 @@ public class MoveMediaItemToEventTests
     }
 
     [Fact]
-    public void Moving_out_of_an_already_organized_event_is_refused()
+    public void Moving_out_of_an_already_organized_event_into_a_new_event_leaves_the_file_where_it_is()
     {
         WithTempLibrary((repository, query, database) =>
         {
@@ -125,12 +125,20 @@ public class MoveMediaItemToEventTests
             MarkOrganized(database, @event.Id, "2026-01-01 Morning");
 
             var id = query.GetAllMediaItems().Single().Id;
-            Assert.Equal(MoveMediaItemResult.SourceEventOrganized, repository.MoveMediaItemToEvent(id, targetEventId: null));
+            var result = repository.MoveMediaItemToEvent(id, targetEventId: null);
+
+            Assert.Equal(MoveMediaItemResult.Success, result);
+            // The new standalone Event has no real folder yet, so nothing
+            // physically moves — the file stays exactly where it is (even
+            // though that's still inside the old organized folder) until
+            // some future Organize run gives the new Event its own folder.
+            var moved = query.GetAllMediaItems().Single();
+            Assert.Equal("a.jpg", moved.RelativePath);
         });
     }
 
     [Fact]
-    public void Moving_into_an_already_organized_event_is_refused()
+    public void Moving_into_an_already_organized_event_physically_relocates_the_file()
     {
         WithTempLibrary((repository, query, database) =>
         {
@@ -144,9 +152,49 @@ public class MoveMediaItemToEventTests
             MarkOrganized(database, organizedEvent.Id, "2026-01-01 Morning");
 
             var looseId = query.GetAllMediaItems().Single(m => m.RelativePath == "loose.jpg").Id;
-            Assert.Equal(
-                MoveMediaItemResult.TargetEventOrganized,
-                repository.MoveMediaItemToEvent(looseId, targetEventId: organizedEvent.Id));
+            var libraryRoot = database.LibraryRoot;
+            var oldFullPath = Path.Combine(libraryRoot, "loose.jpg");
+            File.WriteAllText(oldFullPath, "fake image bytes");
+
+            var result = repository.MoveMediaItemToEvent(looseId, targetEventId: organizedEvent.Id);
+
+            Assert.Equal(MoveMediaItemResult.Success, result);
+            Assert.False(File.Exists(oldFullPath));
+            var moved = query.GetAllMediaItems().Single(m => m.Id == looseId);
+            Assert.Equal("2026-01-01 Morning/loose.jpg", moved.RelativePath);
+            Assert.True(File.Exists(Path.Combine(libraryRoot, moved.RelativePath)));
+        });
+    }
+
+    [Fact]
+    public void Moving_into_an_organized_event_gets_a_collision_free_name_if_one_already_exists_there()
+    {
+        WithTempLibrary((repository, query, database) =>
+        {
+            RunScanPass(repository, query, database,
+            [
+                Item("organized.jpg", new DateTime(2026, 1, 1, 9, 0, 0)),
+                Item("loose.jpg", new DateTime(2026, 1, 5, 9, 0, 0)),
+            ]);
+
+            var organizedEvent = query.GetAllEvents().Single(e => e.StartAt == new DateTime(2026, 1, 1, 9, 0, 0));
+            MarkOrganized(database, organizedEvent.Id, "2026-01-01 Morning");
+
+            var libraryRoot = database.LibraryRoot;
+            Directory.CreateDirectory(Path.Combine(libraryRoot, "2026-01-01 Morning"));
+            // Something already occupies the exact destination name/path —
+            // unrelated to any of this fixture's own MediaItem rows.
+            File.WriteAllText(Path.Combine(libraryRoot, "2026-01-01 Morning", "loose.jpg"), "existing file");
+
+            var looseId = query.GetAllMediaItems().Single(m => m.RelativePath == "loose.jpg").Id;
+            File.WriteAllText(Path.Combine(libraryRoot, "loose.jpg"), "the file being moved");
+
+            var result = repository.MoveMediaItemToEvent(looseId, targetEventId: organizedEvent.Id);
+
+            Assert.Equal(MoveMediaItemResult.Success, result);
+            var moved = query.GetAllMediaItems().Single(m => m.Id == looseId);
+            Assert.Equal("2026-01-01 Morning/loose (1).jpg", moved.RelativePath);
+            Assert.True(File.Exists(Path.Combine(libraryRoot, moved.RelativePath)));
         });
     }
 
