@@ -141,4 +141,33 @@ public class EventDateOutlierDetectorTests
 
         Assert.Empty(outliers);
     }
+
+    /// <summary>
+    /// Confirmed live against "Freja i Budapest": 7 of 8 photos all read
+    /// TakenAtSource ExifDateTaken yet were seconds apart starting exactly
+    /// at 1980-01-01T00:00:00 — a camera whose clock was never set,
+    /// counting up from its own power-on default. The one photo with the
+    /// real 2023 date only had a FileSystem-sourced timestamp, so a naive
+    /// "trust Exif over FileSystem" rule flagged the one *correct* photo
+    /// instead of the seven wrong ones.
+    /// </summary>
+    [Fact]
+    public void Flags_a_whole_clocks_never_set_majority_over_one_correct_filesystem_date()
+    {
+        var items = new[]
+        {
+            Item(1, new DateTime(1980, 1, 1, 0, 0, 10)),
+            Item(2, new DateTime(1980, 1, 1, 0, 0, 15)),
+            Item(3, new DateTime(1980, 1, 1, 0, 0, 17)),
+            Item(4, new DateTime(1980, 1, 1, 0, 0, 25)),
+            Item(5, new DateTime(1980, 1, 1, 0, 0, 44)),
+            Item(6, new DateTime(1980, 1, 1, 0, 0, 54)),
+            Item(7, new DateTime(1980, 1, 1, 0, 1, 6)),
+            Item(8, new DateTime(2023, 7, 29, 14, 19, 32), TakenAtSource.FileSystem),
+        };
+
+        var outliers = EventDateOutlierDetector.FindOutlierMediaItemIds(items);
+
+        Assert.Equal([1L, 2L, 3L, 4L, 5L, 6L, 7L], outliers.OrderBy(x => x));
+    }
 }

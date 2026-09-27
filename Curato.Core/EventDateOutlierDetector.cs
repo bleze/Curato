@@ -33,6 +33,24 @@ public static class EventDateOutlierDetector
     // headcount, has to decide which group is the anchor.
     private const double UnreliableSourceDeviationDays = 1.0;
 
+    // Consumer digital cameras (and therefore genuine Exif capture dates)
+    // didn't exist before ~1990 — the same bound MediaFileScanner's own
+    // QuickTime-epoch fix and RepairWrongEpochVideoTakenAt already use for
+    // videos. A photo whose Exif reads earlier than this isn't "an old
+    // photo", it's a camera whose clock was never set at all: confirmed
+    // live for a folder where 7 of 8 photos all read TakenAtSource
+    // ExifDateTaken yet were seconds apart starting at exactly
+    // 1980-01-01T00:00:00 — the camera's power-on default, ticking forward
+    // normally from there. That nominal "reliable" source tag doesn't make
+    // the date real, so this check runs before — and regardless of —
+    // IsAnchor below. Manual is exempt: a person may have deliberately set
+    // a real pre-digital date for scanned photos (see
+    // FolderTitleParser.IsBeforeDigitalScansFolder).
+    private const int EarliestPlausibleDigitalYear = 1990;
+
+    private static bool IsImplausible(TakenAtSource source, DateTime takenAt) =>
+        source != TakenAtSource.Manual && takenAt.Year < EarliestPlausibleDigitalYear;
+
     // ExifDateTaken/VideoMetadata came straight from the file's own
     // metadata; Manual was explicitly confirmed by a person. Either is
     // trusted as an anchor other items get compared against — Manual is
@@ -49,19 +67,41 @@ public static class EventDateOutlierDetector
             return [];
         }
 
-        var anchors = items.Where(i => IsAnchor(i.Source)).ToList();
-        var nonAnchors = items.Where(i => !IsAnchor(i.Source)).ToList();
+        var outliers = new HashSet<long>();
 
-        // No trustworthy anchor at all (e.g. every item in this Event only
-        // ever got a filesystem timestamp) — nothing to prefer over
-        // anything else, so fall back to comparing everything against
-        // everything, same as before this reliability split existed.
-        if (anchors.Count == 0)
+        var implausibleIds = items.Where(i => IsImplausible(i.Source, i.TakenAt)).Select(i => i.Id).ToHashSet();
+        foreach (var id in implausibleIds)
         {
-            return FindStatisticalOutliers(items.Select(i => (i.Id, i.TakenAt)).ToList());
+            outliers.Add(id);
         }
 
-        var outliers = new HashSet<long>();
+        // Whatever's left (excluding the already-flagged implausible ones)
+        // gets the normal reliability/statistical comparison — there might
+        // still be a subtler disagreement among otherwise-plausible dates
+        // (e.g. Tesla vinterhjul's filesystem-vs-Exif split, no implausible
+        // years involved at all).
+        var remaining = items.Where(i => !implausibleIds.Contains(i.Id)).ToList();
+        if (remaining.Count < 3)
+        {
+            return outliers;
+        }
+
+        var anchors = remaining.Where(i => IsAnchor(i.Source)).ToList();
+        var nonAnchors = remaining.Where(i => !IsAnchor(i.Source)).ToList();
+
+        // No trustworthy anchor at all (e.g. every remaining item only ever
+        // got a filesystem timestamp) — nothing to prefer over anything
+        // else, so fall back to comparing everything against everything,
+        // same as before this reliability split existed.
+        if (anchors.Count == 0)
+        {
+            foreach (var id in FindStatisticalOutliers(remaining.Select(i => (i.Id, i.TakenAt)).ToList()))
+            {
+                outliers.Add(id);
+            }
+
+            return outliers;
+        }
 
         // Statistical pass *within* the anchor subset — still catches a
         // single mis-set camera clock even when every item in the Event
