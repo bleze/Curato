@@ -281,7 +281,10 @@ function App() {
     try {
       const result = await organizeLibrary(loadedPath)
       setStatus(
-        `Organize: ${result.eventsOrganized} event(s) arranged, ${result.filesMoved} file(s) moved.`,
+        `Organize: ${result.eventsOrganized} event(s) arranged, ${result.filesMoved} file(s) moved.` +
+          (result.filesSkippedMissing > 0
+            ? ` ${result.filesSkippedMissing} file(s) skipped — missing from disk (something changed them outside Curato). Re-scan to reconcile.`
+            : ''),
       )
       const lib = await getLibrary(loadedPath)
       setLibrary(lib)

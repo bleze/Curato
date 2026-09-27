@@ -234,6 +234,8 @@ export function getLibrary(path: string): Promise<LibraryDto> {
 export interface OrganizeResult {
   eventsOrganized: number
   filesMoved: number
+  /** Skipped rather than crashing the whole Organize run — something changed the file outside Curato since the last Scan. Re-scanning reconciles it (routes it through the Recycle Bin if it's genuinely gone). */
+  filesSkippedMissing: number
 }
 
 export function organizeLibrary(path: string): Promise<OrganizeResult> {

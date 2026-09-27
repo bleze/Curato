@@ -3,7 +3,9 @@ using Curato.Data;
 
 namespace Curato.Organizer;
 
-public sealed record OrganizeResult(int EventsOrganized, int FilesMoved);
+public sealed record OrganizeResult(int EventsOrganized, int FilesMoved, int FilesSkippedMissing);
+
+internal enum MoveOutcome { AlreadyInPlace, Moved, SourceMissing }
 
 /// <summary>
 /// PLAN.md §4 — physically arranges CuratoManaged Events/Trips into the
@@ -33,13 +35,14 @@ public sealed class OrganizeService(LibraryDatabase database, LibraryQueryServic
 
         if (unorganizedEvents.Count == 0)
         {
-            return new OrganizeResult(0, 0);
+            return new OrganizeResult(0, 0, 0);
         }
 
         var batchId = organizeRepository.CreateBatch();
         var claimedPaths = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
         var tripsAlreadyGivenAPath = new HashSet<long>();
         var filesMoved = 0;
+        var filesSkippedMissing = 0;
 
         foreach (var @event in unorganizedEvents)
         {
@@ -53,16 +56,28 @@ public sealed class OrganizeService(LibraryDatabase database, LibraryQueryServic
                     continue;
                 }
 
-                if (MoveItemIfNeeded(libraryRoot, batchId, item, eventFolderPath, claimedPaths))
+                switch (MoveItemIfNeeded(libraryRoot, batchId, item, eventFolderPath, claimedPaths))
                 {
-                    filesMoved++;
+                    case MoveOutcome.Moved:
+                        filesMoved++;
+                        break;
+                    case MoveOutcome.SourceMissing:
+                        filesSkippedMissing++;
+                        break;
                 }
             }
 
+            // Still set even if a member's file turned out to be missing —
+            // FolderPath is the right destination for every member whose
+            // file actually exists; the missing one is a pre-existing
+            // desync (something changed the file outside Curato since the
+            // last scan) this doesn't cause and can't itself fix. A Scan
+            // (not Organize) is what reconciles that: it already routes
+            // anything no longer found on disk through the Recycle Bin.
             organizeRepository.SetEventFolderPath(@event.Id, eventFolderPath);
         }
 
-        return new OrganizeResult(unorganizedEvents.Count, filesMoved);
+        return new OrganizeResult(unorganizedEvents.Count, filesMoved, filesSkippedMissing);
     }
 
     private TripGroup? ResolveTripFolderPath(
@@ -82,11 +97,26 @@ public sealed class OrganizeService(LibraryDatabase database, LibraryQueryServic
         return trip;
     }
 
-    private bool MoveItemIfNeeded(
+    /// <summary>
+    /// Confirmed live as a real crash, not just a hypothetical: something
+    /// renamed/moved/deleted a file outside Curato after the last Scan, and
+    /// this blindly trusted the stale RelativePath and let File.Move's
+    /// FileNotFoundException blow up the whole Organize request — including
+    /// every OTHER event's move still queued behind it in the same batch.
+    /// A missing source is now just skipped (reported back, not silently
+    /// swallowed) so one stale item can't take an entire Organize run down
+    /// with it.
+    /// </summary>
+    private MoveOutcome MoveItemIfNeeded(
         string libraryRoot, long batchId, MediaItem item, string eventFolderPath, HashSet<string> claimedPaths)
     {
         var oldRelativePath = item.RelativePath;
         var oldFullPath = Path.Combine(libraryRoot, oldRelativePath);
+        if (!File.Exists(oldFullPath))
+        {
+            return MoveOutcome.SourceMissing;
+        }
+
         var fileName = Path.GetFileName(oldRelativePath);
         var newRelativePath = CollisionFreePath.Resolve(libraryRoot, eventFolderPath, fileName, claimedPaths);
         claimedPaths.Add(newRelativePath);
@@ -94,7 +124,7 @@ public sealed class OrganizeService(LibraryDatabase database, LibraryQueryServic
         var newFullPath = Path.Combine(libraryRoot, newRelativePath);
         if (string.Equals(Path.GetFullPath(oldFullPath), Path.GetFullPath(newFullPath), StringComparison.OrdinalIgnoreCase))
         {
-            return false; // already exactly where it needs to be
+            return MoveOutcome.AlreadyInPlace;
         }
 
         Directory.CreateDirectory(Path.GetDirectoryName(newFullPath)!);
@@ -103,7 +133,6 @@ public sealed class OrganizeService(LibraryDatabase database, LibraryQueryServic
         organizeRepository.RecordMove(batchId, item.Id, oldRelativePath, newRelativePath);
         organizeRepository.UpdateMediaItemPath(item.Id, newRelativePath);
         item.RelativePath = newRelativePath;
-        return true;
+        return MoveOutcome.Moved;
     }
-
 }
