@@ -4,6 +4,7 @@ import type { MediaItemDto } from '../api'
 import { bumpImageVersion, rotateMediaItem, thumbnailUrl } from '../api'
 import { formatTakenAt } from '../format'
 import { Lightbox } from './Lightbox'
+import { Slideshow } from './Slideshow'
 import { useThumbMinWidth } from '../thumbSize'
 import { useUse24HourTime } from '../timeFormat'
 
@@ -31,6 +32,7 @@ export function TagGrid({
   // never falls back to a guessed column count anymore.
   const [containerWidth, setContainerWidth] = useState<number | null>(null)
   const [lightbox, setLightbox] = useState<number | null>(null)
+  const [slideshow, setSlideshow] = useState<number | null>(null)
   // See LibraryGrid's identical hover-to-rotate feature for why this is a
   // ref, not state, and how it's non-destructive (a saved Edit row only).
   const hoveredPhotoRef = useRef<MediaItemDto | null>(null)
@@ -206,7 +208,15 @@ export function TagGrid({
           onNavigate={setLightbox}
           onTakenAtChanged={onTakenAtChanged}
           onRotated={onRotated}
+          onStartSlideshow={() => {
+            setSlideshow(lightbox)
+            setLightbox(null)
+          }}
         />
+      )}
+
+      {slideshow !== null && (
+        <Slideshow items={items} startIndex={slideshow} libraryPath={libraryPath} onClose={() => setSlideshow(null)} />
       )}
     </div>
   )

@@ -9,6 +9,7 @@ import { EventPicker } from './EventPicker'
 import { FavoriteCategoryMenu } from './FavoriteCategoryMenu'
 import { formatTakenAt } from '../format'
 import { Lightbox } from './Lightbox'
+import { Slideshow } from './Slideshow'
 import { useThumbMinWidth } from '../thumbSize'
 import { useUse24HourTime } from '../timeFormat'
 
@@ -282,6 +283,7 @@ export function LibraryGrid({
   // "container height" state wasn't the same reference frame.
   const scrubberRailRef = useRef<HTMLDivElement>(null)
   const [lightbox, setLightbox] = useState<{ items: MediaItemDto[]; index: number; eventId: number } | null>(null)
+  const [slideshow, setSlideshow] = useState<{ items: MediaItemDto[]; index: number } | null>(null)
   // A ref, not state — this changes on every mouse move between thumbnails,
   // and none of that needs to trigger a re-render of the (potentially huge)
   // virtualized grid; a keydown handler only ever needs its *current* value
@@ -545,6 +547,16 @@ export function LibraryGrid({
                     </span>
                     <button
                       type="button"
+                      className="slideshow-start-btn"
+                      title="Slideshow of this whole Trip"
+                      aria-label="Slideshow"
+                      onClick={() => setSlideshow({ items: block.trip.events.flatMap((e) => e.items), index: 0 })}
+                    >
+                      <svg viewBox="0 0 24 24" width="14" height="14" fill="currentColor"><path d="M8 5v14l11-7z" /></svg>
+                      Slideshow
+                    </button>
+                    <button
+                      type="button"
                       className="trip-ungroup-btn"
                       title="Ungroup — its Events become standalone again (no file is moved)"
                       onClick={() => onUngroupTripGroup(block.trip.id)}
@@ -582,6 +594,16 @@ export function LibraryGrid({
                       {block.event.namingMode === 'Adopted' && <span className="badge">Adopted</span>}
                       {block.event.location && <> &middot; {block.event.location}</>}
                     </span>
+                    <button
+                      type="button"
+                      className="slideshow-start-btn"
+                      title="Slideshow of this Event"
+                      aria-label="Slideshow"
+                      onClick={() => setSlideshow({ items: block.event.items, index: 0 })}
+                    >
+                      <svg viewBox="0 0 24 24" width="14" height="14" fill="currentColor"><path d="M8 5v14l11-7z" /></svg>
+                      Slideshow
+                    </button>
                     {block.event.proposedFolderPath && (
                       <p className="proposed-path" title={`Will move to: ${block.event.proposedFolderPath}`}>
                         Will move to: {block.event.proposedFolderPath}
@@ -727,6 +749,19 @@ export function LibraryGrid({
           onTakenAtChanged={onTakenAtChanged}
           onRotated={onRotated}
           onMoveToEvent={onMoveMediaItemToEvent}
+          onStartSlideshow={() => {
+            setSlideshow({ items: lightbox.items, index: lightbox.index })
+            setLightbox(null)
+          }}
+        />
+      )}
+
+      {slideshow && (
+        <Slideshow
+          items={slideshow.items}
+          startIndex={slideshow.index}
+          libraryPath={libraryPath}
+          onClose={() => setSlideshow(null)}
         />
       )}
     </div>

@@ -31,6 +31,7 @@ export function Lightbox({
   onTakenAtChanged,
   onRotated,
   onMoveToEvent,
+  onStartSlideshow,
 }: {
   items: MediaItemDto[]
   index: number
@@ -44,6 +45,8 @@ export function Lightbox({
   onTakenAtChanged: (mediaItemId: number, takenAt: string) => void
   onRotated: (mediaItemId: number) => void
   onMoveToEvent?: (mediaItemId: number, targetEventId: number | null) => void
+  /** Starts a fullscreen Slideshow over these same items, from the photo/video currently open — closes this Lightbox first (see Slideshow.tsx). */
+  onStartSlideshow: () => void
 }) {
   const item = items[index]
   const use24Hour = useUse24HourTime()
@@ -230,6 +233,16 @@ export function Lightbox({
             )}
           </>
         )}
+        <button
+          type="button"
+          className="lightbox-move-btn"
+          onClick={onStartSlideshow}
+          title="Start a slideshow from here"
+          aria-label="Slideshow"
+        >
+          <svg viewBox="0 0 24 24" width="16" height="16" fill="currentColor"><path d="M8 5v14l11-7z" /></svg>
+          Slideshow
+        </button>
       </div>
       {index > 0 && (
         <button
