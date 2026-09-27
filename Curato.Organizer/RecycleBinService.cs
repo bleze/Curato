@@ -1,3 +1,4 @@
+using Curato.Core;
 using Curato.Data;
 
 namespace Curato.Organizer;

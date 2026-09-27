@@ -542,20 +542,9 @@ public sealed class LibraryRepository(LibraryDatabase database)
         // Only reached a genuinely empty state when every member's file was
         // actually relocated out (target was organized) — otherwise the
         // source folder still holds every member's real file.
-        if (targetFolderPath is not null && sourceFolderPath is not null)
+        if (targetFolderPath is not null)
         {
-            var sourceFullPath = Path.Combine(database.LibraryRoot, sourceFolderPath);
-            try
-            {
-                if (Directory.Exists(sourceFullPath))
-                {
-                    Directory.Delete(sourceFullPath);
-                }
-            }
-            catch (IOException)
-            {
-                // Not actually empty (unexpected untracked content) — leave it rather than guess.
-            }
+            FolderCleanup.DeleteIfEmpty(database.LibraryRoot, sourceFolderPath);
         }
 
         return MergeEventResult.Success;
