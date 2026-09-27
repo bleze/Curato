@@ -109,7 +109,7 @@ public sealed class RecycleBinController : ControllerBase
             var isVideo = MediaFileScanner.IsVideoExtension(Path.GetExtension(trashedFullPath));
             var jpegBytes = isVideo
                 ? VideoThumbnailGenerator.GenerateJpeg(trashedFullPath, size)
-                : ThumbnailGenerator.GenerateJpeg(trashedFullPath, size);
+                : ThumbnailGenerator.GenerateJpeg(trashedFullPath, size, opened.Service.GetEditsForDeletedItem(deletedItemId));
             return File(jpegBytes, "image/jpeg");
         }
         catch (Exception) when (!System.Diagnostics.Debugger.IsAttached)
@@ -120,11 +120,12 @@ public sealed class RecycleBinController : ControllerBase
 
     /// <summary>
     /// The unmodified trashed file — backs the Recycle Bin's fullscreen
-    /// viewer (photo full-size and video playback both use this, no Edit
-    /// pipeline: a deleted MediaItem's Edit rows don't survive
-    /// <see cref="RecycleBinService.DeleteMediaItem"/> anyway). Mirrors
-    /// MediaController's own /raw endpoint, just resolved against the trash
-    /// location instead of the library root + relativePath.
+    /// viewer's video playback (no Edit pipeline for video, same as
+    /// MediaController). Photos go through /thumbnail instead (at a larger
+    /// size), not this endpoint, since Edit rows (e.g. rotation) still need
+    /// applying and a raw HEIC/RAW file can't just be &lt;img&gt;-ed directly.
+    /// Mirrors MediaController's own /raw endpoint, just resolved against
+    /// the trash location instead of the library root + relativePath.
     /// </summary>
     [HttpGet("raw")]
     public IActionResult GetRawFile([FromQuery] string path, [FromQuery] long deletedItemId)

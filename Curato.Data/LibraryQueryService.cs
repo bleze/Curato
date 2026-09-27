@@ -170,6 +170,30 @@ public sealed class LibraryQueryService(LibraryDatabase database)
         return edits;
     }
 
+    /// <summary>
+    /// The DeletedItemEdit snapshot (rotation/crop etc.) taken for a
+    /// MediaItem right before it was moved to the Recycle Bin — its own
+    /// MediaItem row, and the original Edit rows this was copied from, are
+    /// both long gone by the time anything calls this (see
+    /// RecycleBinRepository.RemoveMediaItem for why a snapshot table exists
+    /// at all: Edit's FK to MediaItem is CASCADE and enforced). Lets the
+    /// Recycle Bin's fullscreen viewer keep rendering a trashed item's
+    /// rotation until it's restored or purged, at which point
+    /// RecycleBinRepository.DeleteDeletedItemRow removes this snapshot too.
+    /// </summary>
+    public IReadOnlyList<Edit> GetEditsForMediaItemId(long mediaItemId)
+    {
+        using var connection = database.OpenConnection();
+        var edits = new List<Edit>();
+        foreach (var row in connection.Query(
+            "SELECT * FROM DeletedItemEdit WHERE MediaItemId = @MediaItemId", new { MediaItemId = mediaItemId }))
+        {
+            edits.Add(MapEdit(row));
+        }
+
+        return edits;
+    }
+
     private static Edit MapEdit(dynamic row)
     {
         string operationType = row.OperationType;

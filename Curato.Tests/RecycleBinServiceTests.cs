@@ -1,3 +1,4 @@
+using Curato.Core;
 using Curato.Data;
 using Curato.Organizer;
 
@@ -74,6 +75,51 @@ public class RecycleBinServiceTests
 
             Assert.NotNull(deleted);
             Assert.Null(new LibraryQueryService(database).GetAllMediaItems().SingleOrDefault(m => m.Id == mediaItemId));
+        });
+    }
+
+    [Fact]
+    public void A_trashed_items_rotation_survives_until_purged()
+    {
+        // The Recycle Bin's own viewer needs to keep showing a trashed
+        // item's rotation, so RemoveMediaItem deliberately leaves its Edit
+        // rows behind (unlike Tag/Face/Picasa-import/OrganizeMove, which are
+        // gone immediately — see DeleteMediaItem's usual regression test
+        // above). DeleteDeletedItemRow is what finally cleans them up, once
+        // the item is actually purged.
+        WithTempLibrary((root, database, repository, service) =>
+        {
+            var mediaItemId = SeedFile(root, database, "photo.jpg");
+            new LibraryRepository(database).RotateMediaItem(mediaItemId, 90);
+
+            var deleted = service.DeleteMediaItem(mediaItemId, "Manual")!;
+
+            var edit = Assert.Single(service.GetEditsForDeletedItem(deleted.Id));
+            Assert.Equal(EditOperationType.Rotate, edit.OperationType);
+
+            service.DeletePermanently(deleted.Id);
+
+            Assert.Empty(new LibraryQueryService(database).GetEditsForMediaItemId(mediaItemId));
+        });
+    }
+
+    [Fact]
+    public void Restoring_a_trashed_item_also_cleans_up_its_now_orphaned_edit()
+    {
+        // A restored item is re-discovered by the next scan under a brand
+        // new MediaItemId (Restore never recreates the old MediaItem row —
+        // see its own doc comment), so the old Edit row can never be
+        // reattached to anything; Restore cleans it up rather than leaving
+        // it behind as permanent garbage.
+        WithTempLibrary((root, database, repository, service) =>
+        {
+            var mediaItemId = SeedFile(root, database, "photo.jpg");
+            new LibraryRepository(database).RotateMediaItem(mediaItemId, 90);
+            var deleted = service.DeleteMediaItem(mediaItemId, "Manual")!;
+
+            service.Restore(deleted.Id);
+
+            Assert.Empty(new LibraryQueryService(database).GetEditsForMediaItemId(mediaItemId));
         });
     }
 

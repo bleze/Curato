@@ -5,7 +5,7 @@ namespace Curato.Data;
 
 public sealed record DeletedItemRecord(
     long Id, string OriginalRelativePath, string TrashRelativePath, string Kind,
-    DateTime DeletedAt, DateTime PurgeAt, string Source);
+    DateTime DeletedAt, DateTime PurgeAt, string Source, long? MediaItemId);
 
 /// <summary>An Event left with zero MediaItems after a delete — the caller can also clean up its now-empty on-disk folder.</summary>
 public sealed record EmptiedEvent(long Id, string? FolderPath);
@@ -86,8 +86,18 @@ public sealed class RecycleBinRepository(LibraryDatabase database)
             "DELETE FROM EventMediaItem WHERE MediaItemId = @Id", new { Id = mediaItemId }, transaction);
         connection.Execute(
             "DELETE FROM MediaItemTag WHERE MediaItemId = @Id", new { Id = mediaItemId }, transaction);
-        connection.Execute(
-            "DELETE FROM Edit WHERE MediaItemId = @Id", new { Id = mediaItemId }, transaction);
+        // Snapshot this item's Edit rows (rotation etc.) into DeletedItemEdit
+        // before the MediaItem delete below — Edit's own FK to MediaItem is
+        // ON DELETE CASCADE and enforced, so the original rows don't survive
+        // that delete regardless of anything done here. The caller stores
+        // this MediaItemId on the new DeletedItem row so the Recycle Bin's
+        // viewer can look the snapshot back up (see
+        // LibraryQueryService.GetEditsForMediaItemId); DeleteDeletedItemRow
+        // finally removes it once the item is actually restored or purged.
+        connection.Execute("""
+            INSERT INTO DeletedItemEdit (MediaItemId, OperationType, Parameters, PipelineOrder, Source)
+            SELECT MediaItemId, OperationType, Parameters, PipelineOrder, Source FROM Edit WHERE MediaItemId = @Id
+            """, new { Id = mediaItemId }, transaction);
         connection.Execute(
             "DELETE FROM Face WHERE MediaItemId = @Id", new { Id = mediaItemId }, transaction);
         connection.Execute(
@@ -151,14 +161,14 @@ public sealed class RecycleBinRepository(LibraryDatabase database)
 
     public long InsertDeletedItem(
         string originalRelativePath, string trashRelativePath, string kind,
-        DateTime deletedAt, DateTime purgeAt, string source)
+        DateTime deletedAt, DateTime purgeAt, string source, long mediaItemId)
     {
         using var connection = database.OpenConnection();
         return connection.ExecuteScalar<long>("""
             INSERT INTO DeletedItem
-                (OriginalRelativePath, TrashRelativePath, Kind, DeletedAt, PurgeAt, Source)
+                (OriginalRelativePath, TrashRelativePath, Kind, DeletedAt, PurgeAt, Source, MediaItemId)
             VALUES
-                (@OriginalRelativePath, @TrashRelativePath, @Kind, @DeletedAt, @PurgeAt, @Source)
+                (@OriginalRelativePath, @TrashRelativePath, @Kind, @DeletedAt, @PurgeAt, @Source, @MediaItemId)
             RETURNING Id
             """, new
         {
@@ -167,7 +177,8 @@ public sealed class RecycleBinRepository(LibraryDatabase database)
             Kind = kind,
             DeletedAt = deletedAt.ToString("O"),
             PurgeAt = purgeAt.ToString("O"),
-            Source = source
+            Source = source,
+            MediaItemId = mediaItemId
         });
     }
 
@@ -183,12 +194,13 @@ public sealed class RecycleBinRepository(LibraryDatabase database)
             string deletedAt = row.DeletedAt;
             string purgeAt = row.PurgeAt;
             string source = row.Source;
+            long? mediaItemId = row.MediaItemId;
 
             items.Add(new DeletedItemRecord(
                 (long)row.Id, originalRelativePath, trashRelativePath, kind,
                 DateTime.Parse(deletedAt, null, System.Globalization.DateTimeStyles.RoundtripKind),
                 DateTime.Parse(purgeAt, null, System.Globalization.DateTimeStyles.RoundtripKind),
-                source));
+                source, mediaItemId));
         }
 
         return items;
@@ -209,18 +221,37 @@ public sealed class RecycleBinRepository(LibraryDatabase database)
         string deletedAt = row.DeletedAt;
         string purgeAt = row.PurgeAt;
         string source = row.Source;
+        long? mediaItemId = row.MediaItemId;
 
         return new DeletedItemRecord(
             (long)row.Id, originalRelativePath, trashRelativePath, kind,
             DateTime.Parse(deletedAt, null, System.Globalization.DateTimeStyles.RoundtripKind),
             DateTime.Parse(purgeAt, null, System.Globalization.DateTimeStyles.RoundtripKind),
-            source);
+            source, mediaItemId);
     }
 
+    /// <summary>
+    /// Finalizes a DeletedItem row — called on Restore, Purge, and
+    /// auto-expiry alike, since all three are "we're done with this trash
+    /// record" moments. Also deletes its DeletedItemEdit snapshot (see
+    /// RemoveMediaItem): once restored, a fresh scan builds a new MediaItem
+    /// row from scratch anyway (no old id to reattach them to); once purged,
+    /// there's nothing left to render them for.
+    /// </summary>
     public void DeleteDeletedItemRow(long id)
     {
         using var connection = database.OpenConnection();
-        connection.Execute("DELETE FROM DeletedItem WHERE Id = @Id", new { Id = id });
+        using var transaction = connection.BeginTransaction();
+        var mediaItemId = connection.ExecuteScalar<long?>(
+            "SELECT MediaItemId FROM DeletedItem WHERE Id = @Id", new { Id = id }, transaction);
+        if (mediaItemId is { } mid)
+        {
+            connection.Execute(
+                "DELETE FROM DeletedItemEdit WHERE MediaItemId = @MediaItemId", new { MediaItemId = mid }, transaction);
+        }
+
+        connection.Execute("DELETE FROM DeletedItem WHERE Id = @Id", new { Id = id }, transaction);
+        transaction.Commit();
     }
 
     /// <summary>Every (size, hash) fingerprint ever recorded for a deleted item — see <see cref="RemoveMediaItem"/>.</summary>

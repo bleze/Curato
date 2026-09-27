@@ -162,6 +162,25 @@ internal static class Schema
             Source TEXT NOT NULL
         );
 
+        -- A snapshot of a MediaItem's Edit rows (rotation etc.), taken right
+        -- before RecycleBinRepository.RemoveMediaItem deletes that MediaItem
+        -- row — Edit's own FK to MediaItem is ON DELETE CASCADE (enforced:
+        -- Microsoft.Data.Sqlite turns PRAGMA foreign_keys on by default), so
+        -- the original Edit rows don't survive that delete no matter what
+        -- application code does. This table is what actually lets the
+        -- Recycle Bin's viewer keep showing a trashed item's rotation.
+        -- MediaItemId deliberately carries no FK (same reasoning as
+        -- DeletedItem.MediaItemId below) — cleaned up for real once the item
+        -- is restored or purged (RecycleBinRepository.DeleteDeletedItemRow).
+        CREATE TABLE IF NOT EXISTS DeletedItemEdit (
+            Id INTEGER PRIMARY KEY AUTOINCREMENT,
+            MediaItemId INTEGER NOT NULL,
+            OperationType TEXT NOT NULL,
+            Parameters TEXT NOT NULL,
+            PipelineOrder INTEGER NOT NULL,
+            Source TEXT NOT NULL
+        );
+
         -- A permanent record of (size, hash) for anything ever deleted through
         -- the Recycle Bin — deliberately independent of DeletedItem's own
         -- 30-day retention/purge cycle, so a background sync (iCloud, PLAN.md
@@ -209,6 +228,12 @@ internal static class Schema
         // survive losing its motion-clip pairing, not disappear with it.
         ("MediaItem", "LivePhotoVideoItemId", "INTEGER NULL REFERENCES MediaItem (Id) ON DELETE SET NULL"),
         ("MediaItem", "Latitude", "REAL NULL"),
-        ("MediaItem", "Longitude", "REAL NULL")
+        ("MediaItem", "Longitude", "REAL NULL"),
+        // No REFERENCES — deliberately not an FK. This points at a MediaItem
+        // row that RemoveMediaItem always deletes; it's just a bare id kept
+        // around so the Recycle Bin can still find that item's Edit rows
+        // (also deliberately kept alive past the MediaItem's own deletion —
+        // see RemoveMediaItem) until Restore/Purge finally clean them up too.
+        ("DeletedItem", "MediaItemId", "INTEGER NULL")
     ];
 }

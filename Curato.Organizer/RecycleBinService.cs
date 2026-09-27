@@ -75,7 +75,7 @@ public sealed class RecycleBinService(LibraryDatabase database, RecycleBinReposi
         var deletedAt = DateTime.UtcNow;
         var purgeAt = deletedAt + RetentionPeriod;
         var deletedItemId = repository.InsertDeletedItem(
-            relativePath, trashRelativePath, kind, deletedAt, purgeAt, source);
+            relativePath, trashRelativePath, kind, deletedAt, purgeAt, source, id);
 
         return new DeletedItemDto(deletedItemId, relativePath, kind, deletedAt, purgeAt, source);
     }
@@ -92,6 +92,24 @@ public sealed class RecycleBinService(LibraryDatabase database, RecycleBinReposi
     {
         var item = repository.GetDeletedItem(deletedItemId);
         return item is null ? null : Path.Combine(database.LibraryRoot, item.TrashRelativePath);
+    }
+
+    /// <summary>
+    /// The rotation/crop this item had in the live library — kept around
+    /// past its MediaItem row's own deletion for exactly this (see
+    /// RemoveMediaItem), so the Recycle Bin's own viewer doesn't show an
+    /// un-rotated photo just because it's sitting in the trash. Empty for a
+    /// DeletedItem row from before this MediaItemId column existed.
+    /// </summary>
+    public IReadOnlyList<Edit> GetEditsForDeletedItem(long deletedItemId)
+    {
+        var item = repository.GetDeletedItem(deletedItemId);
+        if (item?.MediaItemId is not { } mediaItemId)
+        {
+            return [];
+        }
+
+        return new LibraryQueryService(database).GetEditsForMediaItemId(mediaItemId);
     }
 
     /// <returns>false if the DeletedItem row doesn't exist.</returns>
