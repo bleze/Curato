@@ -37,9 +37,13 @@ public sealed class LibraryController(LibraryOperationGate gate, ServerDatabase 
 
     /// <summary>
     /// True for an Adopted folder matching the standard "pre-digital scans"
-    /// naming convention (see FolderTitleParser.IsBeforeDigitalScansFolder) —
-    /// surfaced as a "Needs dates fixed" badge nudging toward the "Fix
-    /// dates…" bulk action, never anything auto-changed.
+    /// naming convention (see FolderTitleParser.IsBeforeDigitalScansFolder).
+    /// One of two independent triggers for the "Needs dates fixed" badge —
+    /// see ToEventDto, which also folds in EventDateOutlierDetector finding
+    /// at least one bad-dated member (e.g. an otherwise normally-named
+    /// Event whose range still spans years because of a stray item).
+    /// Nudges toward the "Fix dates…" bulk action either way; never
+    /// anything auto-changed.
     /// </summary>
     private static bool NeedsDateReview(string? folderPath) =>
         folderPath is not null && FolderTitleParser.IsBeforeDigitalScansFolder(FolderGrouper.GetLeafName(folderPath));
@@ -147,9 +151,19 @@ public sealed class LibraryController(LibraryOperationGate gate, ServerDatabase 
             var outlierIds = EventDateOutlierDetector.FindOutlierMediaItemIds(
                 members.Select(m => (m.Id, m.TakenAt, m.TakenAtSource)).ToList());
 
+            // Folded together with the folder-naming signal rather than
+            // shown as a separate badge — confirmed live: an Event whose
+            // folder name is perfectly normal (no ".Before" convention) can
+            // still have an absurd multi-year StartAt/EndAt range dragged
+            // out by exactly the stray items EventDateOutlierDetector
+            // already found, and the pill was the more visible of the two
+            // signals to a user scanning the grid for "something's wrong
+            // here", so it should fire for either reason.
+            var needsDateReview = NeedsDateReview(e.FolderPath) || outlierIds.Count > 0;
+
             return new EventDto(
                 e.Id, e.Title, e.NamingMode.ToString(), e.FolderPath, ProposeEventPath(e), e.StartAt, e.EndAt,
-                ResolveLocation(GpsTripGate.RepresentativeLocation(e, mediaById)), e.TripGroupId, NeedsDateReview(e.FolderPath),
+                ResolveLocation(GpsTripGate.RepresentativeLocation(e, mediaById)), e.TripGroupId, needsDateReview,
                 members.Select(m => ToMediaItemDto(m, outlierIds.Contains(m.Id))).ToList());
         }
 
@@ -178,7 +192,7 @@ public sealed class LibraryController(LibraryOperationGate gate, ServerDatabase 
 
                 return new TripGroupDto(
                     t.Id, t.Title, t.NamingMode.ToString(), t.FolderPath, ProposeTripPath(t), t.StartDate, t.EndDate,
-                    tripLocation, NeedsDateReview(t.FolderPath), eventDtos);
+                    tripLocation, NeedsDateReview(t.FolderPath) || eventDtos.Any(ev => ev.NeedsDateReview), eventDtos);
             })
             .OrderBy(t => t.StartDate)
             .ToList();
