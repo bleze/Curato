@@ -64,8 +64,14 @@
   --thumb-bg: #eee;
 }
 
+/* Both blocks below set the exact same dark values — the media query one
+   handles "System" (the default: follow the OS), guarded by
+   :not([data-theme='light']) so an explicit Light pick (Settings > Display)
+   isn't overridden by a dark OS preference; the plain attribute selector
+   handles an explicit Dark pick regardless of what the OS prefers. See
+   theme.ts, which sets/clears `data-theme` on <html>. */
 @media (prefers-color-scheme: dark) {
-  :root {
+  :root:not([data-theme='light']) {
     --bg: #15171c;
     --text: #c7c9cd;
     --text-h: #f3f4f6;
@@ -96,6 +102,46 @@
 
     --thumb-bg: #282b31;
   }
+}
+
+/* Native controls (date pickers, number-input spin buttons, etc.) should
+   match an explicit Light/Dark pick too, not just the OS preference
+   `color-scheme: light dark` on plain :root already covers. */
+:root[data-theme='light'] {
+  color-scheme: light;
+}
+
+:root[data-theme='dark'] {
+  color-scheme: dark;
+  --bg: #15171c;
+  --text: #c7c9cd;
+  --text-h: #f3f4f6;
+  --border: #33353c;
+  --code-bg: #1f2028;
+
+  --accent: #4da3ff;
+  --accent-disabled: #3a4a5c;
+
+  --surface: #1e2126;
+  --surface-tint: #16232f;
+  --surface-tint-soft: #171b21;
+  --surface-muted: #282b31;
+  --surface-warn: #2c2415;
+
+  --text-muted: #9aa0a8;
+  --text-faint: #7d838a;
+  --text-placeholder: #6b7178;
+  --text-warn: #d6ac5c;
+  --text-hint: #7fb2df;
+  --text-success: #5cb85c;
+  --text-danger: #e2867e;
+
+  --border-soft: #284359;
+  --border-softer: #2b2e34;
+  --border-warn: #4a3c20;
+  --border-danger: #5c3430;
+
+  --thumb-bg: #282b31;
 }
 
 #root {

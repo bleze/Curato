@@ -19,6 +19,7 @@ import {
 import { formatTakenAt } from '../format'
 import { MAX_THUMB_MIN_WIDTH, MIN_THUMB_MIN_WIDTH, setThumbMinWidth, useThumbMinWidth } from '../thumbSize'
 import { setUse24HourTime, useUse24HourTime } from '../timeFormat'
+import { setTheme, useTheme } from '../theme'
 
 export function SettingsPanel({
   onClose,
@@ -34,6 +35,7 @@ export function SettingsPanel({
   const [activeTab, setActiveTab] = useState<'library' | 'home' | 'icloud' | 'display' | 'favorites'>('library')
   const use24Hour = useUse24HourTime()
   const thumbMinWidth = useThumbMinWidth()
+  const theme = useTheme()
   const [libraryFolder, setLibraryFolderValue] = useState<string | null>(null)
   const [libraryFolderInput, setLibraryFolderInput] = useState('')
   const [homeLocation, setHomeLocationValue] = useState<string | null>(null)
@@ -532,6 +534,33 @@ export function SettingsPanel({
                   onChange={(e) => setThumbMinWidth(Number(e.target.value))}
                 />
                 <span className="settings-thumbsize-value">{thumbMinWidth}px</span>
+              </div>
+
+              <div className="settings-field" style={{ marginTop: 18 }}>
+                <label>Theme</label>
+                <div className="view-switcher">
+                  <button
+                    type="button"
+                    className={theme === 'system' ? 'is-active' : ''}
+                    onClick={() => setTheme('system')}
+                  >
+                    System
+                  </button>
+                  <button
+                    type="button"
+                    className={theme === 'light' ? 'is-active' : ''}
+                    onClick={() => setTheme('light')}
+                  >
+                    Light
+                  </button>
+                  <button
+                    type="button"
+                    className={theme === 'dark' ? 'is-active' : ''}
+                    onClick={() => setTheme('dark')}
+                  >
+                    Dark
+                  </button>
+                </div>
               </div>
             </section>
           )}
