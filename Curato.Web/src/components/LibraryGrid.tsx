@@ -533,29 +533,57 @@ export function LibraryGrid({
     overscan: 6,
   })
 
-  // The scroll container itself must always render (so its ref attaches
-  // and ResizeObserver has something to measure) — only its *content* waits
-  // for a real measurement.
+  // The scroll container itself must always render, at the same JSX root
+  // shape, on every branch below (so React never unmounts/remounts it —
+  // confirmed live: a branch that returned a differently-typed root swapped
+  // the scrollRef div for a brand new DOM node when the branch changed,
+  // silently orphaning the ResizeObserver's mount-only subscription on the
+  // old, now-detached node and permanently freezing containerWidth at
+  // whatever it read last, corrupting the column count). Only the content
+  // *inside* the wrapper differs per branch.
   if (containerWidth === null) {
     return (
-      <div className="library-scroll-wrapper">
-        <div
-          className="library-scroll library-scroll-with-scrubber"
-          ref={scrollRef}
-          tabIndex={0}
-          style={{ paddingRight: scrollGutter }}
+      <>
+        <YearJumpBar
+          markers={dateMarkers}
+          beforeDigitalScansFraction={beforeDigitalScansFraction}
+          onJump={(fraction) => virtualizer.scrollToOffset(fraction * scrollableRange, { align: 'start' })}
         />
-      </div>
+        <div className="library-scroll-wrapper">
+          <div
+            className="library-scroll library-scroll-with-scrubber"
+            ref={scrollRef}
+            tabIndex={0}
+            style={{ paddingRight: scrollGutter }}
+          />
+        </div>
+      </>
     )
   }
 
   if (blocks.length === 0) {
     return (
-      <p>
-        {scanning
-          ? 'Scanning your library — this can take a while for a large folder, especially the first time.'
-          : 'No media found in this folder.'}
-      </p>
+      <>
+        <YearJumpBar
+          markers={dateMarkers}
+          beforeDigitalScansFraction={beforeDigitalScansFraction}
+          onJump={(fraction) => virtualizer.scrollToOffset(fraction * scrollableRange, { align: 'start' })}
+        />
+        <div className="library-scroll-wrapper">
+          <div
+            className="library-scroll library-scroll-with-scrubber"
+            ref={scrollRef}
+            tabIndex={0}
+            style={{ paddingRight: scrollGutter }}
+          >
+            <p>
+              {scanning
+                ? 'Scanning your library — this can take a while for a large folder, especially the first time.'
+                : 'No media found in this folder.'}
+            </p>
+          </div>
+        </div>
+      </>
     )
   }
 
