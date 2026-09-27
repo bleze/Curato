@@ -204,10 +204,15 @@ function App() {
       })
   }
 
-  // Just views a library, without re-scanning — for a folder that's already
-  // indexed (e.g. an iCloud sync already ran ScanService server-side; there's
-  // nothing to gain from re-scanning just to look at it). Same shape as the
-  // auto-load-on-login effect above.
+  // Views a library, without necessarily re-scanning — for a folder that's
+  // already indexed (e.g. an iCloud sync already ran ScanService
+  // server-side; there's nothing to gain from re-scanning just to look at
+  // it). Same shape as the auto-load-on-login effect above. If it comes back
+  // with nothing at all, though, that's not "genuinely empty", it's "never
+  // scanned yet" (the common case right after pointing Settings at a new
+  // folder) — confirmed live as confusing otherwise (an empty grid with no
+  // hint that a Scan is what's actually needed), so that case scans it right
+  // away instead of leaving the user to notice and click Scan themselves.
   async function handleOpenLibrary(pathToOpen: string) {
     setBusy(true)
     setError(null)
@@ -219,6 +224,9 @@ function App() {
       rememberPath(pathToOpen)
       setShowSettings(false)
       setActiveView('library')
+      if (lib.standaloneEvents.length === 0 && lib.trips.length === 0) {
+        await scanPath(pathToOpen)
+      }
     } catch (err) {
       setError(err instanceof Error ? err.message : String(err))
     } finally {
@@ -226,8 +234,10 @@ function App() {
     }
   }
 
-  async function handleScan() {
-    if (!path.trim()) return
+  // Shared with handleOpenLibrary's auto-scan-on-first-open above — both
+  // just need "run a scan against this path and refresh the grid from it"
+  // with the same status/busy/abort handling.
+  async function scanPath(pathToScan: string) {
     const controller = new AbortController()
     scanAbortRef.current = controller
     setBusy(true)
@@ -235,7 +245,7 @@ function App() {
     setError(null)
     setStatus('Scanning…')
     try {
-      const result = await scanLibrary(path, controller.signal)
+      const result = await scanLibrary(pathToScan, controller.signal)
       setStatus(
         `${result.scan.mediaItemCount} items total \u2014 new this scan: ` +
           `${result.scan.newAutoOrganizedEventCount} auto-organized event(s), ` +
@@ -247,10 +257,10 @@ function App() {
           formatRemovedMissingFilesNote(result.scan.removedMissingFileCount) +
           formatPicasaSummary(result.picasaImport),
       )
-      const lib = await getLibrary(path)
+      const lib = await getLibrary(pathToScan)
       setLibrary(lib)
-      setLoadedPath(path)
-      rememberPath(path)
+      setLoadedPath(pathToScan)
+      rememberPath(pathToScan)
     } catch (err) {
       if (err instanceof DOMException && err.name === 'AbortError') {
         // The server has no way to actually stop mid-walk (ScanService.Scan
@@ -267,6 +277,11 @@ function App() {
       setScanning(false)
       scanAbortRef.current = null
     }
+  }
+
+  async function handleScan() {
+    if (!path.trim()) return
+    await scanPath(path)
   }
 
   function handleCancelScan() {
@@ -644,6 +659,7 @@ function App() {
             library={library}
             libraryPath={loadedPath}
             favoriteCategories={favoriteCategories}
+            scanning={scanning}
             onDelete={handleDelete}
             onTakenAtChanged={handleTakenAtChanged}
             onRotated={handleRotated}

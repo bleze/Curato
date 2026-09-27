@@ -213,6 +213,7 @@ export function LibraryGrid({
   library,
   libraryPath,
   favoriteCategories,
+  scanning,
   onDelete,
   onTakenAtChanged,
   onRotated,
@@ -228,6 +229,8 @@ export function LibraryGrid({
   library: LibraryDto
   libraryPath: string
   favoriteCategories: FavoriteCategoryDto[]
+  /** A scan is currently running against this same library — an empty grid means "not indexed yet", not "genuinely empty", so the message below needs to say that instead. */
+  scanning: boolean
   onDelete: (mediaItemId: number) => void
   onTakenAtChanged: (mediaItemId: number, takenAt: string) => void
   onRotated: (mediaItemId: number) => void
@@ -515,7 +518,13 @@ export function LibraryGrid({
   }
 
   if (blocks.length === 0) {
-    return <p>No media found in this folder.</p>
+    return (
+      <p>
+        {scanning
+          ? 'Scanning your library — this can take a while for a large folder, especially the first time.'
+          : 'No media found in this folder.'}
+      </p>
+    )
   }
 
   return (

@@ -83,6 +83,11 @@ button {
   cursor: pointer;
 }
 
+.account button:hover:not(:disabled) {
+  color: var(--text);
+  border-color: var(--text-muted);
+}
+
 /* Library/Albums/Recycle Bin toggle — a segmented control (same visual
    language as Settings' .modal-tabs) instead of three plain buttons that
    each launched a separate stacked panel, so switching between them reads
@@ -327,6 +332,11 @@ button {
   white-space: nowrap;
 }
 
+.scan-progress-bar button:hover:not(:disabled) {
+  color: var(--text);
+  border-color: var(--text-muted);
+}
+
 /* Lives in the .account toolbar now, alongside plain-looking buttons
    (Recycle Bin, Find Duplicates, ...) rather than as the one prominent
    action in a highlighted .organize-bar — styled to match .account button
@@ -348,6 +358,11 @@ button {
   background: var(--surface);
   cursor: pointer;
   white-space: nowrap;
+}
+
+.upload-button:hover {
+  color: var(--text);
+  border-color: var(--text-muted);
 }
 
 .upload-button input {
