@@ -884,7 +884,14 @@ button {
    affordance, the same reasoning behind .live-badge always showing. */
 .thumb-favorite {
   position: absolute;
-  bottom: 4px;
+  /* 4px would exactly match .thumb-move/.thumb-delete's own top offset
+     (confirmed via direct measurement — the circle itself really is
+     identically placed), but a 5-point star's silhouette is bottom-heavy
+     (two wide points low, one thin point high), so the same numeric
+     offset reads as sitting closer to the edge than it does for those
+     icons' more evenly-weighted shapes. Nudged up a couple px to
+     compensate for that optical effect, confirmed live. */
+  bottom: 7px;
   right: 4px;
   width: 20px;
   height: 20px;
@@ -1862,18 +1869,35 @@ button {
    with. Spans the slide's own duration plus the crossfade time so the zoom
    doesn't visibly reset/jump right as the next slide's crossfade begins. */
 .slideshow-kenburns {
-  animation: slideshow-kenburns var(--slideshow-duration, 5s) linear forwards;
   transform-origin: center;
-  /* A CSS animation starts progressing the instant the element exists,
-     regardless of visibility — paused here until the slide is actually
-     revealed (.is-visible, only set once SlideLayer's onLoad fires) so the
-     zoom doesn't silently advance in the background while still loading
-     and then visibly "jump ahead" the moment it's finally shown. */
+}
+
+/* Only the incoming layer actually runs the zoom — confirmed live as a
+   real bug otherwise: the outgoing layer is a brand-new DOM remount (a
+   separate JSX position, not the same element continuing on), so if it
+   ran this same animation it would restart from scale(1) the instant a
+   slide starts fading out — visually snapping back to unzoomed for a
+   frame before the crossfade hides it. Paused until actually revealed
+   (.is-visible, set once SlideLayer's onLoad fires) so the zoom doesn't
+   silently advance in the background while still loading and then jump
+   ahead the moment it's finally shown. */
+.slideshow-slide--incoming .slideshow-kenburns {
+  animation: slideshow-kenburns var(--slideshow-duration, 5s) linear forwards;
   animation-play-state: paused;
 }
 
-.slideshow-slide.is-visible .slideshow-kenburns {
+.slideshow-slide--incoming.is-visible .slideshow-kenburns {
   animation-play-state: running;
+}
+
+/* Frozen at the zoom's end state rather than left at scale(1) (its own
+   fresh-mount default) — exact continuity with wherever the real zoom
+   progress actually was isn't worth chasing, but ending already-zoomed is
+   far less jarring than visibly un-zooming right as a slide fades away,
+   and matches the common case (a slide shown for its full duration before
+   advancing) exactly. */
+.slideshow-slide--outgoing .slideshow-kenburns {
+  transform: scale(1.12);
 }
 
 .slideshow-transition--pan-tl .slideshow-kenburns {
