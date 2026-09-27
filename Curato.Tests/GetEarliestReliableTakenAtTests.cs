@@ -46,6 +46,35 @@ public class GetEarliestReliableTakenAtTests
         });
     }
 
+    /// <summary>
+    /// Confirmed live: a camera whose clock was never set produced a photo
+    /// with TakenAtSource ExifDateTaken but a date of 1980-01-01 — nominally
+    /// "reliable" by source alone, but not a real digital-camera date at
+    /// all. Left unfiltered, that one bad photo poisoned this anchor for
+    /// every *other* Event's "Fix dates…" prefill.
+    /// </summary>
+    [Fact]
+    public void Ignores_an_implausibly_early_date_even_from_a_reliable_source()
+    {
+        WithTempLibrary((repository, query) =>
+        {
+            repository.UpsertMediaItems([
+                new MediaItem
+                {
+                    RelativePath = "clock-never-set.jpg", QuickHash = "a",
+                    TakenAt = new DateTime(1980, 1, 1), TakenAtSource = TakenAtSource.ExifDateTaken,
+                },
+                new MediaItem
+                {
+                    RelativePath = "real-exif.jpg", QuickHash = "b",
+                    TakenAt = new DateTime(2003, 5, 1), TakenAtSource = TakenAtSource.ExifDateTaken,
+                },
+            ]);
+
+            Assert.Equal(new DateTime(2003, 5, 1), query.GetEarliestReliableTakenAt());
+        });
+    }
+
     [Fact]
     public void Returns_null_when_no_reliable_dated_item_exists()
     {

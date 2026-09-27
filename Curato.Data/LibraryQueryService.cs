@@ -46,6 +46,16 @@ public sealed class LibraryQueryService(LibraryDatabase database)
     /// for the "Fix dates…" bulk action on a folder of undated scans (see
     /// FolderTitleParser.IsBeforeDigitalScansFolder): "definitely before real
     /// digital photos start". Null if the library has no such item at all.
+    ///
+    /// Also excludes any candidate dated before ~1990 (consumer digital
+    /// cameras didn't exist yet — same bound EventDateOutlierDetector and
+    /// MediaFileScanner's QuickTime-epoch fix already use), regardless of
+    /// its nominal source: confirmed live that a single camera-clock-never-
+    /// set photo elsewhere in the library (TakenAtSource ExifDateTaken, but
+    /// reading 1980-01-01) poisoned this anchor for every *other* Event's
+    /// "Fix dates…" prefill, bulk-setting an unrelated folder's dates to
+    /// that same wrong 1980 value instead of anything resembling its own
+    /// real date.
     /// </summary>
     public DateTime? GetEarliestReliableTakenAt()
     {
@@ -53,6 +63,7 @@ public sealed class LibraryQueryService(LibraryDatabase database)
         var value = connection.ExecuteScalar<string?>("""
             SELECT MIN(TakenAt) FROM MediaItem
             WHERE TakenAtSource NOT IN ('FileSystem', 'Manual')
+              AND CAST(strftime('%Y', TakenAt) AS INTEGER) >= 1990
             """);
 
         return value is null ? null : DateTime.Parse(value, null, DateTimeStyles.RoundtripKind);
