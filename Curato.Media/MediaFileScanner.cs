@@ -77,14 +77,26 @@ public sealed class MediaFileScanner
         }
     }
 
+    /// <summary>
+    /// Re-reads a single already-indexed file's real Exif/video-metadata
+    /// date, the same way a fresh scan would — the "Reset to Exif" action
+    /// (Lightbox) uses this to recover a photo's true date after a bad
+    /// manual edit, without needing the original value remembered anywhere:
+    /// the file itself was never touched, so its own metadata is always the
+    /// ground truth to fall back to.
+    /// </summary>
+    public static (DateTime TakenAt, TakenAtSource Source) ReadTakenAt(string filePath, MediaKind kind)
+    {
+        var info = new FileInfo(filePath);
+        return kind == MediaKind.Photo ? ReadPhotoTakenAt(filePath, info) : ReadVideoTakenAt(filePath, info);
+    }
+
     private static MediaItem BuildMediaItem(string rootPath, string filePath, MediaKind kind)
     {
         var info = new FileInfo(filePath);
         var relativePath = Path.GetRelativePath(rootPath, filePath).Replace('\\', '/');
 
-        var (takenAt, source) = kind == MediaKind.Photo
-            ? ReadPhotoTakenAt(filePath, info)
-            : ReadVideoTakenAt(filePath, info);
+        var (takenAt, source) = ReadTakenAt(filePath, kind);
 
         var (latitude, longitude) = kind == MediaKind.Photo ? ReadGpsLocation(filePath) : (null, null);
 
@@ -229,6 +241,28 @@ public sealed class MediaFileScanner
                 movieHeader.TryGetDateTime(QuickTimeMovieHeaderDirectory.TagCreated, out var created) &&
                 created.Year > 1904) // some encoders write an all-zero "unknown" creation time (decodes to the 1904 epoch itself) rather than omitting the field
             {
+                // Some non-Apple encoders (older camcorders, certain Android
+                // models, re-encoding tools) write a Unix-epoch (1970-based)
+                // timestamp into this field instead of the QuickTime-spec-
+                // mandated 1904-based one — reported live as a real video
+                // whose day/month/time-of-day all looked correct but the
+                // year was exactly the two epochs' gap too early (e.g. 1947
+                // for a video actually from decades later), since
+                // MetadataExtractor correctly decodes the raw value against
+                // the 1904 epoch regardless of which one the encoder
+                // actually meant. The two epochs differ by a whole number of
+                // days (24,107 = exactly 66 years including leap days), so
+                // this misinterpretation never touches the time-of-day, only
+                // the date — safe to detect (QuickTime/MP4 containers didn't
+                // exist before the 1990s, so a decoded year earlier than
+                // that is never a genuine recording date) and correct exactly
+                // by adding the gap back, rather than leaving it wrong or
+                // falling through to the far-less-accurate filesystem date.
+                if (created.Year < 1990)
+                {
+                    created += QuickTimeEpoch.ToUnixEpochGap;
+                }
+
                 return (created.ToLocalTime(), TakenAtSource.VideoMetadata);
             }
         }

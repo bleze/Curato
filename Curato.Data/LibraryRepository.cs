@@ -147,18 +147,23 @@ public sealed class LibraryRepository(LibraryDatabase database)
     }
 
     /// <summary>
-    /// Manually corrects one MediaItem's TakenAt (PLAN.md §1's
-    /// TakenAtSource.Manual — for files whose Exif was stripped by the time
-    /// they reached the library, e.g. reported live for an iPhone photo
-    /// shared through a path that kept only a bare Exif version tag) and
-    /// re-sorts its Event's membership + StartAt/EndAt to match, the same
-    /// way a newly-scanned item is folded in above. Deliberately does *not*
-    /// move the item into a different Event even if the correction lands it
-    /// on a different day — that needs the full clustering pass, out of
-    /// scope for a single-field fix. Returns false if the item doesn't
-    /// exist.
+    /// Corrects one MediaItem's TakenAt and re-sorts its Event's membership +
+    /// StartAt/EndAt to match, the same way a newly-scanned item is folded
+    /// in above. Deliberately does *not* move the item into a different
+    /// Event even if the correction lands it on a different day — that
+    /// needs the full clustering pass, out of scope for a single-field fix.
+    /// Returns false if the item doesn't exist.
+    ///
+    /// <paramref name="source"/> defaults to PLAN.md §1's
+    /// TakenAtSource.Manual (a person typed this in, e.g. for a photo whose
+    /// Exif was stripped by the time it reached the library) — pass the
+    /// real source explicitly for a "Reset to Exif" re-read
+    /// (LibraryController.ResetTakenAt), so the recovered date is
+    /// attributed the same as if a normal scan had found it, and stays
+    /// eligible for any future automatic repair pass that Manual dates are
+    /// deliberately exempt from.
     /// </summary>
-    public bool SetTakenAt(long mediaItemId, DateTime takenAt)
+    public bool SetTakenAt(long mediaItemId, DateTime takenAt, TakenAtSource source = TakenAtSource.Manual)
     {
         using var connection = database.OpenConnection();
         using var transaction = connection.BeginTransaction();
@@ -170,7 +175,7 @@ public sealed class LibraryRepository(LibraryDatabase database)
         {
             Id = mediaItemId,
             TakenAt = takenAt.ToString("O"),
-            TakenAtSource = nameof(Curato.Core.TakenAtSource.Manual)
+            TakenAtSource = source.ToString()
         }, transaction);
 
         if (updated == 0)
@@ -368,6 +373,71 @@ public sealed class LibraryRepository(LibraryDatabase database)
             EndAt = members.Max(m => m.TakenAt),
             EventId = eventId
         }, transaction);
+    }
+
+    /// <summary>
+    /// Self-heals any video indexed before the QuickTimeEpoch fix existed —
+    /// see <see cref="Curato.Media.MediaFileScanner.ReadVideoTakenAt"/> for
+    /// the underlying encoder bug (a Unix-epoch timestamp written into the
+    /// QuickTime-spec 1904-epoch field decodes exactly
+    /// <see cref="QuickTimeEpoch.ToUnixEpochGap"/> too early). Re-scanning
+    /// alone can never fix an already-indexed item — <see cref="UpsertMediaItems"/>'s
+    /// <c>ON CONFLICT DO NOTHING</c> never touches an existing row — so this
+    /// runs every scan instead (cheap: one indexed-ish query over
+    /// Kind/TakenAtSource, a no-op once every affected video's already been
+    /// corrected). Only ever touches MediaItem rows still carrying
+    /// TakenAtSource.VideoMetadata — a video whose date someone already
+    /// manually corrected (TakenAtSource.Manual) is never revisited here,
+    /// same as every other bulk correction in this class.
+    /// </summary>
+    public int RepairWrongEpochVideoTakenAt()
+    {
+        using var connection = database.OpenConnection();
+        using var transaction = connection.BeginTransaction();
+
+        var affected = new List<(long Id, DateTime TakenAt)>();
+        foreach (var row in connection.Query("""
+            SELECT Id, TakenAt FROM MediaItem WHERE Kind = 'Video' AND TakenAtSource = 'VideoMetadata'
+            """, transaction: transaction))
+        {
+            long id = row.Id;
+            string takenAtStr = row.TakenAt;
+            var takenAt = ParseDateTime(takenAtStr);
+            if (takenAt.Year < 1990)
+            {
+                affected.Add((id, takenAt));
+            }
+        }
+
+        if (affected.Count == 0)
+        {
+            transaction.Commit();
+            return 0;
+        }
+
+        var affectedEventIds = new HashSet<long>();
+        foreach (var (id, takenAt) in affected)
+        {
+            var corrected = takenAt + QuickTimeEpoch.ToUnixEpochGap;
+            connection.Execute(
+                "UPDATE MediaItem SET TakenAt = @TakenAt WHERE Id = @Id",
+                new { TakenAt = corrected.ToString("O"), Id = id }, transaction);
+
+            var eventId = connection.ExecuteScalar<long?>(
+                "SELECT EventId FROM EventMediaItem WHERE MediaItemId = @Id", new { Id = id }, transaction);
+            if (eventId is { } eid)
+            {
+                affectedEventIds.Add(eid);
+            }
+        }
+
+        foreach (var eventId in affectedEventIds)
+        {
+            ResortEventMembership(connection, transaction, eventId);
+        }
+
+        transaction.Commit();
+        return affected.Count;
     }
 
     /// <summary>

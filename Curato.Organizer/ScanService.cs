@@ -17,6 +17,9 @@ public sealed record ScanResult(
     int RemovedBareYearTripGroupCount,
     int RemovedEmptyEventCount,
     int RemovedMissingFileCount,
+    // Videos indexed before the QuickTimeEpoch fix existed, self-healed this
+    // scan — see LibraryRepository.RepairWrongEpochVideoTakenAt.
+    int RepairedVideoTakenAtCount,
     IReadOnlyList<EventSummary> NewEvents);
 
 /// <summary>
@@ -235,6 +238,12 @@ public sealed class ScanService(
             FolderCleanup.DeleteIfEmpty(database.LibraryRoot, emptiedEvent.FolderPath);
         }
 
+        // Self-heals any video indexed before the QuickTimeEpoch fix existed
+        // — a re-scan alone can never fix an already-indexed item's TakenAt
+        // (UpsertMediaItems' ON CONFLICT DO NOTHING never touches an
+        // existing row), same reasoning as every other self-heal above.
+        var repairedVideoTakenAtCount = repository.RepairWrongEpochVideoTakenAt();
+
         DetectAndPersistLivePhotoPairs();
 
         return new ScanResult(
@@ -246,6 +255,7 @@ public sealed class ScanService(
             RemovedBareYearTripGroupCount: removedBareYearTripGroupCount,
             RemovedEmptyEventCount: emptiedEvents.Count,
             RemovedMissingFileCount: 0, // only Scan(libraryRoot) can know this; merged in there via `with`
+            RepairedVideoTakenAtCount: repairedVideoTakenAtCount,
             NewEvents: allNewEvents
                 .OrderBy(e => e.StartAt)
                 .Select(e => new EventSummary(

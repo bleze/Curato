@@ -55,6 +55,26 @@ public class MediaFileScannerDateReadingTests
         });
     }
 
+    [Fact]
+    public void Corrects_a_movie_header_creation_time_written_against_the_wrong_epoch()
+    {
+        // Some non-Apple encoders write a Unix-epoch (1970-based) timestamp
+        // into this field instead of the QuickTime-spec-mandated 1904-based
+        // one — reported live as real videos whose day/month/time-of-day
+        // looked right but the year was decades too early. This fixture's
+        // mvhd atom embeds the raw seconds value for 2019-06-15 14:30:00 UTC
+        // as if it were Unix-epoch-based; decoded (wrongly) against the real
+        // 1904 epoch that's actually 1953-06-14 14:30:00 — ReadVideoTakenAt
+        // must detect that implausibly-old result and correct it back.
+        var expectedLocal = new DateTime(2019, 6, 15, 14, 30, 0, DateTimeKind.Utc).ToLocalTime();
+
+        WithScannedFixture("quicktime-wrong-epoch.mov", item =>
+        {
+            Assert.Equal(TakenAtSource.VideoMetadata, item.TakenAtSource);
+            Assert.Equal(expectedLocal, item.TakenAt);
+        });
+    }
+
     private static void WithScannedFixture(string fixtureFileName, Action<MediaItem> assert)
     {
         var sourcePath = Path.Combine(AppContext.BaseDirectory, "TestAssets", fixtureFileName);
