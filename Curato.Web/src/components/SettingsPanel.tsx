@@ -275,8 +275,13 @@ export function SettingsPanel({
 
   return (
     <>
-    <div className="modal-overlay" onClick={onClose}>
-      <div className="modal-dialog" onClick={(e) => e.stopPropagation()}>
+    {/* No click-to-close on the backdrop — Settings has real unsaved-change
+        state (library folder, iCloud fields, etc.), and a stray click just
+        outside the dialog discarding all of that silently was reported as
+        genuinely annoying. Cancel/the close button are the deliberate ways
+        out now. */}
+    <div className="modal-overlay">
+      <div className="modal-dialog">
         <div className="modal-header">
           <h2>Settings</h2>
         </div>
