@@ -26,11 +26,12 @@ public sealed class LibraryController(LibraryOperationGate gate, ServerDatabase 
     public sealed record EventDto(
         long Id, string Title, string NamingMode, string? FolderPath, string? ProposedFolderPath,
         DateTime StartAt, DateTime EndAt, string? Location, long? TripGroupId, bool NeedsDateReview,
-        IReadOnlyList<MediaItemDto> Items);
+        DateOnly? FolderDate, IReadOnlyList<MediaItemDto> Items);
 
     public sealed record TripGroupDto(
         long Id, string Title, string NamingMode, string? FolderPath, string? ProposedFolderPath,
-        DateOnly StartDate, DateOnly EndDate, string? Location, bool NeedsDateReview, IReadOnlyList<EventDto> Events);
+        DateOnly StartDate, DateOnly EndDate, string? Location, bool NeedsDateReview, DateOnly? FolderDate,
+        IReadOnlyList<EventDto> Events);
 
     public sealed record LibraryDto(
         IReadOnlyList<TripGroupDto> Trips, IReadOnlyList<EventDto> StandaloneEvents, DateTime? EarliestReliableTakenAt);
@@ -47,6 +48,21 @@ public sealed class LibraryController(LibraryOperationGate gate, ServerDatabase 
     /// </summary>
     private static bool NeedsDateReview(string? folderPath) =>
         folderPath is not null && FolderTitleParser.IsBeforeDigitalScansFolder(FolderGrouper.GetLeafName(folderPath));
+
+    /// <summary>
+    /// Best-effort date parsed straight out of the folder's own name (e.g.
+    /// "2023-06-29 Freja i Budapest" — FolderTitleParser.Parse, previously
+    /// only used for its Title half). Backs the "Fix dates…" dialog's
+    /// prefill: confirmed live that a normally-named, genuinely-dated
+    /// folder with just a few bad-dated stray items (see
+    /// EventDateOutlierDetector) still triggered the *library-wide*
+    /// earliest-reliable-date fallback below, prefilling a value with no
+    /// relation to this folder at all — when the folder's own name already
+    /// says what the real date is, that beats guessing from anywhere else
+    /// in the library.
+    /// </summary>
+    private static DateOnly? ParsedFolderDate(string? folderPath) =>
+        folderPath is null ? null : FolderTitleParser.Parse(FolderGrouper.GetLeafName(folderPath)).Date;
 
     [HttpGet("library")]
     public ActionResult<LibraryDto> GetLibrary([FromQuery] string path)
@@ -164,6 +180,7 @@ public sealed class LibraryController(LibraryOperationGate gate, ServerDatabase 
             return new EventDto(
                 e.Id, e.Title, e.NamingMode.ToString(), e.FolderPath, ProposeEventPath(e), e.StartAt, e.EndAt,
                 ResolveLocation(GpsTripGate.RepresentativeLocation(e, mediaById)), e.TripGroupId, needsDateReview,
+                ParsedFolderDate(e.FolderPath),
                 members.Select(m => ToMediaItemDto(m, outlierIds.Contains(m.Id))).ToList());
         }
 
@@ -192,7 +209,8 @@ public sealed class LibraryController(LibraryOperationGate gate, ServerDatabase 
 
                 return new TripGroupDto(
                     t.Id, t.Title, t.NamingMode.ToString(), t.FolderPath, ProposeTripPath(t), t.StartDate, t.EndDate,
-                    tripLocation, NeedsDateReview(t.FolderPath) || eventDtos.Any(ev => ev.NeedsDateReview), eventDtos);
+                    tripLocation, NeedsDateReview(t.FolderPath) || eventDtos.Any(ev => ev.NeedsDateReview),
+                    ParsedFolderDate(t.FolderPath), eventDtos);
             })
             .OrderBy(t => t.StartDate)
             .ToList();

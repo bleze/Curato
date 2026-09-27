@@ -796,19 +796,33 @@ export function LibraryGrid({
             title="Set every photo in the selected Event(s) to the same date/time — for a folder of undated or mis-dated scans"
             onClick={() => {
               const ids = [...selectedEventIds]
-              // A folder matching the standard ".Pre" convention (the
-              // "Needs dates fixed" badge) has no reliable date of its own
-              // to start from — prefill with the day before the earliest
-              // reliable date found anywhere in the library, a safe
-              // "definitely before this" anchor, instead of leaving the
-              // field empty. Still fully editable either way.
-              const allNeedDateReview = ids.every((id) => eventsById.get(id)?.needsDateReview)
-              if (allNeedDateReview && library.earliestReliableTakenAt) {
-                const dayBefore = new Date(library.earliestReliableTakenAt)
-                dayBefore.setDate(dayBefore.getDate() - 1)
-                setFixDateDraft(toDatetimeLocalValue(dayBefore.toISOString()))
+              const folderDates = ids
+                .map((id) => eventsById.get(id)?.folderDate)
+                .filter((d): d is string => d != null)
+              if (folderDates.length === ids.length && new Set(folderDates).size === 1) {
+                // Every selected Event's own folder name already encodes a
+                // real date (e.g. "2023-06-29 Title" — FolderTitleParser.Parse)
+                // — confirmed live this beats guessing from anywhere else in
+                // the library: an otherwise normally-dated folder with just a
+                // few bad-dated stray items still triggered the library-wide
+                // fallback below, prefilling a value unrelated to this
+                // folder entirely.
+                setFixDateDraft(toDatetimeLocalValue(`${folderDates[0]}T12:00:00`))
               } else {
-                setFixDateDraft('')
+                // No usable folder date (e.g. the standard ".Before"
+                // convention, which deliberately encodes no year at all) —
+                // prefill with the day before the earliest reliable date
+                // found anywhere in the library instead, a safe
+                // "definitely before this" anchor. Still fully editable
+                // either way.
+                const allNeedDateReview = ids.every((id) => eventsById.get(id)?.needsDateReview)
+                if (allNeedDateReview && library.earliestReliableTakenAt) {
+                  const dayBefore = new Date(library.earliestReliableTakenAt)
+                  dayBefore.setDate(dayBefore.getDate() - 1)
+                  setFixDateDraft(toDatetimeLocalValue(dayBefore.toISOString()))
+                } else {
+                  setFixDateDraft('')
+                }
               }
               setFixingDatesEventIds(ids)
             }}

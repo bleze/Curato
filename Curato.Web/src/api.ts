@@ -28,8 +28,10 @@ export interface EventDto {
   location: string | null
   /** Non-null once this Event has been grouped into a Trip (auto or manual) — lets the UI disable re-grouping it. */
   tripGroupId: number | null
-  /** True for a folder matching the standard ".Before" pre-digital-scans naming convention — see FolderTitleParser.IsBeforeDigitalScansFolder. Just a nudge (a badge), never anything auto-changed. */
+  /** True for a folder matching the standard ".Before" pre-digital-scans naming convention, or for having at least one EventDateOutlierDetector-flagged member. Just a nudge (a badge), never anything auto-changed. */
   needsDateReview: boolean
+  /** Best-effort date parsed straight out of the folder's own name (e.g. "2023-06-29 Title") — see FolderTitleParser.Parse. Null when the name doesn't start with one. Preferred over library.earliestReliableTakenAt for the "Fix dates…" prefill, since it's specific to this folder rather than a library-wide guess. */
+  folderDate: string | null
   items: MediaItemDto[]
 }
 
@@ -43,6 +45,7 @@ export interface TripGroupDto {
   endDate: string
   location: string | null
   needsDateReview: boolean
+  folderDate: string | null
   events: EventDto[]
 }
 
