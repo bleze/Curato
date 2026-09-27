@@ -385,6 +385,26 @@ export function LibraryGrid({
     }
     setFavoritePickerItem(item)
   }
+  // The outlier badge's "snap to a real date" target — deliberately *not*
+  // just the Event's own StartAt/EndAt. Confirmed live as a real bug: when
+  // the outliers themselves are earlier than the good cluster (e.g. a
+  // camera-clock-reset date of 1980 sitting before a real 2023 date),
+  // StartAt/EndAt (plain min/max over every member, outliers included) *is*
+  // one of the wrong dates, so "snap to it" just reinforces the bad value
+  // instead of fixing it. Prefers the folder's own parsed date (same signal
+  // "Fix dates…" now prefers) since that's independent of any member's
+  // date being wrong; falls back to the median of this Event's own
+  // non-outlier members, which stays correct regardless of which side of
+  // the good cluster the outliers land on.
+  function outlierFixTarget(event: EventDto): string {
+    if (event.folderDate) return `${event.folderDate}T12:00:00`
+    const reliable = event.items.filter((i) => !i.isDateOutlier)
+    if (reliable.length > 0) {
+      const sorted = [...reliable].sort((a, b) => new Date(a.takenAt).getTime() - new Date(b.takenAt).getTime())
+      return sorted[Math.floor(sorted.length / 2)].takenAt
+    }
+    return event.startAt
+  }
   // Flattened once per library load for the Lightbox's "Move to Event"
   // picker — it needs every Event's id/title/date range regardless of
   // whether it's standalone or nested under a Trip, but never the
@@ -726,7 +746,7 @@ export function LibraryGrid({
                       showFavoriteButton={favoriteCategories.length > 0}
                       onFavoriteClick={() => handleStarClick(item)}
                       onFixOutlierDate={
-                        item.isDateOutlier ? () => onTakenAtChanged(item.id, block.event.startAt) : undefined
+                        item.isDateOutlier ? () => onTakenAtChanged(item.id, outlierFixTarget(block.event)) : undefined
                       }
                     />
                   ))}
