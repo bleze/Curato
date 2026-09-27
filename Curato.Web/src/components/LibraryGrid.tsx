@@ -12,6 +12,7 @@ import { Lightbox } from './Lightbox'
 import { Slideshow } from './Slideshow'
 import { useThumbMinWidth } from '../thumbSize'
 import { useUse24HourTime } from '../timeFormat'
+import { YearJumpBar } from './YearJumpBar'
 
 // Mirrors the old CSS grid's `repeat(auto-fill, minmax(120px, 1fr))` — kept
 // in JS now so row height can be computed for virtualization instead of
@@ -537,7 +538,12 @@ export function LibraryGrid({
   }
 
   return (
-    <div className="library-scroll-wrapper">
+    <>
+      <YearJumpBar
+        markers={dateMarkers}
+        onJump={(fraction) => virtualizer.scrollToOffset(fraction * scrollableRange, { align: 'start' })}
+      />
+      <div className="library-scroll-wrapper">
       <div
         className="library-scroll library-scroll-with-scrubber"
         ref={scrollRef}
@@ -857,6 +863,7 @@ export function LibraryGrid({
         />
       )}
     </div>
+    </>
   )
 }
 

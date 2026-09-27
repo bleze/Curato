@@ -396,6 +396,33 @@ button {
   flex-direction: column;
 }
 
+/* A flex sibling of .library-scroll-wrapper, not a child — sits above the
+   scroll area and takes its own natural height, so .library-scroll-wrapper's
+   flex:1 automatically shrinks to leave room for it. Never part of the
+   virtualized scroll container, so it can't desync the virtualizer's own
+   height math (see the getItemKey/estimateSize comment in LibraryGrid.tsx). */
+.year-jump-bar {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px;
+  padding: 4px 10px 8px;
+}
+
+.year-jump-bar button {
+  padding: 2px 8px;
+  border: 1px solid var(--border);
+  border-radius: 4px;
+  background: var(--surface);
+  color: var(--text);
+  font-size: 12px;
+  cursor: pointer;
+}
+
+.year-jump-bar button:hover {
+  background: var(--surface-tint);
+  border-color: var(--accent);
+}
+
 .library-scroll-wrapper {
   flex: 1;
   min-height: 0;
