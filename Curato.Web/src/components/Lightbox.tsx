@@ -1,8 +1,9 @@
 import { useCallback, useEffect, useRef, useState } from 'react'
-import type { MediaItemDto } from '../api'
+import type { FavoriteCategoryDto, MediaItemDto } from '../api'
 import { bumpImageVersion, fullImageUrl, rawFileUrl, rotateMediaItem } from '../api'
 import type { EventSummary } from './EventPicker'
 import { EventPicker } from './EventPicker'
+import { FavoriteCategoryMenu } from './FavoriteCategoryMenu'
 import { formatTakenAt } from '../format'
 import { useUse24HourTime } from '../timeFormat'
 
@@ -32,6 +33,9 @@ export function Lightbox({
   onRotated,
   onMoveToEvent,
   onStartSlideshow,
+  onDelete,
+  favoriteCategories,
+  onSetFavoriteCategory,
 }: {
   items: MediaItemDto[]
   index: number
@@ -47,6 +51,11 @@ export function Lightbox({
   onMoveToEvent?: (mediaItemId: number, targetEventId: number | null) => void
   /** Starts a fullscreen Slideshow over these same items, from the photo/video currently open — closes this Lightbox first (see Slideshow.tsx). */
   onStartSlideshow: () => void
+  /** Moves the current item to the Recycle Bin (behind a confirm step — see confirmingDelete below) and closes the Lightbox. */
+  onDelete: (mediaItemId: number) => void
+  /** All favorite categories, for the star button's picker. Omit (along with onSetFavoriteCategory) to hide the star entirely — e.g. wherever a MediaItemDto doesn't carry favoriteCategoryId yet. */
+  favoriteCategories?: FavoriteCategoryDto[]
+  onSetFavoriteCategory?: (mediaItemId: number, tagId: number | null) => void
 }) {
   const item = items[index]
   const use24Hour = useUse24HourTime()
@@ -59,6 +68,8 @@ export function Lightbox({
   const [rotating, setRotating] = useState(false)
   const [movingToEvent, setMovingToEvent] = useState(false)
   const [moveSearch, setMoveSearch] = useState('')
+  const [pickingFavorite, setPickingFavorite] = useState(false)
+  const [confirmingDelete, setConfirmingDelete] = useState(false)
   // bumpImageVersion (api.ts) is keyed by mediaItemId, shared across every
   // view of this item (grid thumbnails included) — this local counter just
   // forces Lightbox itself to re-render and pick up the new version after a
@@ -78,6 +89,8 @@ export function Lightbox({
     setEditingDate(false)
     setMovingToEvent(false)
     setMoveSearch('')
+    setPickingFavorite(false)
+    setConfirmingDelete(false)
   }, [index])
 
   const handleRotate = useCallback(
@@ -96,6 +109,24 @@ export function Lightbox({
     [rotating, libraryPath, item.id, onRotated],
   )
 
+  // Same single/multi-category logic as the grid tile's own star — see
+  // LibraryGrid's handleStarClick.
+  function handleFavoriteClick() {
+    if (!favoriteCategories || !onSetFavoriteCategory || favoriteCategories.length === 0) return
+    if (favoriteCategories.length === 1) {
+      const only = favoriteCategories[0]
+      onSetFavoriteCategory(item.id, item.favoriteCategoryId === only.id ? null : only.id)
+      return
+    }
+    setPickingFavorite(true)
+  }
+
+  function handleConfirmDelete() {
+    onDelete(item.id)
+    setConfirmingDelete(false)
+    onClose()
+  }
+
   useEffect(() => {
     function onKeyDown(e: KeyboardEvent) {
       // Don't hijack L/R (or anything else) while a text field has focus —
@@ -106,6 +137,9 @@ export function Lightbox({
       if (e.key === 'ArrowLeft' && index > 0) onNavigate(index - 1)
       if ((e.key === 'l' || e.key === 'L') && item.kind === 'Photo') handleRotate(-90)
       if ((e.key === 'r' || e.key === 'R') && item.kind === 'Photo') handleRotate(90)
+      // Same confirm step as clicking the Delete button — never deletes
+      // outright, so an accidental press can't silently move a file.
+      if (e.key === 'Delete') setConfirmingDelete(true)
     }
     window.addEventListener('keydown', onKeyDown)
     return () => window.removeEventListener('keydown', onKeyDown)
@@ -170,7 +204,7 @@ export function Lightbox({
 
   return (
     <div className="lightbox-overlay" onClick={onClose}>
-      <button type="button" className="lightbox-close" onClick={onClose} aria-label="Close">
+      <button type="button" className="lightbox-close" onClick={onClose} title="Close" aria-label="Close">
         &times;
       </button>
       <div className="lightbox-toolbar" onClick={(e) => e.stopPropagation()}>
@@ -233,6 +267,40 @@ export function Lightbox({
             )}
           </>
         )}
+        {favoriteCategories && onSetFavoriteCategory && favoriteCategories.length > 0 && (
+          <>
+            <button
+              type="button"
+              className={item.favoriteCategoryId !== null ? 'is-set' : ''}
+              onClick={handleFavoriteClick}
+              title="Favorite category"
+              aria-label="Favorite category"
+            >
+              <svg
+                viewBox="0 0 24 24"
+                width="16"
+                height="16"
+                fill={item.favoriteCategoryId !== null ? 'currentColor' : 'none'}
+                stroke="currentColor"
+                strokeWidth="2.5"
+                strokeLinejoin="round"
+              >
+                <path d="M12 .587l3.668 7.568 8.332 1.151-6.064 5.828 1.48 8.279-7.416-3.967-7.416 3.967 1.481-8.279-6.064-5.828 8.332-1.151z" />
+              </svg>
+            </button>
+            {pickingFavorite && (
+              <FavoriteCategoryMenu
+                categories={favoriteCategories}
+                currentId={item.favoriteCategoryId}
+                onPick={(tagId) => {
+                  onSetFavoriteCategory(item.id, tagId)
+                  setPickingFavorite(false)
+                }}
+                onCancel={() => setPickingFavorite(false)}
+              />
+            )}
+          </>
+        )}
         <button
           type="button"
           className="lightbox-move-btn slideshow-start-btn"
@@ -242,6 +310,16 @@ export function Lightbox({
         >
           <svg viewBox="0 0 24 24" width="16" height="16" fill="currentColor"><path d="M8 5v14l11-7z" /></svg>
           Slideshow
+        </button>
+        <button
+          type="button"
+          onClick={() => setConfirmingDelete(true)}
+          title="Move to Recycle Bin (Delete key)"
+          aria-label="Delete"
+        >
+          <svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+            <path d="M3 6h18M8 6V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2m3 0-1 14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2L4 6h16z" />
+          </svg>
         </button>
       </div>
       {index > 0 && (
@@ -254,7 +332,9 @@ export function Lightbox({
           }}
           aria-label="Previous"
         >
-          &#8249;
+          <svg viewBox="0 0 24 24" width="22" height="22" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
+            <path d="M15 5l-7 7 7 7" />
+          </svg>
         </button>
       )}
       {index < items.length - 1 && (
@@ -267,7 +347,9 @@ export function Lightbox({
           }}
           aria-label="Next"
         >
-          &#8250;
+          <svg viewBox="0 0 24 24" width="22" height="22" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
+            <path d="M9 5l7 7-7 7" />
+          </svg>
         </button>
       )}
       <div
@@ -365,6 +447,22 @@ export function Lightbox({
           </>
         )}
       </div>
+
+      {confirmingDelete && (
+        <div className="event-picker-overlay" onClick={(e) => e.stopPropagation()}>
+          <div className="confirm-dialog">
+            <p>Move this {item.kind === 'Video' ? 'video' : 'photo'} to the Recycle Bin?</p>
+            <div className="confirm-dialog-actions">
+              <button type="button" className="modal-footer-cancel" onClick={() => setConfirmingDelete(false)}>
+                Cancel
+              </button>
+              <button type="button" className="danger" onClick={handleConfirmDelete}>
+                Delete
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   )
 }

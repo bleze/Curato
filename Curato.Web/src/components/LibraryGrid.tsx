@@ -282,7 +282,14 @@ export function LibraryGrid({
   // prop's own doc comment in DateScrubber.tsx for why a separately-measured
   // "container height" state wasn't the same reference frame.
   const scrubberRailRef = useRef<HTMLDivElement>(null)
-  const [lightbox, setLightbox] = useState<{ items: MediaItemDto[]; index: number; eventId: number } | null>(null)
+  // Deliberately just an eventId (not a frozen items snapshot) — the items
+  // themselves are looked up fresh from `library` on every render below, so
+  // a mutation made from inside the open Lightbox (favorite, rotate, date
+  // edit) is reflected immediately instead of the Lightbox going on showing
+  // stale data (confirmed live as a real bug: the favorite star didn't
+  // update after picking a category, since favoriteCategoryId lived only
+  // on the old snapshot's item objects) until closed and reopened.
+  const [lightbox, setLightbox] = useState<{ eventId: number; index: number } | null>(null)
   const [slideshow, setSlideshow] = useState<{ items: MediaItemDto[]; index: number } | null>(null)
   // A ref, not state — this changes on every mouse move between thumbnails,
   // and none of that needs to trigger a re-render of the (potentially huge)
@@ -362,6 +369,14 @@ export function LibraryGrid({
     })),
     [library],
   )
+
+  // The Lightbox's own items, looked up fresh by eventId every render — see
+  // the `lightbox` state's own comment for why this isn't just a snapshot.
+  const eventsById = useMemo(
+    () => new Map([...library.standaloneEvents, ...library.trips.flatMap((t) => t.events)].map((e) => [e.id, e])),
+    [library],
+  )
+  const lightboxItems = lightbox ? (eventsById.get(lightbox.eventId)?.items ?? []) : []
 
   // Lets you rotate a photo by hovering its grid thumbnail and pressing
   // L/R, without opening the fullscreen viewer first — same non-destructive
@@ -623,7 +638,7 @@ export function LibraryGrid({
                       suspendLoad={virtualizer.isScrolling}
                       requestedIdsRef={requestedIdsRef}
                       use24Hour={use24Hour}
-                      onOpen={() => setLightbox({ items: block.event.items, index: block.startIndex + i, eventId: block.event.id })}
+                      onOpen={() => setLightbox({ index: block.startIndex + i, eventId: block.event.id })}
                       onDelete={onDelete}
                       onMove={() => setMoveTarget({ kind: 'item', item, eventId: block.event.id })}
                       onHoverChange={(hovering) => {
@@ -739,7 +754,7 @@ export function LibraryGrid({
 
       {lightbox && (
         <Lightbox
-          items={lightbox.items}
+          items={lightboxItems}
           index={lightbox.index}
           libraryPath={libraryPath}
           allEvents={allEventSummaries}
@@ -750,9 +765,12 @@ export function LibraryGrid({
           onRotated={onRotated}
           onMoveToEvent={onMoveMediaItemToEvent}
           onStartSlideshow={() => {
-            setSlideshow({ items: lightbox.items, index: lightbox.index })
+            setSlideshow({ items: lightboxItems, index: lightbox.index })
             setLightbox(null)
           }}
+          onDelete={onDelete}
+          favoriteCategories={favoriteCategories}
+          onSetFavoriteCategory={onSetFavoriteCategory}
         />
       )}
 
@@ -985,7 +1003,7 @@ function ThumbTile({
             height="11"
             fill={item.favoriteCategoryId !== null ? 'currentColor' : 'none'}
             stroke="currentColor"
-            strokeWidth="1.5"
+            strokeWidth="2.5"
             strokeLinejoin="round"
           >
             <path d="M12 .587l3.668 7.568 8.332 1.151-6.064 5.828 1.48 8.279-7.416-3.967-7.416 3.967 1.481-8.279-6.064-5.828 8.332-1.151z" />

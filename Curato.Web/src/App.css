@@ -1517,6 +1517,13 @@ button {
   padding: 0 14px 0 12px;
   gap: 6px;
   font-size: 13px;
+  /* The page's own inherited line-height (145% of the root's 18px, ~26px)
+     otherwise gave the text label a much taller line box than the 16px SVG
+     icon sitting next to it — flex centers each one independently within
+     that mismatch, so the text visually sat lower than the icon even
+     though both were "centered". A tight line-height keeps the text's own
+     box close to its actual glyph height instead. */
+  line-height: 1;
 }
 
 /* .lightbox-toolbar button's own background/color (the translucent-white
@@ -1696,6 +1703,12 @@ button {
   cursor: default;
 }
 
+/* The favorite star's filled state — same gold as the grid tile's own
+   .thumb-favorite.is-set. */
+.lightbox-toolbar button.is-set {
+  color: #ffc93c;
+}
+
 .lightbox-close {
   position: absolute;
   top: 16px;
@@ -1715,16 +1728,14 @@ button {
   background: rgba(255, 255, 255, 0.1);
   border: none;
   color: white;
-  font-size: 40px;
-  line-height: 1;
   width: 56px;
   height: 56px;
   border-radius: 50%;
   cursor: pointer;
-  /* The ‹/› glyph's own font metrics (ascender/descender space) don't sit
-     centered around its em-box middle, so at this font-size it visually
-     read as sitting toward the bottom of the button — flex-centering the
-     button's content box fixes that regardless of the glyph's own metrics. */
+  /* An SVG chevron (not the ‹/› glyph) — every font's own metrics
+     (ascender/descender space) put its ink off-center within its em box,
+     which even flex-centering the button's content box couldn't fully
+     fix, the same reason the delete/star icons switched to SVG earlier. */
   display: flex;
   align-items: center;
   justify-content: center;

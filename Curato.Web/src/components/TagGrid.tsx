@@ -212,6 +212,7 @@ export function TagGrid({
             setSlideshow(lightbox)
             setLightbox(null)
           }}
+          onDelete={onDelete}
         />
       )}
 
