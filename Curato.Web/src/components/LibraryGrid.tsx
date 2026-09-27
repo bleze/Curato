@@ -1161,9 +1161,10 @@ function ThumbTile({
             onFixOutlierDate()
           }}
         >
-          <svg viewBox="0 0 24 24" width="11" height="11" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
-            <circle cx="12" cy="12" r="10" />
-            <path d="M12 7v6l4 2" />
+          <svg viewBox="0 0 24 24" width="12" height="12" fill="none" stroke="currentColor" strokeWidth="3" strokeLinecap="round" strokeLinejoin="round">
+            <circle cx="12" cy="12" r="9" />
+            <line x1="12" y1="7.5" x2="12" y2="13" />
+            <circle cx="12" cy="16.5" r="0.75" fill="currentColor" stroke="none" />
           </svg>
         </button>
       )}
