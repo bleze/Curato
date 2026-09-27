@@ -193,6 +193,89 @@ public sealed class LibraryRepository(LibraryDatabase database)
     }
 
     /// <summary>
+    /// Bulk date-fix for a whole folder of undated/mis-dated scans (e.g. a
+    /// legacy "pre-1998" album whose EXIF just reflects when it was
+    /// scanned, not when it was taken) — every member of every given Event
+    /// gets set to the exact same <paramref name="takenAt"/>, since there's
+    /// no reliable per-photo date to preserve anyway. Deliberately does NOT
+    /// call <see cref="ResortEventMembership"/>: that re-derives SortOrder
+    /// by sorting on TakenAt, which would scramble the grid's existing
+    /// thumbnail order the moment every member's date ties. Existing
+    /// SortOrder is left untouched — only the Event's (and, if it's in one,
+    /// its TripGroup's) date *range* moves, not its members' display order.
+    ///
+    /// Unlike <see cref="RefreshLooseEventBoundaries"/>, this is never
+    /// gated on FolderPath — that gate protects an automatic re-heal pass
+    /// from clobbering a deliberately-Adopted folder's range, but this is
+    /// itself the deliberate, explicit action for exactly that folder.
+    /// Unknown/empty event ids are silently skipped rather than failing the
+    /// whole call, matching how other bulk operations in this class treat a
+    /// stale id from a since-changed selection.
+    /// </summary>
+    public int SetTakenAtForEvents(IReadOnlyList<long> eventIds, DateTime takenAt)
+    {
+        using var connection = database.OpenConnection();
+        using var transaction = connection.BeginTransaction();
+
+        var takenAtString = takenAt.ToString("O");
+        var affectedItemCount = 0;
+        var affectedTripGroupIds = new HashSet<long>();
+
+        foreach (var eventId in eventIds)
+        {
+            var memberIds = connection.Query<long>(
+                "SELECT MediaItemId FROM EventMediaItem WHERE EventId = @EventId",
+                new { EventId = eventId }, transaction).ToList();
+            if (memberIds.Count == 0)
+            {
+                continue;
+            }
+
+            connection.Execute("""
+                UPDATE MediaItem SET TakenAt = @TakenAt, TakenAtSource = @TakenAtSource
+                WHERE Id IN @Ids
+                """, new
+            {
+                TakenAt = takenAtString,
+                TakenAtSource = nameof(Curato.Core.TakenAtSource.Manual),
+                Ids = memberIds
+            }, transaction);
+            affectedItemCount += memberIds.Count;
+
+            connection.Execute(
+                "UPDATE Event SET StartAt = @TakenAt, EndAt = @TakenAt WHERE Id = @EventId",
+                new { TakenAt = takenAtString, EventId = eventId }, transaction);
+
+            var tripGroupId = connection.ExecuteScalar<long?>(
+                "SELECT TripGroupId FROM Event WHERE Id = @EventId", new { EventId = eventId }, transaction);
+            if (tripGroupId is { } tid)
+            {
+                affectedTripGroupIds.Add(tid);
+            }
+        }
+
+        foreach (var tripGroupId in affectedTripGroupIds)
+        {
+            var memberRanges = connection.Query(
+                "SELECT StartAt, EndAt FROM Event WHERE TripGroupId = @TripGroupId",
+                new { TripGroupId = tripGroupId }, transaction).ToList();
+
+            var startDate = DateOnly.FromDateTime(
+                ParseDateTime(memberRanges.Select(r => (string)r.StartAt).Min(StringComparer.Ordinal)!));
+            var endDate = DateOnly.FromDateTime(
+                ParseDateTime(memberRanges.Select(r => (string)r.EndAt).Max(StringComparer.Ordinal)!));
+
+            connection.Execute(
+                "UPDATE TripGroup SET StartDate = @StartDate, EndDate = @EndDate WHERE Id = @TripGroupId",
+                new { StartDate = startDate.ToString("O"), EndDate = endDate.ToString("O"), TripGroupId = tripGroupId },
+                transaction);
+        }
+
+        transaction.Commit();
+        return affectedItemCount;
+    }
+
+    /// <summary>
     /// Rotates a MediaItem by a relative amount (+/-90 from a Lightbox
     /// toolbar button) — PLAN.md §10's non-destructive Edit pipeline, so
     /// this only ever writes a database row; the original file's bytes are

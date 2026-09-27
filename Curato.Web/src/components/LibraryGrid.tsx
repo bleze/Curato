@@ -225,6 +225,7 @@ export function LibraryGrid({
   onMergeEventsInto,
   onRemoveEventsFromTrip,
   onSetFavoriteCategory,
+  onFixEventDates,
 }: {
   library: LibraryDto
   libraryPath: string
@@ -242,6 +243,8 @@ export function LibraryGrid({
   onMergeEventsInto: (sourceEventIds: number[], targetEventId: number) => void
   onRemoveEventsFromTrip: (eventIds: number[]) => void
   onSetFavoriteCategory: (mediaItemId: number, tagId: number | null) => void
+  /** Bulk date-fix for undated/mis-dated scans — see LibraryRepository.SetTakenAtForEvents. */
+  onFixEventDates: (eventIds: number[], takenAt: string) => void
 }) {
   const scrollRef = useRef<HTMLDivElement>(null)
   // null = not yet measured. Deliberately never guess a fallback column
@@ -319,6 +322,12 @@ export function LibraryGrid({
   // changes on an explicit click and a handful of headers re-rendering in
   // response is completely fine.
   const [selectedEventIds, setSelectedEventIds] = useState<Set<number>>(new Set())
+  // "Fix dates…" in the selection bar below — a folder of undated/mis-dated
+  // scans (e.g. a legacy "pre-1998" album) needs every member set to one
+  // approximate date at once; one-by-one via the Lightbox isn't realistic
+  // for hundreds of scans. See LibraryRepository.SetTakenAtForEvents.
+  const [fixingDatesEventIds, setFixingDatesEventIds] = useState<number[] | null>(null)
+  const [fixDateDraft, setFixDateDraft] = useState('')
   function toggleEventSelected(eventId: number) {
     setSelectedEventIds((current) => {
       const next = new Set(current)
@@ -718,6 +727,16 @@ export function LibraryGrid({
               Remove from Trip
             </button>
           )}
+          <button
+            type="button"
+            title="Set every photo in the selected Event(s) to the same date/time — for a folder of undated or mis-dated scans"
+            onClick={() => {
+              setFixDateDraft('')
+              setFixingDatesEventIds([...selectedEventIds])
+            }}
+          >
+            Fix dates…
+          </button>
           <button type="button" onClick={() => setSelectedEventIds(new Set())}>
             Cancel
           </button>
@@ -744,6 +763,36 @@ export function LibraryGrid({
             }}
             onCancel={closeMovePicker}
           />
+        </div>
+      )}
+
+      {fixingDatesEventIds && (
+        <div className="event-picker-overlay" onClick={() => setFixingDatesEventIds(null)}>
+          <div className="confirm-dialog" onClick={(e) => e.stopPropagation()}>
+            <p>
+              Set every photo/video in {fixingDatesEventIds.length === 1 ? 'this Event' : `these ${fixingDatesEventIds.length} Events`} to
+              the same date and time — for a folder of undated or mis-dated scans, not a precise
+              per-photo correction.
+            </p>
+            <input type="datetime-local" value={fixDateDraft} onChange={(e) => setFixDateDraft(e.target.value)} autoFocus />
+            <div className="confirm-dialog-actions">
+              <button type="button" className="modal-footer-cancel" onClick={() => setFixingDatesEventIds(null)}>
+                Cancel
+              </button>
+              <button
+                type="button"
+                className="modal-footer-save"
+                disabled={!fixDateDraft}
+                onClick={() => {
+                  onFixEventDates(fixingDatesEventIds, fixDateDraft)
+                  setSelectedEventIds(new Set())
+                  setFixingDatesEventIds(null)
+                }}
+              >
+                Set dates
+              </button>
+            </div>
+          </div>
         </div>
       )}
 

@@ -30,6 +30,11 @@ builder.Services.AddSingleton(serverDatabase);
 // per-request repositories controllers otherwise construct inline.
 builder.Services.AddSingleton<LibraryOperationGate>();
 
+// A live "files found so far" counter a scan updates as it walks, read by a
+// separate polling request while the scan's own single blocking request is
+// still in flight — see ScanProgressTracker's own doc comment.
+builder.Services.AddSingleton<ScanProgressTracker>();
+
 // Direct iCloud integration (PLAN.md §4) — shells out to the MIT-licensed
 // icloudpd/pyicloud tools (Python) rather than porting their auth/sync
 // logic into C#. See Curato.iCloud for why, and tools/icloud-sync for the

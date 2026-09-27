@@ -247,6 +247,11 @@ export function getLibrary(path: string): Promise<LibraryDto> {
   return fetch(`/api/library?path=${encodeURIComponent(path)}`).then(asJson<LibraryDto>)
 }
 
+/** Polled while a scan is in flight — see ScanController.GetProgress for why this needs its own endpoint rather than the scan request itself reporting progress. */
+export function getScanProgress(path: string): Promise<{ filesFoundSoFar: number }> {
+  return fetch(`/api/scan/progress?path=${encodeURIComponent(path)}`).then(asJson<{ filesFoundSoFar: number }>)
+}
+
 export interface OrganizeResult {
   eventsOrganized: number
   filesMoved: number
@@ -394,6 +399,21 @@ export function setTakenAt(path: string, mediaItemId: number, takenAt: string): 
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify({ path, mediaItemId, takenAt }),
+  }).then(expectOk)
+}
+
+/**
+ * Bulk sibling of setTakenAt for a whole folder of undated/mis-dated scans
+ * at once (e.g. a legacy "pre-1998" album) — every MediaItem in every given
+ * Event gets set to the exact same takenAt. See
+ * LibraryRepository.SetTakenAtForEvents for why this doesn't try to
+ * preserve/re-derive relative ordering.
+ */
+export function fixEventDates(path: string, eventIds: number[], takenAt: string): Promise<void> {
+  return fetch('/api/events/fix-dates', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ path, eventIds, takenAt }),
   }).then(expectOk)
 }
 

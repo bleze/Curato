@@ -4,10 +4,12 @@ import type { AuthStatus, FavoriteCategoryDto, LibraryDto, PicasaImportResult } 
 import {
   createTripGroup,
   deleteMediaItem,
+  fixEventDates,
   getAuthStatus,
   getFavoriteCategories,
   getLibrary,
   getLibraryFolder,
+  getScanProgress,
   logout,
   mergeEventInto,
   moveMediaItemToEvent,
@@ -97,6 +99,11 @@ function App() {
   const [error, setError] = useState<string | null>(null)
   const [busy, setBusy] = useState(false)
   const [scanning, setScanning] = useState(false)
+  // Live count of files found so far, polled from the server while a scan
+  // is in flight (see scanPath below and ScanController.GetProgress) — the
+  // scan itself is one big blocking request with no way to report partway
+  // through, so this is a second, independent request running alongside it.
+  const [scannedCount, setScannedCount] = useState(0)
   const scanAbortRef = useRef<AbortController | null>(null)
   const [autoLoading, setAutoLoading] = useState(false)
   // Library/Albums/Recycle Bin/Persons are mutually-exclusive views of the
@@ -242,8 +249,17 @@ function App() {
     scanAbortRef.current = controller
     setBusy(true)
     setScanning(true)
+    setScannedCount(0)
     setError(null)
     setStatus('Scanning…')
+    const progressTimer = setInterval(() => {
+      getScanProgress(pathToScan)
+        .then((p) => setScannedCount(p.filesFoundSoFar))
+        .catch(() => {
+          // Best-effort — a failed poll just means the counter doesn't tick
+          // this round; the scan itself doesn't depend on this at all.
+        })
+    }, 800)
     try {
       const result = await scanLibrary(pathToScan, controller.signal)
       setStatus(
@@ -273,6 +289,7 @@ function App() {
         setError(err instanceof Error ? err.message : String(err))
       }
     } finally {
+      clearInterval(progressTimer)
       setBusy(false)
       setScanning(false)
       scanAbortRef.current = null
@@ -456,6 +473,18 @@ function App() {
     }
   }
 
+  async function handleFixEventDates(eventIds: number[], takenAt: string) {
+    if (!loadedPath) return
+    setError(null)
+    try {
+      await fixEventDates(loadedPath, eventIds, takenAt)
+      const lib = await getLibrary(loadedPath)
+      setLibrary(lib)
+    } catch (err) {
+      setError(err instanceof Error ? err.message : String(err))
+    }
+  }
+
   // Sequential, not fired-off-in-parallel: several merges hitting the same
   // library.db concurrently risked overlapping write transactions, and this
   // also means one final library refresh instead of one per source Event.
@@ -577,7 +606,9 @@ function App() {
 
       {scanning && (
         <div className="scan-progress-bar">
-          <span className="scan-progress-label">Scanning…</span>
+          <span className="scan-progress-label">
+            {scannedCount > 0 ? `Scanning… ${scannedCount} file(s) found so far` : 'Scanning…'}
+          </span>
           <div className="scan-progress-track">
             <div className="scan-progress-fill" />
           </div>
@@ -670,6 +701,7 @@ function App() {
             onUngroupTripGroup={handleUngroupTripGroup}
             onMergeEventsInto={handleMergeEventsInto}
             onRemoveEventsFromTrip={handleRemoveEventsFromTrip}
+            onFixEventDates={handleFixEventDates}
             onSetFavoriteCategory={handleSetFavoriteCategory}
           />
         </div>

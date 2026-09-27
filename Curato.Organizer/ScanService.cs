@@ -36,7 +36,7 @@ public sealed record ScanResult(
 /// </summary>
 public sealed class ScanService(
     LibraryRepository repository, LibraryQueryService query, LibraryDatabase database,
-    INominatimClient? nominatimClient = null, string? homeLabel = null)
+    INominatimClient? nominatimClient = null, string? homeLabel = null, ScanProgressTracker? progressTracker = null)
 {
     // Self-constructed (not required in the constructor) so the ~25 existing
     // call sites across controllers/tests don't need updating — matches how
@@ -57,7 +57,20 @@ public sealed class ScanService(
     /// </summary>
     public ScanResult Scan(string libraryRoot)
     {
-        var scannedItems = new MediaFileScanner().Scan(libraryRoot).ToList();
+        progressTracker?.Reset(libraryRoot);
+        // Not a plain .ToList() — MediaFileScanner.Scan is a lazy `yield
+        // return` walk, so each file's actual work (EXIF read, hashing)
+        // happens right here as it's enumerated. Ticking the counter per
+        // item, right where that work happens, is what lets a concurrent
+        // poll (ScanController's GET /progress) see real-time movement
+        // instead of a number that jumps straight to its final value.
+        var scannedItems = new List<MediaItem>();
+        foreach (var item in new MediaFileScanner().Scan(libraryRoot))
+        {
+            scannedItems.Add(item);
+            progressTracker?.Increment(libraryRoot);
+        }
+
         var removedMissingFileCount = RemoveMissingFiles(scannedItems);
         return ScanItems(scannedItems) with { RemovedMissingFileCount = removedMissingFileCount };
     }

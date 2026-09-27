@@ -1698,6 +1698,19 @@ button {
   font-size: 13.5px;
 }
 
+.confirm-dialog input[type='datetime-local'] {
+  display: block;
+  width: 100%;
+  margin: 0 0 14px;
+  font-size: 13px;
+  padding: 5px 8px;
+  border: 1px solid var(--border);
+  border-radius: 5px;
+  background: var(--bg);
+  color: var(--text);
+  box-sizing: border-box;
+}
+
 .confirm-dialog-actions {
   display: flex;
   justify-content: flex-end;

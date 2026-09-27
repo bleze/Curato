@@ -195,6 +195,31 @@ public sealed class LibraryController(LibraryOperationGate gate, ServerDatabase 
             : NotFound($"No MediaItem with id {request.MediaItemId}");
     }
 
+    public sealed record FixEventDatesRequest(string Path, IReadOnlyList<long> EventIds, DateTime TakenAt);
+
+    /// <summary>
+    /// Bulk sibling of <see cref="SetTakenAt"/> for a whole folder of
+    /// undated/mis-dated scans at once (e.g. a legacy "pre-1998" album) —
+    /// every MediaItem in every given Event gets set to the exact same
+    /// TakenAt. See LibraryRepository.SetTakenAtForEvents for why this
+    /// doesn't try to preserve/re-derive relative ordering.
+    /// </summary>
+    [HttpPost("events/fix-dates")]
+    public IActionResult FixEventDates([FromBody] FixEventDatesRequest request)
+    {
+        if (!Directory.Exists(request.Path))
+        {
+            return NotFound($"Folder not found: {request.Path}");
+        }
+
+        var database = new LibraryDatabase(request.Path);
+        database.EnsureSchema();
+        var repository = new LibraryRepository(database);
+
+        repository.SetTakenAtForEvents(request.EventIds, request.TakenAt);
+        return NoContent();
+    }
+
     public sealed record RotateRequest(string Path, long MediaItemId, int DeltaDegrees);
 
     /// <summary>

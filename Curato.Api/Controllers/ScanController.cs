@@ -19,10 +19,11 @@ namespace Curato.Api.Controllers;
 /// </summary>
 [ApiController]
 [Route("api/[controller]")]
-public sealed class ScanController(LibraryOperationGate gate, ServerDatabase serverDatabase) : ControllerBase
+public sealed class ScanController(LibraryOperationGate gate, ServerDatabase serverDatabase, ScanProgressTracker progressTracker) : ControllerBase
 {
     public sealed record ScanRequest(string Path);
     public sealed record ScanResponse(ScanResult Scan, PicasaImportResult PicasaImport);
+    public sealed record ScanProgressResponse(int FilesFoundSoFar);
 
     [HttpPost]
     public async Task<ActionResult<ScanResponse>> Scan([FromBody] ScanRequest request)
@@ -39,9 +40,33 @@ public sealed class ScanController(LibraryOperationGate gate, ServerDatabase ser
         database.EnsureSchema();
         var query = new LibraryQueryService(database);
 
-        var scanResult = new ScanService(new LibraryRepository(database), query, database, homeLabel: homeLabel).Scan(request.Path);
-        var picasaResult = new PicasaImportService(database, query, new PicasaImportRepository(database)).Import();
+        try
+        {
+            var scanResult = new ScanService(
+                new LibraryRepository(database), query, database, homeLabel: homeLabel, progressTracker: progressTracker)
+                .Scan(request.Path);
+            var picasaResult = new PicasaImportService(database, query, new PicasaImportRepository(database)).Import();
 
-        return Ok(new ScanResponse(scanResult, picasaResult));
+            return Ok(new ScanResponse(scanResult, picasaResult));
+        }
+        finally
+        {
+            // So a later poll doesn't keep reporting this scan's final count
+            // forever, as if it were still running.
+            progressTracker.Clear(request.Path);
+        }
     }
+
+    /// <summary>
+    /// Polled by the frontend (every second or so) while the request above
+    /// is still in flight — its own single blocking request has no way to
+    /// report partway through, so this reads the shared counter
+    /// ScanService.Scan ticks as it walks instead. 0 both before a scan has
+    /// started ticking yet and after one's already finished (Clear above) —
+    /// the frontend already knows separately whether it's mid-scan, so it
+    /// doesn't need this endpoint to distinguish those itself.
+    /// </summary>
+    [HttpGet("progress")]
+    public ActionResult<ScanProgressResponse> GetProgress([FromQuery] string path) =>
+        Ok(new ScanProgressResponse(progressTracker.Get(path)));
 }
