@@ -33,6 +33,25 @@ public static partial class FolderTitleParser
     /// </summary>
     public static bool IsBareYear(string folderName) => BareYearPattern().IsMatch(folderName.Trim());
 
+    // ".Pre", ".Pre 1998", ".Pre-1998", ".pre" — the standard convention for
+    // "everything scanned in from before real digital/metadata photos start"
+    // (a leading dot so it sorts first on a real filesystem, same reasoning
+    // IsBareYear's own folders get sorted into buckets for). No year is
+    // parsed out of the name on purpose — LibraryQueryService.
+    // GetEarliestReliableTakenAt derives that from the library's own data
+    // instead, so the folder name doesn't need to encode or keep in sync
+    // with anything. The negative lookahead blocks ".Preston"/".Prep"/
+    // ".Present" from false-matching just because they start with "Pre".
+    [GeneratedRegex(@"^\.Pre(?![A-Za-z])", RegexOptions.IgnoreCase)]
+    private static partial Regex PreDigitalScansPattern();
+
+    /// <summary>
+    /// True for a folder recognized as the standard "pre-digital scans"
+    /// convention — see <see cref="Curato.Api.Controllers.LibraryController"/>'s
+    /// EventDto.NeedsDateReview, which this powers.
+    /// </summary>
+    public static bool IsPreDigitalScansFolder(string folderName) => PreDigitalScansPattern().IsMatch(folderName.Trim());
+
     public static (DateOnly? Date, string Title) Parse(string folderName)
     {
         var prefixMatch = DatePrefixPattern().Match(folderName);

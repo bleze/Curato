@@ -754,6 +754,16 @@ button {
   vertical-align: middle;
 }
 
+/* A FolderTitleParser.IsPreDigitalScansFolder Event/Trip — a nudge toward
+   "Fix dates…", never anything auto-changed — so it gets the same warning
+   color language .proposed-path already uses, distinct from the plain,
+   neutral "Adopted" badge it sits next to. */
+.badge--warn {
+  background: var(--surface-warn);
+  color: var(--text-warn);
+  border: 1px solid var(--border-warn);
+}
+
 .title-rename-button {
   display: inline-flex;
   align-items: center;

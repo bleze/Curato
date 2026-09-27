@@ -26,6 +26,8 @@ export interface EventDto {
   location: string | null
   /** Non-null once this Event has been grouped into a Trip (auto or manual) — lets the UI disable re-grouping it. */
   tripGroupId: number | null
+  /** True for a folder matching the standard ".Pre" pre-digital-scans naming convention — see FolderTitleParser.IsPreDigitalScansFolder. Just a nudge (a badge), never anything auto-changed. */
+  needsDateReview: boolean
   items: MediaItemDto[]
 }
 
@@ -38,12 +40,15 @@ export interface TripGroupDto {
   startDate: string
   endDate: string
   location: string | null
+  needsDateReview: boolean
   events: EventDto[]
 }
 
 export interface LibraryDto {
   trips: TripGroupDto[]
   standaloneEvents: EventDto[]
+  /** Earliest TakenAt among reliably-sourced (Exif/video-metadata) items anywhere in the library — used to prefill "Fix dates…" for a folder needing date review. Null if the library has none. */
+  earliestReliableTakenAt: string | null
 }
 
 export interface ScanResult {

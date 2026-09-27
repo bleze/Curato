@@ -25,14 +25,24 @@ public sealed class LibraryController(LibraryOperationGate gate, ServerDatabase 
 
     public sealed record EventDto(
         long Id, string Title, string NamingMode, string? FolderPath, string? ProposedFolderPath,
-        DateTime StartAt, DateTime EndAt, string? Location, long? TripGroupId, IReadOnlyList<MediaItemDto> Items);
+        DateTime StartAt, DateTime EndAt, string? Location, long? TripGroupId, bool NeedsDateReview,
+        IReadOnlyList<MediaItemDto> Items);
 
     public sealed record TripGroupDto(
         long Id, string Title, string NamingMode, string? FolderPath, string? ProposedFolderPath,
-        DateOnly StartDate, DateOnly EndDate, string? Location, IReadOnlyList<EventDto> Events);
+        DateOnly StartDate, DateOnly EndDate, string? Location, bool NeedsDateReview, IReadOnlyList<EventDto> Events);
 
     public sealed record LibraryDto(
-        IReadOnlyList<TripGroupDto> Trips, IReadOnlyList<EventDto> StandaloneEvents);
+        IReadOnlyList<TripGroupDto> Trips, IReadOnlyList<EventDto> StandaloneEvents, DateTime? EarliestReliableTakenAt);
+
+    /// <summary>
+    /// True for an Adopted folder matching the standard "pre-digital scans"
+    /// naming convention (see FolderTitleParser.IsPreDigitalScansFolder) —
+    /// surfaced as a "Needs dates fixed" badge nudging toward the "Fix
+    /// dates…" bulk action, never anything auto-changed.
+    /// </summary>
+    private static bool NeedsDateReview(string? folderPath) =>
+        folderPath is not null && FolderTitleParser.IsPreDigitalScansFolder(FolderGrouper.GetLeafName(folderPath));
 
     [HttpGet("library")]
     public ActionResult<LibraryDto> GetLibrary([FromQuery] string path)
@@ -123,7 +133,7 @@ public sealed class LibraryController(LibraryOperationGate gate, ServerDatabase 
 
         EventDto ToEventDto(Event e) => new(
             e.Id, e.Title, e.NamingMode.ToString(), e.FolderPath, ProposeEventPath(e), e.StartAt, e.EndAt,
-            ResolveLocation(GpsTripGate.RepresentativeLocation(e, mediaById)), e.TripGroupId,
+            ResolveLocation(GpsTripGate.RepresentativeLocation(e, mediaById)), e.TripGroupId, NeedsDateReview(e.FolderPath),
             e.MediaItemIds
                 .Where(id => mediaById.ContainsKey(id) && !pairedVideoIds.Contains(id))
                 .Select(id => mediaById[id])
@@ -155,7 +165,7 @@ public sealed class LibraryController(LibraryOperationGate gate, ServerDatabase 
 
                 return new TripGroupDto(
                     t.Id, t.Title, t.NamingMode.ToString(), t.FolderPath, ProposeTripPath(t), t.StartDate, t.EndDate,
-                    tripLocation, eventDtos);
+                    tripLocation, NeedsDateReview(t.FolderPath), eventDtos);
             })
             .OrderBy(t => t.StartDate)
             .ToList();
@@ -166,7 +176,9 @@ public sealed class LibraryController(LibraryOperationGate gate, ServerDatabase 
             .OrderBy(e => e.StartAt)
             .ToList();
 
-        return Ok(new LibraryDto(tripDtos, standaloneEvents));
+        var earliestReliableTakenAt = query.GetEarliestReliableTakenAt();
+
+        return Ok(new LibraryDto(tripDtos, standaloneEvents, earliestReliableTakenAt));
     }
 
     public sealed record SetTakenAtRequest(string Path, long MediaItemId, DateTime TakenAt);

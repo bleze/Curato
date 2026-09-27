@@ -26,7 +26,7 @@ public sealed class ScanController(LibraryOperationGate gate, ServerDatabase ser
     public sealed record ScanProgressResponse(int FilesFoundSoFar);
 
     [HttpPost]
-    public async Task<ActionResult<ScanResponse>> Scan([FromBody] ScanRequest request)
+    public async Task<ActionResult<ScanResponse>> Scan([FromBody] ScanRequest request, CancellationToken cancellationToken)
     {
         if (!Directory.Exists(request.Path))
         {
@@ -35,16 +35,20 @@ public sealed class ScanController(LibraryOperationGate gate, ServerDatabase ser
 
         var homeLabel = new HomeLocationRepository(serverDatabase).Get();
 
-        using var release = await gate.AcquireAsync(request.Path);
+        using var release = await gate.AcquireAsync(request.Path, cancellationToken);
         var database = new LibraryDatabase(request.Path);
         database.EnsureSchema();
         var query = new LibraryQueryService(database);
 
         try
         {
+            // cancellationToken is auto-bound to HttpContext.RequestAborted —
+            // if the browser's own Stop button aborts the fetch (or the
+            // connection just drops), this actually stops the walk, not just
+            // the client's wait for a response (see ScanService.Scan).
             var scanResult = new ScanService(
                 new LibraryRepository(database), query, database, homeLabel: homeLabel, progressTracker: progressTracker)
-                .Scan(request.Path);
+                .Scan(request.Path, cancellationToken);
             var picasaResult = new PicasaImportService(database, query, new PicasaImportRepository(database)).Import();
 
             return Ok(new ScanResponse(scanResult, picasaResult));

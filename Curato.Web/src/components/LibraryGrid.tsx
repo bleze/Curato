@@ -7,7 +7,7 @@ import { DateScrubber } from './DateScrubber'
 import type { EventSummary } from './EventPicker'
 import { EventPicker } from './EventPicker'
 import { FavoriteCategoryMenu } from './FavoriteCategoryMenu'
-import { formatTakenAt } from '../format'
+import { formatTakenAt, toDatetimeLocalValue } from '../format'
 import { Lightbox } from './Lightbox'
 import { Slideshow } from './Slideshow'
 import { useThumbMinWidth } from '../thumbSize'
@@ -576,6 +576,7 @@ export function LibraryGrid({
                     <span className="trip-meta">
                       {formatRange(block.trip.startDate, block.trip.endDate)}
                       {block.trip.namingMode === 'Adopted' && <span className="badge">Adopted</span>}
+                      {block.trip.needsDateReview && <span className="badge badge--warn">Needs dates fixed</span>}
                       {block.trip.location && <> &middot; {block.trip.location}</>}
                     </span>
                     <button
@@ -625,6 +626,7 @@ export function LibraryGrid({
                       {formatRange(block.event.startAt, block.event.endAt)} &middot;{' '}
                       {block.event.items.length} items
                       {block.event.namingMode === 'Adopted' && <span className="badge">Adopted</span>}
+                      {block.event.needsDateReview && <span className="badge badge--warn">Needs dates fixed</span>}
                       {block.event.location && <> &middot; {block.event.location}</>}
                     </span>
                     <button
@@ -731,8 +733,22 @@ export function LibraryGrid({
             type="button"
             title="Set every photo in the selected Event(s) to the same date/time — for a folder of undated or mis-dated scans"
             onClick={() => {
-              setFixDateDraft('')
-              setFixingDatesEventIds([...selectedEventIds])
+              const ids = [...selectedEventIds]
+              // A folder matching the standard ".Pre" convention (the
+              // "Needs dates fixed" badge) has no reliable date of its own
+              // to start from — prefill with the day before the earliest
+              // reliable date found anywhere in the library, a safe
+              // "definitely before this" anchor, instead of leaving the
+              // field empty. Still fully editable either way.
+              const allNeedDateReview = ids.every((id) => eventsById.get(id)?.needsDateReview)
+              if (allNeedDateReview && library.earliestReliableTakenAt) {
+                const dayBefore = new Date(library.earliestReliableTakenAt)
+                dayBefore.setDate(dayBefore.getDate() - 1)
+                setFixDateDraft(toDatetimeLocalValue(dayBefore.toISOString()))
+              } else {
+                setFixDateDraft('')
+              }
+              setFixingDatesEventIds(ids)
             }}
           >
             Fix dates…

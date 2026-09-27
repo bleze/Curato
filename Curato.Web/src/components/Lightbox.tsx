@@ -4,22 +4,12 @@ import { bumpImageVersion, fullImageUrl, rawFileUrl, rotateMediaItem } from '../
 import type { EventSummary } from './EventPicker'
 import { EventPicker } from './EventPicker'
 import { FavoriteCategoryMenu } from './FavoriteCategoryMenu'
-import { formatTakenAt } from '../format'
+import { formatTakenAt, toDatetimeLocalValue } from '../format'
 import { useUse24HourTime } from '../timeFormat'
 
 const MIN_ZOOM = 1
 const MAX_ZOOM = 4
 const ZOOM_STEP = 0.4
-
-// <input type="datetime-local">'s value format ("YYYY-MM-DDTHH:mm", no
-// timezone) — built from the Date object's LOCAL getters (not toISOString,
-// which would convert to UTC) so the input shows the same wall-clock time
-// formatTakenAt already displays, and round-trips back out the same way.
-function toDatetimeLocalValue(takenAt: string): string {
-  const d = new Date(takenAt)
-  const pad = (n: number) => String(n).padStart(2, '0')
-  return `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}T${pad(d.getHours())}:${pad(d.getMinutes())}`
-}
 
 export function Lightbox({
   items,

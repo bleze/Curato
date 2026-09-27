@@ -31,6 +31,25 @@ public sealed class LibraryQueryService(LibraryDatabase database)
         return items;
     }
 
+    /// <summary>
+    /// The earliest TakenAt across every MediaItem whose date actually comes
+    /// from real Exif/video metadata (not a filesystem-timestamp guess, and
+    /// not a previous manual/bulk fix) — used as a sensible default anchor
+    /// for the "Fix dates…" bulk action on a folder of undated scans (see
+    /// FolderTitleParser.IsPreDigitalScansFolder): "definitely before real
+    /// digital photos start". Null if the library has no such item at all.
+    /// </summary>
+    public DateTime? GetEarliestReliableTakenAt()
+    {
+        using var connection = database.OpenConnection();
+        var value = connection.ExecuteScalar<string?>("""
+            SELECT MIN(TakenAt) FROM MediaItem
+            WHERE TakenAtSource NOT IN ('FileSystem', 'Manual')
+            """);
+
+        return value is null ? null : DateTime.Parse(value, null, DateTimeStyles.RoundtripKind);
+    }
+
     public IReadOnlyList<Event> GetAllEvents()
     {
         using var connection = database.OpenConnection();

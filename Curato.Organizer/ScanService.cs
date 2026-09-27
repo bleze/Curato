@@ -55,7 +55,18 @@ public sealed class ScanService(
     /// stuck around forever as a "ghost" MediaItem showing "No preview"
     /// rather than the delete actually being reflected in the library.
     /// </summary>
-    public ScanResult Scan(string libraryRoot)
+    public ScanResult Scan(string libraryRoot, CancellationToken cancellationToken = default) =>
+        Scan(libraryRoot, new MediaFileScanner().Scan(libraryRoot), cancellationToken);
+
+    /// <summary>
+    /// The testable core of <see cref="Scan(string, CancellationToken)"/> —
+    /// takes the item source as a plain <see cref="IEnumerable{T}"/> instead
+    /// of always walking real files, so a test can supply its own
+    /// slow/interceptable sequence (e.g. one that cancels
+    /// <paramref name="cancellationToken"/>'s source partway through) without
+    /// needing real files on disk or real timing.
+    /// </summary>
+    public ScanResult Scan(string libraryRoot, IEnumerable<MediaItem> scannedFiles, CancellationToken cancellationToken = default)
     {
         progressTracker?.Reset(libraryRoot);
         // Not a plain .ToList() — MediaFileScanner.Scan is a lazy `yield
@@ -63,12 +74,30 @@ public sealed class ScanService(
         // happens right here as it's enumerated. Ticking the counter per
         // item, right where that work happens, is what lets a concurrent
         // poll (ScanController's GET /progress) see real-time movement
-        // instead of a number that jumps straight to its final value.
+        // instead of a number that jumps straight to its final value — and,
+        // now, is also where a Stop request actually takes effect.
         var scannedItems = new List<MediaItem>();
-        foreach (var item in new MediaFileScanner().Scan(libraryRoot))
+        try
         {
-            scannedItems.Add(item);
-            progressTracker?.Increment(libraryRoot);
+            foreach (var item in scannedFiles)
+            {
+                cancellationToken.ThrowIfCancellationRequested();
+                scannedItems.Add(item);
+                progressTracker?.Increment(libraryRoot);
+            }
+        }
+        catch (OperationCanceledException)
+        {
+            // Persist whatever was actually found as plain MediaItem rows
+            // (idempotent on RelativePath) so nothing already scanned is
+            // lost — but deliberately skip RemoveMissingFiles/ScanItems
+            // (clustering) entirely: Step 1/2's gap-based clustering needs
+            // the *complete* loose-item picture to bucket correctly, and
+            // clustering a partial cut risks an Event that gets awkwardly
+            // split once the next full scan finishes the job. The next Scan
+            // just picks these rows back up and clusters them normally.
+            repository.UpsertMediaItems(scannedItems);
+            throw;
         }
 
         var removedMissingFileCount = RemoveMissingFiles(scannedItems);

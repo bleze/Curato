@@ -244,6 +244,19 @@ function App() {
   // Shared with handleOpenLibrary's auto-scan-on-first-open above — both
   // just need "run a scan against this path and refresh the grid from it"
   // with the same status/busy/abort handling.
+  //
+  // Resilient to the one long-lived scanLibrary() request never actually
+  // resolving back to this tab (confirmed live: a 54,000+ file scan over a
+  // network share finished and safely persisted everything server-side, but
+  // the connection carrying the response apparently got dropped somewhere
+  // along the way, leaving the page stuck on "Scanning…" forever even
+  // though a manual refresh immediately showed the completed library) — the
+  // progress-poll below independently notices the server-side
+  // ScanProgressTracker count drop back to 0 (only ever cleared once
+  // ScanController's scan actually finishes, success or not) and wraps
+  // things up on its own if the original request's own resolution never
+  // arrives. finishScan is shared by both paths and guarded so only
+  // whichever one notices first actually does anything.
   async function scanPath(pathToScan: string) {
     const controller = new AbortController()
     scanAbortRef.current = controller
@@ -252,9 +265,39 @@ function App() {
     setScannedCount(0)
     setError(null)
     setStatus('Scanning…')
+
+    let hasFinished = false
+    let lastSeenCount = 0
+
+    async function finishScan(statusMessage: string) {
+      if (hasFinished) return
+      hasFinished = true
+      clearInterval(progressTimer)
+      try {
+        const lib = await getLibrary(pathToScan)
+        setLibrary(lib)
+        setLoadedPath(pathToScan)
+        rememberPath(pathToScan)
+        setStatus(statusMessage)
+      } catch (err) {
+        setError(err instanceof Error ? err.message : String(err))
+      } finally {
+        setBusy(false)
+        setScanning(false)
+        scanAbortRef.current = null
+      }
+    }
+
     const progressTimer = setInterval(() => {
       getScanProgress(pathToScan)
-        .then((p) => setScannedCount(p.filesFoundSoFar))
+        .then((p) => {
+          if (p.filesFoundSoFar === 0 && lastSeenCount > 0) {
+            finishScan('Scan finished — refreshing library…')
+          } else {
+            lastSeenCount = p.filesFoundSoFar
+            setScannedCount(p.filesFoundSoFar)
+          }
+        })
         .catch(() => {
           // Best-effort — a failed poll just means the counter doesn't tick
           // this round; the scan itself doesn't depend on this at all.
@@ -262,7 +305,7 @@ function App() {
     }, 800)
     try {
       const result = await scanLibrary(pathToScan, controller.signal)
-      setStatus(
+      await finishScan(
         `${result.scan.mediaItemCount} items total \u2014 new this scan: ` +
           `${result.scan.newAutoOrganizedEventCount} auto-organized event(s), ` +
           `${result.scan.newAdoptedEventCount} adopted event(s), ` +
@@ -273,26 +316,21 @@ function App() {
           formatRemovedMissingFilesNote(result.scan.removedMissingFileCount) +
           formatPicasaSummary(result.picasaImport),
       )
-      const lib = await getLibrary(pathToScan)
-      setLibrary(lib)
-      setLoadedPath(pathToScan)
-      rememberPath(pathToScan)
     } catch (err) {
+      if (hasFinished) return
       if (err instanceof DOMException && err.name === 'AbortError') {
-        // The server has no way to actually stop mid-walk (ScanService.Scan
-        // is one synchronous pass with nothing to check a token against) —
-        // this only stops the tab from waiting on it. Safe either way since
-        // re-scanning is idempotent, so whatever the server finishes with
-        // just gets picked up cleanly next time.
-        setStatus('Scan cancelled — it may still be finishing on the server in the background.')
+        // A real stop now (ScanService.Scan actually checks the token
+        // mid-walk and persists whatever it found so far), not just this
+        // tab detaching from a scan that keeps running regardless.
+        await finishScan('Scan stopped — files found so far were saved; run Scan again to pick up where it left off.')
       } else {
+        hasFinished = true
+        clearInterval(progressTimer)
         setError(err instanceof Error ? err.message : String(err))
+        setBusy(false)
+        setScanning(false)
+        scanAbortRef.current = null
       }
-    } finally {
-      clearInterval(progressTimer)
-      setBusy(false)
-      setScanning(false)
-      scanAbortRef.current = null
     }
   }
 
@@ -612,8 +650,12 @@ function App() {
           <div className="scan-progress-track">
             <div className="scan-progress-fill" />
           </div>
-          <button type="button" onClick={handleCancelScan}>
-            Cancel
+          <button
+            type="button"
+            onClick={handleCancelScan}
+            title="Actually stops the scan mid-walk — whatever it's found so far is kept, not discarded"
+          >
+            Stop
           </button>
         </div>
       )}
