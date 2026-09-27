@@ -15,7 +15,7 @@ namespace Curato.Api.Controllers;
 [Route("api/tags")]
 public sealed class TagController : ControllerBase
 {
-    public sealed record MediaItemDto(long Id, string RelativePath, string Kind, DateTime TakenAt, string TakenAtSource, string? LiveVideoRelativePath);
+    public sealed record MediaItemDto(long Id, string RelativePath, string Kind, DateTime TakenAt, string TakenAtSource, string? LiveVideoRelativePath, long? FavoriteCategoryId);
     public sealed record TagDto(long Id, string Name, bool IsFavoriteShortcut, int ItemCount, string? CoverRelativePath);
     public sealed record FavoriteCategoryDto(long Id, string Name);
     public sealed record CreateFavoriteCategoryRequest(string Path, string Name);
@@ -65,6 +65,7 @@ public sealed class TagController : ControllerBase
 
         var query = OpenQuery(path);
         var mediaById = query.GetAllMediaItems().ToDictionary(m => m.Id);
+        var favoriteCategoryAssignments = query.GetFavoriteCategoryAssignments();
 
         // Apple Live Photos (§3): a paired video is represented by its
         // photo's tile, same rule the main library view (§11) follows.
@@ -81,7 +82,8 @@ public sealed class TagController : ControllerBase
                 m.Id, m.RelativePath, m.Kind.ToString(), m.TakenAt, m.TakenAtSource.ToString(),
                 m.LivePhotoVideoItemId is { } videoId && mediaById.TryGetValue(videoId, out var video)
                     ? video.RelativePath
-                    : null))
+                    : null,
+                favoriteCategoryAssignments.TryGetValue(m.Id, out var favoriteId) ? favoriteId : null))
             .ToList();
 
         return Ok(dtos);

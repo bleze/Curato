@@ -20,6 +20,7 @@ export function Lightbox({
   onClose,
   onNavigate,
   onTakenAtChanged,
+  onResetTakenAt,
   onRotated,
   onMoveToEvent,
   onStartSlideshow,
@@ -37,6 +38,8 @@ export function Lightbox({
   onClose: () => void
   onNavigate: (index: number) => void
   onTakenAtChanged: (mediaItemId: number, takenAt: string) => void
+  /** Re-reads the real Exif/video date straight off the file and uses that instead — the recovery path for a bad manual edit, since the file itself is never touched and always has the ground truth. Omit to hide the button (e.g. wherever the caller hasn't wired it up yet). */
+  onResetTakenAt?: (mediaItemId: number) => Promise<void>
   onRotated: (mediaItemId: number) => void
   onMoveToEvent?: (mediaItemId: number, targetEventId: number | null) => void
   /** Starts a fullscreen Slideshow over these same items, from the photo/video currently open — closes this Lightbox first (see Slideshow.tsx). */
@@ -60,6 +63,7 @@ export function Lightbox({
   const [moveSearch, setMoveSearch] = useState('')
   const [pickingFavorite, setPickingFavorite] = useState(false)
   const [confirmingDelete, setConfirmingDelete] = useState(false)
+  const [resettingTakenAt, setResettingTakenAt] = useState(false)
   // bumpImageVersion (api.ts) is keyed by mediaItemId, shared across every
   // view of this item (grid thumbnails included) — this local counter just
   // forces Lightbox itself to re-render and pick up the new version after a
@@ -398,6 +402,19 @@ export function Lightbox({
               type="datetime-local"
               value={draftDate}
               onChange={(e) => setDraftDate(e.target.value)}
+              onKeyDown={(e) => {
+                // The component's own global keydown handler deliberately
+                // ignores everything while a text field has focus (so typing
+                // "l"/"r" into this same input doesn't also rotate the
+                // photo), so this input needs its own Enter/Escape handling.
+                if (e.key === 'Enter') {
+                  if (!draftDate) return
+                  onTakenAtChanged(item.id, draftDate)
+                  setEditingDate(false)
+                } else if (e.key === 'Escape') {
+                  setEditingDate(false)
+                }
+              }}
               autoFocus
             />
             <button
@@ -414,6 +431,25 @@ export function Lightbox({
             <button type="button" className="lightbox-caption-cancel" onClick={() => setEditingDate(false)}>
               Cancel
             </button>
+            {onResetTakenAt && (
+              <button
+                type="button"
+                className="lightbox-caption-reset"
+                title="Re-read this file's real Exif/video date and use that instead — recovers the original date without needing to remember what it was, since the file itself is never touched."
+                disabled={resettingTakenAt}
+                onClick={async () => {
+                  setResettingTakenAt(true)
+                  try {
+                    await onResetTakenAt(item.id)
+                    setEditingDate(false)
+                  } finally {
+                    setResettingTakenAt(false)
+                  }
+                }}
+              >
+                {resettingTakenAt ? 'Resetting…' : 'Reset to Exif'}
+              </button>
+            )}
           </span>
         ) : (
           <>

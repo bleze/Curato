@@ -17,6 +17,7 @@ import {
   removeEventFromTrip,
   renameEvent,
   renameTripGroup,
+  resetTakenAt,
   scanLibrary,
   setMediaItemFavoriteCategory,
   setTakenAt,
@@ -73,6 +74,11 @@ function formatRemovedEmptyEventsNote(removedEmptyEventCount: number): string {
 function formatRemovedMissingFilesNote(removedMissingFileCount: number): string {
   if (removedMissingFileCount === 0) return ''
   return ` Removed ${removedMissingFileCount} item(s) whose file was deleted on disk.`
+}
+
+function formatRepairedVideoTakenAtNote(repairedVideoTakenAtCount: number): string {
+  if (repairedVideoTakenAtCount === 0) return ''
+  return ` Fixed ${repairedVideoTakenAtCount} video(s) with a decades-too-early date (a known encoder bug).`
 }
 
 // proposedFolderPath (set on an Event/TripGroup) is exactly the dry-run
@@ -314,6 +320,7 @@ function App() {
           formatRemovedBareYearTripsNote(result.scan.removedBareYearTripGroupCount) +
           formatRemovedEmptyEventsNote(result.scan.removedEmptyEventCount) +
           formatRemovedMissingFilesNote(result.scan.removedMissingFileCount) +
+          formatRepairedVideoTakenAtNote(result.scan.repairedVideoTakenAtCount) +
           formatPicasaSummary(result.picasaImport),
       )
     } catch (err) {
@@ -379,6 +386,7 @@ function App() {
           `${result.scan.itemsAddedToExistingEvents} item(s) added to existing events.` +
           formatRemovedBareYearTripsNote(result.scan.removedBareYearTripGroupCount) +
           formatRemovedEmptyEventsNote(result.scan.removedEmptyEventCount) +
+          formatRepairedVideoTakenAtNote(result.scan.repairedVideoTakenAtCount) +
           formatPicasaSummary(result.picasaImport),
       )
       const lib = await getLibrary(loadedPath)
@@ -407,6 +415,18 @@ function App() {
     setError(null)
     try {
       await setTakenAt(loadedPath, mediaItemId, takenAt)
+      const lib = await getLibrary(loadedPath)
+      setLibrary(lib)
+    } catch (err) {
+      setError(err instanceof Error ? err.message : String(err))
+    }
+  }
+
+  async function handleResetTakenAt(mediaItemId: number) {
+    if (!loadedPath) return
+    setError(null)
+    try {
+      await resetTakenAt(loadedPath, mediaItemId)
       const lib = await getLibrary(loadedPath)
       setLibrary(lib)
     } catch (err) {
@@ -699,7 +719,10 @@ function App() {
             libraryPath={loadedPath}
             onDelete={handleDelete}
             onTakenAtChanged={handleTakenAtChanged}
+            onResetTakenAt={handleResetTakenAt}
             onRotated={handleRotated}
+            favoriteCategories={favoriteCategories}
+            onSetFavoriteCategory={handleSetFavoriteCategory}
           />
         </div>
       )}
@@ -735,6 +758,7 @@ function App() {
             scanning={scanning}
             onDelete={handleDelete}
             onTakenAtChanged={handleTakenAtChanged}
+            onResetTakenAt={handleResetTakenAt}
             onRotated={handleRotated}
             onRenameEvent={handleRenameEvent}
             onRenameTrip={handleRenameTrip}

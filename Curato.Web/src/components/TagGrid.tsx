@@ -1,7 +1,8 @@
 import { useVirtualizer } from '@tanstack/react-virtual'
 import { useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react'
-import type { MediaItemDto } from '../api'
+import type { FavoriteCategoryDto, MediaItemDto } from '../api'
 import { bumpImageVersion, rotateMediaItem, thumbnailUrl } from '../api'
+import { FavoriteCategoryMenu } from './FavoriteCategoryMenu'
 import { formatTakenAt } from '../format'
 import { Lightbox } from './Lightbox'
 import { Slideshow } from './Slideshow'
@@ -19,13 +20,20 @@ export function TagGrid({
   libraryPath,
   onDelete,
   onTakenAtChanged,
+  onResetTakenAt,
   onRotated,
+  favoriteCategories,
+  onSetFavoriteCategory,
 }: {
   items: MediaItemDto[]
   libraryPath: string
   onDelete: (mediaItemId: number) => void
   onTakenAtChanged: (mediaItemId: number, takenAt: string) => void
+  onResetTakenAt?: (mediaItemId: number) => Promise<void>
   onRotated: (mediaItemId: number) => void
+  /** All favorite categories, for the star button's picker. Omit (along with onSetFavoriteCategory) to hide the star entirely — matches Lightbox's identical optional pattern. */
+  favoriteCategories?: FavoriteCategoryDto[]
+  onSetFavoriteCategory?: (mediaItemId: number, tagId: number | null) => void
 }) {
   const scrollRef = useRef<HTMLDivElement>(null)
   // null = not yet measured — see LibraryGrid's identical fix for why this
@@ -33,6 +41,17 @@ export function TagGrid({
   const [containerWidth, setContainerWidth] = useState<number | null>(null)
   const [lightbox, setLightbox] = useState<number | null>(null)
   const [slideshow, setSlideshow] = useState<number | null>(null)
+  // See LibraryGrid's identical star-click/picker pattern.
+  const [favoritePickerItem, setFavoritePickerItem] = useState<MediaItemDto | null>(null)
+  function handleStarClick(item: MediaItemDto) {
+    if (!favoriteCategories || !onSetFavoriteCategory) return
+    if (favoriteCategories.length === 1) {
+      const only = favoriteCategories[0]
+      onSetFavoriteCategory(item.id, item.favoriteCategoryId === only.id ? null : only.id)
+      return
+    }
+    setFavoritePickerItem(item)
+  }
   // See LibraryGrid's identical hover-to-rotate feature for why this is a
   // ref, not state, and how it's non-destructive (a saved Edit row only).
   const hoveredPhotoRef = useRef<MediaItemDto | null>(null)
@@ -190,6 +209,29 @@ export function TagGrid({
                         <path d="M3 6h18M8 6V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2m3 0-1 14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2L4 6h16z" />
                       </svg>
                     </button>
+                    {favoriteCategories && favoriteCategories.length > 0 && (
+                      <button
+                        type="button"
+                        className={`thumb-favorite ${item.favoriteCategoryId !== null ? 'is-set' : ''}`}
+                        title="Favorite category"
+                        onClick={(e) => {
+                          e.stopPropagation()
+                          handleStarClick(item)
+                        }}
+                      >
+                        <svg
+                          viewBox="0 0 24 24"
+                          width="11"
+                          height="11"
+                          fill={item.favoriteCategoryId !== null ? 'currentColor' : 'none'}
+                          stroke="currentColor"
+                          strokeWidth="2.5"
+                          strokeLinejoin="round"
+                        >
+                          <path d="M12 .587l3.668 7.568 8.332 1.151-6.064 5.828 1.48 8.279-7.416-3.967-7.416 3.967 1.481-8.279-6.064-5.828 8.332-1.151z" />
+                        </svg>
+                      </button>
+                    )}
                   </div>
                   )
                 })}
@@ -207,17 +249,34 @@ export function TagGrid({
           onClose={() => setLightbox(null)}
           onNavigate={setLightbox}
           onTakenAtChanged={onTakenAtChanged}
+          onResetTakenAt={onResetTakenAt}
           onRotated={onRotated}
           onStartSlideshow={() => {
             setSlideshow(lightbox)
             setLightbox(null)
           }}
           onDelete={onDelete}
+          favoriteCategories={favoriteCategories}
+          onSetFavoriteCategory={onSetFavoriteCategory}
         />
       )}
 
       {slideshow !== null && (
         <Slideshow items={items} startIndex={slideshow} libraryPath={libraryPath} onClose={() => setSlideshow(null)} />
+      )}
+
+      {favoritePickerItem && (
+        <div className="event-picker-overlay" onClick={() => setFavoritePickerItem(null)}>
+          <FavoriteCategoryMenu
+            categories={favoriteCategories ?? []}
+            currentId={favoritePickerItem.favoriteCategoryId}
+            onPick={(tagId) => {
+              onSetFavoriteCategory?.(favoritePickerItem.id, tagId)
+              setFavoritePickerItem(null)
+            }}
+            onCancel={() => setFavoritePickerItem(null)}
+          />
+        </div>
       )}
     </div>
   )

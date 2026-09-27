@@ -11,6 +11,8 @@ export interface MediaItemDto {
   location: string | null
   /** At most one at a time — see TagRepository.SetMediaItemFavoriteCategory. Null when no favorite category (or Picasa star) is set. */
   favoriteCategoryId: number | null
+  /** True when this item's date sits far outside the rest of its own Event's dates — the "camera clock wasn't set" symptom (EventDateOutlierDetector). Only ever set within an Event context; absent (not just false) for a bare item list like Albums/Tags, which has no Event range to compare against. */
+  isDateOutlier?: boolean
 }
 
 export interface EventDto {
@@ -63,6 +65,8 @@ export interface ScanResult {
   removedEmptyEventCount: number
   /** Previously-indexed items whose file was deleted on disk outside Curato, cleaned up this scan. */
   removedMissingFileCount: number
+  /** Videos indexed before the wrong-epoch encoder bug fix existed (a movie-header date decades too early), self-healed this scan. */
+  repairedVideoTakenAtCount: number
 }
 
 export interface AuthStatus {
@@ -405,6 +409,25 @@ export function setTakenAt(path: string, mediaItemId: number, takenAt: string): 
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify({ path, mediaItemId, takenAt }),
   }).then(expectOk)
+}
+
+export interface ResetTakenAtResult {
+  takenAt: string
+  takenAtSource: MediaItemDto['takenAtSource']
+}
+
+/**
+ * Recovers a MediaItem's true date after a bad manual edit by re-reading
+ * the real Exif/video metadata straight off the file — see
+ * LibraryController.ResetTakenAt for why this needs no separate undo
+ * history to maintain.
+ */
+export function resetTakenAt(path: string, mediaItemId: number): Promise<ResetTakenAtResult> {
+  return fetch('/api/media-items/reset-taken-at', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ path, mediaItemId }),
+  }).then(asJson<ResetTakenAtResult>)
 }
 
 /**

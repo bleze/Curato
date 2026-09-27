@@ -235,6 +235,7 @@ export function LibraryGrid({
   scanning,
   onDelete,
   onTakenAtChanged,
+  onResetTakenAt,
   onRotated,
   onRenameEvent,
   onRenameTrip,
@@ -253,6 +254,7 @@ export function LibraryGrid({
   scanning: boolean
   onDelete: (mediaItemId: number) => void
   onTakenAtChanged: (mediaItemId: number, takenAt: string) => void
+  onResetTakenAt: (mediaItemId: number) => Promise<void>
   onRotated: (mediaItemId: number) => void
   onRenameEvent: (eventId: number, title: string) => void
   onRenameTrip: (tripGroupId: number, title: string) => void
@@ -723,6 +725,9 @@ export function LibraryGrid({
                       }}
                       showFavoriteButton={favoriteCategories.length > 0}
                       onFavoriteClick={() => handleStarClick(item)}
+                      onFixOutlierDate={
+                        item.isDateOutlier ? () => onTakenAtChanged(item.id, block.event.startAt) : undefined
+                      }
                     />
                   ))}
                 </div>
@@ -893,6 +898,7 @@ export function LibraryGrid({
           onClose={() => setLightbox(null)}
           onNavigate={(index) => setLightbox((current) => (current ? { ...current, index } : current))}
           onTakenAtChanged={onTakenAtChanged}
+          onResetTakenAt={onResetTakenAt}
           onRotated={onRotated}
           onMoveToEvent={onMoveMediaItemToEvent}
           onStartSlideshow={() => {
@@ -1015,6 +1021,7 @@ function ThumbTile({
   onHoverChange,
   showFavoriteButton,
   onFavoriteClick,
+  onFixOutlierDate,
 }: {
   item: MediaItemDto
   libraryPath: string
@@ -1046,6 +1053,8 @@ function ThumbTile({
   /** Hidden entirely (not just disabled) when zero favorite categories exist — nothing to assign. */
   showFavoriteButton: boolean
   onFavoriteClick: () => void
+  /** Set only when item.isDateOutlier is true (EventDateOutlierDetector) — clicking snaps this one item's date to its own Event's date, for the classic "camera clock wasn't set" stray photo. Undefined (not just a no-op) hides the badge entirely for a normal tile. */
+  onFixOutlierDate?: () => void
 }) {
   // Deliberately reading/writing the ref synchronously during render rather
   // than in an effect: an effect only runs after the first paint, so an
@@ -1139,6 +1148,22 @@ function ThumbTile({
             strokeLinejoin="round"
           >
             <path d="M12 .587l3.668 7.568 8.332 1.151-6.064 5.828 1.48 8.279-7.416-3.967-7.416 3.967 1.481-8.279-6.064-5.828 8.332-1.151z" />
+          </svg>
+        </button>
+      )}
+      {onFixOutlierDate && (
+        <button
+          type="button"
+          className="thumb-date-outlier"
+          title="This date looks wrong — it's way off from the rest of this Event (likely a camera clock issue). Click to set it to this Event's own date."
+          onClick={(e) => {
+            e.stopPropagation()
+            onFixOutlierDate()
+          }}
+        >
+          <svg viewBox="0 0 24 24" width="11" height="11" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
+            <circle cx="12" cy="12" r="10" />
+            <path d="M12 7v6l4 2" />
           </svg>
         </button>
       )}

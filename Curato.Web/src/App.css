@@ -996,6 +996,33 @@ button {
   transform: scale(1.15);
 }
 
+/* Top-center — every other corner is already taken (Move/Delete top,
+   Favorite bottom-right, LIVE bottom-left) and this is status info the
+   user should notice without hovering, same reasoning as .live-badge and
+   .thumb-favorite.is-set always showing rather than only on hover. */
+.thumb-date-outlier {
+  position: absolute;
+  top: 3px;
+  left: 50%;
+  transform: translateX(-50%);
+  width: 20px;
+  height: 20px;
+  padding: 0;
+  border: none;
+  border-radius: 50%;
+  background: var(--text-warn);
+  color: #1a1305;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  cursor: pointer;
+  transition: transform 0.15s;
+}
+
+.thumb-date-outlier:hover {
+  transform: translateX(-50%) scale(1.15);
+}
+
 .event-picker-overlay {
   position: fixed;
   inset: 0;
@@ -1991,6 +2018,26 @@ button {
 
 .lightbox-caption-cancel:hover {
   color: var(--text);
+}
+
+.lightbox-caption-reset {
+  font-size: 12px;
+  font-weight: 600;
+  padding: 3px 9px;
+  border-radius: 5px;
+  cursor: pointer;
+  border: 1px solid var(--border-warn);
+  background: var(--surface-warn);
+  color: var(--text-warn);
+}
+
+.lightbox-caption-reset:hover {
+  filter: brightness(1.1);
+}
+
+.lightbox-caption-reset:disabled {
+  cursor: default;
+  opacity: 0.7;
 }
 
 /* Fullscreen, hands-off playback (Slideshow.tsx) — its own overlay rather

@@ -21,7 +21,7 @@ public sealed class LibraryController(LibraryOperationGate gate, ServerDatabase 
 {
     public sealed record MediaItemDto(
         long Id, string RelativePath, string Kind, DateTime TakenAt, string TakenAtSource,
-        string? LiveVideoRelativePath, string? Location, long? FavoriteCategoryId);
+        string? LiveVideoRelativePath, string? Location, long? FavoriteCategoryId, bool IsDateOutlier);
 
     public sealed record EventDto(
         long Id, string Title, string NamingMode, string? FolderPath, string? ProposedFolderPath,
@@ -123,22 +123,35 @@ public sealed class LibraryController(LibraryOperationGate gate, ServerDatabase 
                 ? null
                 : FolderNameTemplate.RenderTripPath(t);
 
-        MediaItemDto ToMediaItemDto(MediaItem m) => new(
+        MediaItemDto ToMediaItemDto(MediaItem m, bool isDateOutlier) => new(
             m.Id, m.RelativePath, m.Kind.ToString(), m.TakenAt, m.TakenAtSource.ToString(),
             m.LivePhotoVideoItemId is { } videoId && mediaById.TryGetValue(videoId, out var video)
                 ? video.RelativePath
                 : null,
             ResolveLocation(m.Latitude is { } lat && m.Longitude is { } lon ? (lat, lon) : null),
-            favoriteCategoryAssignments.TryGetValue(m.Id, out var favoriteId) ? favoriteId : null);
+            favoriteCategoryAssignments.TryGetValue(m.Id, out var favoriteId) ? favoriteId : null,
+            isDateOutlier);
 
-        EventDto ToEventDto(Event e) => new(
-            e.Id, e.Title, e.NamingMode.ToString(), e.FolderPath, ProposeEventPath(e), e.StartAt, e.EndAt,
-            ResolveLocation(GpsTripGate.RepresentativeLocation(e, mediaById)), e.TripGroupId, NeedsDateReview(e.FolderPath),
-            e.MediaItemIds
+        EventDto ToEventDto(Event e)
+        {
+            var members = e.MediaItemIds
                 .Where(id => mediaById.ContainsKey(id) && !pairedVideoIds.Contains(id))
                 .Select(id => mediaById[id])
-                .Select(ToMediaItemDto)
-                .ToList());
+                .ToList();
+
+            // Per-item nudge for a normal, correctly-named folder where a
+            // camera's clock just wasn't set right for one or two shots —
+            // the ".Before" convention's own badge only covers a folder
+            // that's *entirely* undated, not one bad apple in an otherwise
+            // fine Event. See EventDateOutlierDetector for the heuristic.
+            var outlierIds = EventDateOutlierDetector.FindOutlierMediaItemIds(
+                members.Select(m => (m.Id, m.TakenAt)).ToList());
+
+            return new EventDto(
+                e.Id, e.Title, e.NamingMode.ToString(), e.FolderPath, ProposeEventPath(e), e.StartAt, e.EndAt,
+                ResolveLocation(GpsTripGate.RepresentativeLocation(e, mediaById)), e.TripGroupId, NeedsDateReview(e.FolderPath),
+                members.Select(m => ToMediaItemDto(m, outlierIds.Contains(m.Id))).ToList());
+        }
 
         var eventsById = events.ToDictionary(e => e.Id);
         var tripDtos = trips
@@ -205,6 +218,51 @@ public sealed class LibraryController(LibraryOperationGate gate, ServerDatabase 
         return repository.SetTakenAt(request.MediaItemId, request.TakenAt)
             ? NoContent()
             : NotFound($"No MediaItem with id {request.MediaItemId}");
+    }
+
+    public sealed record ResetTakenAtRequest(string Path, long MediaItemId);
+    public sealed record ResetTakenAtResponse(DateTime TakenAt, string TakenAtSource);
+
+    /// <summary>
+    /// Recovers a MediaItem's true date after a bad manual edit (or a bad
+    /// self-heal, or anything else) by re-reading the real Exif/video
+    /// metadata straight off the actual file — the file itself is never
+    /// written to by anything in Curato, so its own embedded date is always
+    /// the ground truth to fall back to; there's no separate "undo history"
+    /// to maintain because none is needed. Persisted via
+    /// LibraryRepository.SetTakenAt with the *real* detected source (not
+    /// Manual), so the corrected item stays eligible for any future
+    /// automatic repair pass a Manual-sourced date is deliberately exempt
+    /// from — this is meant to look exactly like a fresh scan found it.
+    /// </summary>
+    [HttpPost("media-items/reset-taken-at")]
+    public IActionResult ResetTakenAt([FromBody] ResetTakenAtRequest request)
+    {
+        if (!Directory.Exists(request.Path))
+        {
+            return NotFound($"Folder not found: {request.Path}");
+        }
+
+        var database = new LibraryDatabase(request.Path);
+        database.EnsureSchema();
+        var query = new LibraryQueryService(database);
+        var item = query.GetMediaItem(request.MediaItemId);
+        if (item is null)
+        {
+            return NotFound($"No MediaItem with id {request.MediaItemId}");
+        }
+
+        var fullPath = System.IO.Path.Combine(request.Path, item.RelativePath);
+        if (!System.IO.File.Exists(fullPath))
+        {
+            return NotFound($"File no longer exists on disk: {item.RelativePath}");
+        }
+
+        var (takenAt, source) = Curato.Media.MediaFileScanner.ReadTakenAt(fullPath, item.Kind);
+
+        var repository = new LibraryRepository(database);
+        repository.SetTakenAt(request.MediaItemId, takenAt, source);
+        return Ok(new ResetTakenAtResponse(takenAt, source.ToString()));
     }
 
     public sealed record FixEventDatesRequest(string Path, IReadOnlyList<long> EventIds, DateTime TakenAt);

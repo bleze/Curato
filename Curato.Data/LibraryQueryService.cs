@@ -31,6 +31,14 @@ public sealed class LibraryQueryService(LibraryDatabase database)
         return items;
     }
 
+    /// <summary>Single-item lookup for the "Reset to Exif" action (LibraryController.ResetTakenAt) — needs just this one file's RelativePath/Kind, not the whole library.</summary>
+    public MediaItem? GetMediaItem(long id)
+    {
+        using var connection = database.OpenConnection();
+        var row = connection.QueryFirstOrDefault("SELECT * FROM MediaItem WHERE Id = @Id", new { Id = id });
+        return row is null ? null : MapMediaItem(row);
+    }
+
     /// <summary>
     /// The earliest TakenAt across every MediaItem whose date actually comes
     /// from real Exif/video metadata (not a filesystem-timestamp guess, and
