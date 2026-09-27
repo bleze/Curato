@@ -99,11 +99,13 @@ function App() {
   const [scanning, setScanning] = useState(false)
   const scanAbortRef = useRef<AbortController | null>(null)
   const [autoLoading, setAutoLoading] = useState(false)
-  // Library/Albums/Recycle Bin are mutually-exclusive views of the same main
-  // content area (a toolbar toggle, not stacked dismissable panels) — Find
-  // Duplicates and Settings stay real overlays below since they're one-off
-  // tools/actions, not browsable views of the library's contents.
-  const [activeView, setActiveView] = useState<'library' | 'albums' | 'recycleBin'>('library')
+  // Library/Albums/Recycle Bin/Persons are mutually-exclusive views of the
+  // same main content area (a toolbar toggle, not stacked dismissable
+  // panels) — Find Duplicates and Settings stay real overlays below since
+  // they're one-off tools/actions, not browsable views of the library's
+  // contents. Persons has no browsing feature behind it yet (no API, no
+  // grid) — it's a placeholder marking where that lands once it's built.
+  const [activeView, setActiveView] = useState<'library' | 'albums' | 'recycleBin' | 'persons'>('library')
   const [showDuplicates, setShowDuplicates] = useState(false)
   const [showSettings, setShowSettings] = useState(false)
 
@@ -508,6 +510,13 @@ function App() {
               >
                 Recycle Bin
               </button>
+              <button
+                type="button"
+                className={activeView === 'persons' ? 'is-active' : ''}
+                onClick={() => setActiveView('persons')}
+              >
+                Persons
+              </button>
             </div>
           )}
           {loadedPath && (
@@ -601,6 +610,17 @@ function App() {
             onTakenAtChanged={handleTakenAtChanged}
             onRotated={handleRotated}
           />
+        </div>
+      )}
+
+      {loadedPath && activeView === 'persons' && (
+        <div className="library">
+          <div className="library-tab-panel">
+            <div className="recyclebin-header">
+              <h2>Persons</h2>
+            </div>
+            <p className="recyclebin-hint">Browsing photos by person isn't built yet — coming later.</p>
+          </div>
         </div>
       )}
 
