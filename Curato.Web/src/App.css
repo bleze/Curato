@@ -1076,14 +1076,28 @@ button {
   color: var(--text-muted);
 }
 
+.modal-footer-cancel:hover:not(:disabled) {
+  color: var(--text);
+  border-color: var(--text-muted);
+}
+
 .modal-footer-save {
   border: none;
   background: var(--accent);
   color: var(--on-accent);
 }
 
+.modal-footer-save:hover:not(:disabled) {
+  filter: brightness(1.1);
+}
+
 .modal-footer-save:disabled {
   background: var(--accent-disabled);
+  cursor: default;
+}
+
+.modal-footer-cancel:disabled {
+  opacity: 0.6;
   cursor: default;
 }
 
@@ -1681,6 +1695,56 @@ button {
   cursor: default;
 }
 
+/* Nested inside Settings' own .modal-overlay — reuses that same overlay/dialog
+   look rather than inventing a second one, and stacks above it for free since
+   it's the later sibling at the same z-index. */
+.folder-browser {
+  width: min(420px, calc(100vw - 32px));
+}
+
+.folder-browser-path {
+  margin: 0 0 10px;
+  font-size: 13px;
+  color: var(--text-muted);
+  word-break: break-all;
+}
+
+.folder-browser-list {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  max-height: 40vh;
+  overflow-y: auto;
+  border: 1px solid var(--border-soft);
+  border-radius: 6px;
+}
+
+.folder-browser-list li + li {
+  border-top: 1px solid var(--border-soft);
+}
+
+.folder-browser-list button {
+  display: block;
+  width: 100%;
+  padding: 8px 10px;
+  text-align: left;
+  font-size: 13.5px;
+  color: var(--text);
+  background: none;
+  border: none;
+  cursor: pointer;
+}
+
+.folder-browser-list button:hover {
+  background: var(--surface-tint-soft);
+}
+
+.folder-browser-empty {
+  padding: 10px;
+  font-size: 13px;
+  color: var(--text-muted);
+}
+
 .lightbox-toolbar button {
   background: rgba(255, 255, 255, 0.1);
   border: none;
@@ -1807,12 +1871,44 @@ button {
 
 .lightbox-caption-edit input[type='datetime-local'] {
   font-size: 13px;
-  padding: 2px 4px;
+  padding: 3px 6px;
+  border: 1px solid var(--border);
+  border-radius: 5px;
+  background: var(--bg);
+  color: var(--text);
 }
 
-.lightbox-caption-edit button {
+/* Same secondary/primary color language as Settings' own Cancel/Save pair
+   (.modal-footer-cancel/.modal-footer-save), just at this bar's smaller
+   scale — previously bare native buttons with no background/border/hover
+   at all, sitting oddly against everything else in the app's own style. */
+.lightbox-caption-save,
+.lightbox-caption-cancel {
   font-size: 12px;
-  padding: 2px 8px;
+  font-weight: 600;
+  padding: 3px 9px;
+  border-radius: 5px;
+  cursor: pointer;
+}
+
+.lightbox-caption-save {
+  border: none;
+  background: var(--accent);
+  color: var(--on-accent);
+}
+
+.lightbox-caption-save:hover {
+  filter: brightness(1.1);
+}
+
+.lightbox-caption-cancel {
+  border: 1px solid var(--border);
+  background: var(--surface);
+  color: var(--text-muted);
+}
+
+.lightbox-caption-cancel:hover {
+  color: var(--text);
 }
 
 /* Fullscreen, hands-off playback (Slideshow.tsx) — its own overlay rather

@@ -412,6 +412,7 @@ export function Lightbox({
             />
             <button
               type="button"
+              className="lightbox-caption-save"
               onClick={() => {
                 if (!draftDate) return
                 onTakenAtChanged(item.id, draftDate)
@@ -420,7 +421,7 @@ export function Lightbox({
             >
               Save
             </button>
-            <button type="button" onClick={() => setEditingDate(false)}>
+            <button type="button" className="lightbox-caption-cancel" onClick={() => setEditingDate(false)}>
               Cancel
             </button>
           </span>

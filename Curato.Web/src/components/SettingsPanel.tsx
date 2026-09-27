@@ -16,6 +16,7 @@ import {
   setHomeLocation,
   setLibraryFolder,
 } from '../api'
+import { FolderBrowser } from './FolderBrowser'
 import { formatTakenAt } from '../format'
 import { MAX_THUMB_MIN_WIDTH, MIN_THUMB_MIN_WIDTH, setThumbMinWidth, useThumbMinWidth } from '../thumbSize'
 import { setUse24HourTime, useUse24HourTime } from '../timeFormat'
@@ -38,6 +39,7 @@ export function SettingsPanel({
   const theme = useTheme()
   const [libraryFolder, setLibraryFolderValue] = useState<string | null>(null)
   const [libraryFolderInput, setLibraryFolderInput] = useState('')
+  const [browsingFolder, setBrowsingFolder] = useState(false)
   const [homeLocation, setHomeLocationValue] = useState<string | null>(null)
   const [homeLocationInput, setHomeLocationInput] = useState('')
   const [status, setStatus] = useState<iCloudSyncStatus | null>(null)
@@ -272,6 +274,7 @@ export function SettingsPanel({
   }
 
   return (
+    <>
     <div className="modal-overlay" onClick={onClose}>
       <div className="modal-dialog" onClick={(e) => e.stopPropagation()}>
         <div className="modal-header">
@@ -330,6 +333,9 @@ export function SettingsPanel({
                   value={libraryFolderInput}
                   onChange={(e) => setLibraryFolderInput(e.target.value)}
                 />
+                <button type="button" className="modal-footer-cancel" onClick={() => setBrowsingFolder(true)}>
+                  Browse…
+                </button>
               </div>
             </section>
           )}
@@ -472,10 +478,10 @@ export function SettingsPanel({
                     />
                   </div>
                   <div className="settings-row">
-                    <button type="button" onClick={handleICloudVerify} disabled={busy || !code.trim()}>
+                    <button type="button" className="modal-footer-save" onClick={handleICloudVerify} disabled={busy || !code.trim()}>
                       Verify
                     </button>
-                    <button type="button" onClick={handleCancelLogin} disabled={busy}>
+                    <button type="button" className="modal-footer-cancel" onClick={handleCancelLogin} disabled={busy}>
                       Start over
                     </button>
                   </div>
@@ -500,7 +506,7 @@ export function SettingsPanel({
                       onChange={(e) => setPassword(e.target.value)}
                     />
                   </div>
-                  <button type="button" onClick={handleICloudLogin} disabled={busy || !username.trim() || !password}>
+                  <button type="button" className="modal-footer-save" onClick={handleICloudLogin} disabled={busy || !username.trim() || !password}>
                     Connect
                   </button>
                 </>
@@ -585,7 +591,7 @@ export function SettingsPanel({
                         if (e.key === 'Enter') handleAddFavoriteCategory()
                       }}
                     />
-                    <button type="button" onClick={handleAddFavoriteCategory} disabled={busy || !newCategoryName.trim()}>
+                    <button type="button" className="modal-footer-save" onClick={handleAddFavoriteCategory} disabled={busy || !newCategoryName.trim()}>
                       Add
                     </button>
                   </div>
@@ -623,5 +629,16 @@ export function SettingsPanel({
         </div>
       </div>
     </div>
+    {browsingFolder && (
+      <FolderBrowser
+        startPath={libraryFolderInput}
+        onCancel={() => setBrowsingFolder(false)}
+        onPick={(path) => {
+          setLibraryFolderInput(path)
+          setBrowsingFolder(false)
+        }}
+      />
+    )}
+    </>
   )
 }

@@ -41,6 +41,64 @@ public sealed class SettingsController(ServerDatabase database) : ControllerBase
         return Ok();
     }
 
+    public sealed record BrowseFolderEntry(string Name, string Path);
+    public sealed record BrowseFoldersResponse(string? Path, string? ParentPath, IReadOnlyList<BrowseFolderEntry> Folders);
+
+    /// <summary>
+    /// Backs the Library Folder field's "Browse…" button — lists the
+    /// server's own filesystem (not the browser's; Curato is self-hosted,
+    /// often on a different machine than the browser viewing it, so a
+    /// native OS folder picker in the browser couldn't give a path the
+    /// server itself could actually open). No path (or an empty one) lists
+    /// available roots (drive letters on Windows, "/" elsewhere) rather
+    /// than refusing — that's the natural top of the tree to start from.
+    /// Same trust boundary as the plain text field already had: a folder
+    /// path here is only ever chosen by the one authenticated admin this
+    /// app already assumes, same as always being free to type any absolute
+    /// path directly.
+    /// </summary>
+    [HttpGet("browse-folders")]
+    public ActionResult<BrowseFoldersResponse> BrowseFolders([FromQuery] string? path)
+    {
+        if (string.IsNullOrWhiteSpace(path))
+        {
+            var roots = OperatingSystem.IsWindows() ? Directory.GetLogicalDrives() : ["/"];
+            var rootEntries = roots.Select(r => new BrowseFolderEntry(r, r)).ToList();
+            return Ok(new BrowseFoldersResponse(null, null, rootEntries));
+        }
+
+        if (!Directory.Exists(path))
+        {
+            return NotFound($"Folder not found: {path}");
+        }
+
+        var fullPath = Path.GetFullPath(path);
+        string? parentPath;
+        try
+        {
+            parentPath = Directory.GetParent(fullPath)?.FullName;
+        }
+        catch
+        {
+            parentPath = null;
+        }
+
+        var entries = new List<BrowseFolderEntry>();
+        try
+        {
+            foreach (var dir in Directory.GetDirectories(fullPath).OrderBy(d => d, StringComparer.OrdinalIgnoreCase))
+            {
+                entries.Add(new BrowseFolderEntry(Path.GetFileName(dir), dir));
+            }
+        }
+        catch (UnauthorizedAccessException)
+        {
+            // Some subfolders can't be listed (permissions) — show what we can rather than refusing the whole request.
+        }
+
+        return Ok(new BrowseFoldersResponse(fullPath, parentPath, entries));
+    }
+
     public sealed record HomeLocationResponse(string? Label);
     public sealed record SetHomeLocationRequest(string? Label);
 

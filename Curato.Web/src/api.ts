@@ -119,6 +119,22 @@ export function setLibraryFolder(path: string): Promise<void> {
   }).then(expectOk)
 }
 
+export interface BrowseFolderEntry {
+  name: string
+  path: string
+}
+
+export interface BrowseFoldersResponse {
+  path: string | null
+  parentPath: string | null
+  folders: BrowseFolderEntry[]
+}
+
+export function browseFolders(path?: string): Promise<BrowseFoldersResponse> {
+  const query = path ? `?path=${encodeURIComponent(path)}` : ''
+  return fetch(`/api/settings/browse-folders${query}`).then(asJson<BrowseFoldersResponse>)
+}
+
 /** A custom label for "home" (e.g. "Kirke Hyllinge") shown instead of a real reverse-geocode for anything nearby — see GpsTripGate.HomeOverrideLabel. */
 export function getHomeLocation(): Promise<string | null> {
   return fetch('/api/settings/home-location')
