@@ -83,7 +83,12 @@ button {
   cursor: pointer;
 }
 
-.account button:hover:not(:disabled) {
+/* Direct children only — .view-switcher's buttons are nested one level
+   deeper inside .account and already have their own :hover/.is-active rules
+   below; this rule's extra pseudo-classes gave it higher specificity than
+   .is-active's own color, so the currently-selected view (which can't be
+   re-selected anyway) visibly changed color and grew a border on hover. */
+.account > button:hover:not(:disabled) {
   color: var(--text);
   border-color: var(--text-muted);
 }
