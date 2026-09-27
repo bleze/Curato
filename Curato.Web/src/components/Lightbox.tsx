@@ -205,7 +205,9 @@ export function Lightbox({
   return (
     <div className="lightbox-overlay" onClick={onClose}>
       <button type="button" className="lightbox-close" onClick={onClose} title="Close" aria-label="Close">
-        &times;
+        <svg viewBox="0 0 24 24" width="20" height="20" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round">
+          <path d="M6 6l12 12M18 6L6 18" />
+        </svg>
       </button>
       <div className="lightbox-toolbar" onClick={(e) => e.stopPropagation()}>
         {item.kind === 'Photo' && (
@@ -248,7 +250,7 @@ export function Lightbox({
               <svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
                 <path d="M9 5l7 7-7 7" />
               </svg>
-              Move
+              <span className="lightbox-btn-label">Move</span>
             </button>
             {movingToEvent && (
               <EventPicker
@@ -309,7 +311,7 @@ export function Lightbox({
           aria-label="Slideshow"
         >
           <svg viewBox="0 0 24 24" width="16" height="16" fill="currentColor"><path d="M8 5v14l11-7z" /></svg>
-          Slideshow
+          <span className="lightbox-btn-label">Slideshow</span>
         </button>
         <button
           type="button"

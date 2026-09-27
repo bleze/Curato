@@ -889,9 +889,9 @@ button {
      identically placed), but a 5-point star's silhouette is bottom-heavy
      (two wide points low, one thin point high), so the same numeric
      offset reads as sitting closer to the edge than it does for those
-     icons' more evenly-weighted shapes. Nudged up a couple px to
-     compensate for that optical effect, confirmed live. */
-  bottom: 7px;
+     icons' more evenly-weighted shapes. A prior pass overcorrected this
+     (7px, confirmed live as now too far from the edge) — settled here. */
+  bottom: 3px;
   right: 4px;
   width: 20px;
   height: 20px;
@@ -1713,12 +1713,23 @@ button {
   position: absolute;
   top: 16px;
   right: 20px;
-  background: none;
+  /* Same circular translucent-button treatment as every other toolbar
+     button (rotate/move/star/delete/slideshow) — it had none before,
+     confirmed live as looking inert/unresponsive next to ones that do. */
+  background: rgba(255, 255, 255, 0.1);
   border: none;
   color: white;
-  font-size: 32px;
-  line-height: 1;
+  width: 36px;
+  height: 36px;
+  border-radius: 50%;
+  display: flex;
+  align-items: center;
+  justify-content: center;
   cursor: pointer;
+}
+
+.lightbox-close:hover {
+  background: rgba(255, 255, 255, 0.2);
 }
 
 .lightbox-nav {
