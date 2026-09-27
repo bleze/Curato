@@ -25,6 +25,18 @@ function pickTransition(previous: Transition): Transition {
   return next
 }
 
+// Reads the Ken Burns zoom's real current scale off a live <img> (a plain
+// `scale()`'s matrix() always decomposes to this shape regardless of
+// transform-origin, so this stays accurate across the pan-* variants too).
+// Falls back to the animation's own end state for anything else (a video
+// slide never gets .slideshow-kenburns at all, or the ref just isn't
+// attached yet) — the same value this always used before per-slide capture.
+function readCurrentScale(img: HTMLImageElement | null): number {
+  if (!img) return 1.12
+  const match = /matrix\(\s*([\d.+-]+)\s*,/.exec(getComputedStyle(img).transform)
+  return match ? parseFloat(match[1]) : 1.12
+}
+
 /**
  * Fullscreen, hands-off playback of a fixed item list — reused from either
  * an Event/Trip header's own Slideshow button or the Lightbox's "start from
@@ -56,8 +68,18 @@ export function Slideshow({
   // — goTo always changes to a different item, so the id alone is already
   // a stable, unique React key without reading a ref during render.
   const [outgoing, setOutgoing] = useState<MediaItemDto | null>(null)
+  // The Ken Burns zoom's actual scale at the moment a slide starts leaving,
+  // read straight off the live incoming <img> below — NOT a fixed 1.12.
+  // The outgoing layer is a fresh DOM remount (a separate JSX position, not
+  // the same element continuing on), so without this it always snapped
+  // straight to 1.12 the instant it mounted, a visible jump whenever a slide
+  // advanced before its zoom had actually finished (skipping ahead early,
+  // or just a duration short enough that TRANSITION_MS eats into it) —
+  // confirmed live as exactly the "previous image moves" glitch reported.
+  const [outgoingScale, setOutgoingScale] = useState(1.12)
   const [controlsVisible, setControlsVisible] = useState(true)
   const controlsTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null)
+  const incomingImgRef = useRef<HTMLImageElement | null>(null)
 
   const item = items[index]
 
@@ -74,6 +96,7 @@ export function Slideshow({
       }
       setTransition((prev) => pickTransition(prev))
       setOutgoing(items[index])
+      setOutgoingScale(readCurrentScale(incomingImgRef.current))
       setIndex(nextIndex)
     },
     [index, items, loop],
@@ -142,6 +165,7 @@ export function Slideshow({
           transition={transition}
           startVisible
           durationSeconds={durationSeconds}
+          frozenScale={outgoingScale}
         />
       )}
       <SlideLayer
@@ -154,6 +178,7 @@ export function Slideshow({
         durationSeconds={durationSeconds}
         playing={playing}
         onVideoEnded={() => goTo(index + 1)}
+        imgRef={incomingImgRef}
       />
 
       <div
@@ -211,6 +236,8 @@ function SlideLayer({
   durationSeconds,
   playing,
   onVideoEnded,
+  frozenScale,
+  imgRef,
 }: {
   item: MediaItemDto
   libraryPath: string
@@ -221,6 +248,10 @@ function SlideLayer({
   durationSeconds: number
   playing?: boolean
   onVideoEnded?: () => void
+  /** The outgoing layer's real Ken Burns scale at the moment it started leaving — see readCurrentScale. Unused by the incoming layer. */
+  frozenScale?: number
+  /** Only passed for the incoming layer — lets goTo read its live zoom scale right as the next slide is requested. */
+  imgRef?: React.Ref<HTMLImageElement>
 }) {
   const [visible, setVisible] = useState(startVisible)
   const videoRef = useRef<HTMLVideoElement>(null)
@@ -281,12 +312,21 @@ function SlideLayer({
         />
       ) : (
         <img
+          ref={imgRef}
           src={fullImageUrl(libraryPath, item.relativePath, item.id)}
           alt=""
           className="slideshow-kenburns"
           onLoad={handleReady}
           onError={handleReady}
-          style={{ '--slideshow-duration': `${durationSeconds + TRANSITION_MS / 1000}s` } as React.CSSProperties}
+          style={
+            {
+              '--slideshow-duration': `${durationSeconds + TRANSITION_MS / 1000}s`,
+              // Overrides the CSS class's hard-coded 1.12 with the outgoing
+              // layer's actual captured scale, so there's no jump exactly
+              // when this slide starts leaving (see readCurrentScale).
+              ...(role === 'outgoing' && frozenScale !== undefined ? { transform: `scale(${frozenScale})` } : {}),
+            } as React.CSSProperties
+          }
         />
       )}
     </div>
