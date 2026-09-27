@@ -60,7 +60,7 @@ const TRIP_HEADER_HEIGHT = 84
 // remeasures a header against its actual rendered DOM height (the scrollbar
 // drag-handle desync bug's own root cause), so any extra CSS height has to
 // be added here too, not just in the stylesheet.
-const EVENT_HEADER_AFTER_TRIP_EXTRA_HEIGHT = 10
+const EVENT_HEADER_AFTER_TRIP_EXTRA_HEIGHT = 20
 
 type Block =
   | { type: 'trip-header'; key: string; trip: TripGroupDto }

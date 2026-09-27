@@ -653,7 +653,12 @@ button {
 .event-header-after-trip {
   padding-top: 20px;
   border-top: 2px solid var(--accent);
-  margin-top: 4px;
+  /* 4px (matching .trip-header-block's own) measured live as making the gap
+     between the last thumbnail row and this line noticeably tighter than
+     the gap above the line on the way IN to a Trip — confirmed by comparing
+     actual getBoundingClientRect() gaps, not just eyeballing it — so this is
+     bumped 10px over .trip-header-block's, not just copied from it. */
+  margin-top: 14px;
 }
 
 .event-header-row {
