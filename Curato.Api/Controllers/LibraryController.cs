@@ -145,7 +145,7 @@ public sealed class LibraryController(LibraryOperationGate gate, ServerDatabase 
             // that's *entirely* undated, not one bad apple in an otherwise
             // fine Event. See EventDateOutlierDetector for the heuristic.
             var outlierIds = EventDateOutlierDetector.FindOutlierMediaItemIds(
-                members.Select(m => (m.Id, m.TakenAt)).ToList());
+                members.Select(m => (m.Id, m.TakenAt, m.TakenAtSource)).ToList());
 
             return new EventDto(
                 e.Id, e.Title, e.NamingMode.ToString(), e.FolderPath, ProposeEventPath(e), e.StartAt, e.EndAt,

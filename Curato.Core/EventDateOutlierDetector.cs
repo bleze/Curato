@@ -23,7 +23,72 @@ public static class EventDateOutlierDetector
     // few hours' difference technically "outlier" by the ratio test alone.
     private const double MinimumDeviationDays = 2.0;
 
-    public static HashSet<long> FindOutlierMediaItemIds(IReadOnlyList<(long Id, DateTime TakenAt)> items)
+    // A FileSystem/ExifModifyDate item that disagrees with a real Exif/
+    // video/manually-confirmed date anywhere else in the same Event is
+    // suspect even by a single day — confirmed live: a "majority vote"
+    // between four filesystem-dated items sharing one stale copy/sync
+    // timestamp and three genuinely Exif-dated ones picked the *larger*
+    // group as "normal" and flagged the three correct ones instead, purely
+    // because the wrong dates outnumbered the right ones. Reliability, not
+    // headcount, has to decide which group is the anchor.
+    private const double UnreliableSourceDeviationDays = 1.0;
+
+    // ExifDateTaken/VideoMetadata came straight from the file's own
+    // metadata; Manual was explicitly confirmed by a person. Either is
+    // trusted as an anchor other items get compared against — Manual is
+    // additionally never itself flaggable (PLAN.md §1: a person already
+    // vouched for it, the same reasoning RepairWrongEpochVideoTakenAt
+    // exempts it from automatic correction for).
+    private static bool IsAnchor(TakenAtSource source) =>
+        source is TakenAtSource.ExifDateTaken or TakenAtSource.VideoMetadata or TakenAtSource.Manual;
+
+    public static HashSet<long> FindOutlierMediaItemIds(IReadOnlyList<(long Id, DateTime TakenAt, TakenAtSource Source)> items)
+    {
+        if (items.Count < 3)
+        {
+            return [];
+        }
+
+        var anchors = items.Where(i => IsAnchor(i.Source)).ToList();
+        var nonAnchors = items.Where(i => !IsAnchor(i.Source)).ToList();
+
+        // No trustworthy anchor at all (e.g. every item in this Event only
+        // ever got a filesystem timestamp) — nothing to prefer over
+        // anything else, so fall back to comparing everything against
+        // everything, same as before this reliability split existed.
+        if (anchors.Count == 0)
+        {
+            return FindStatisticalOutliers(items.Select(i => (i.Id, i.TakenAt)).ToList());
+        }
+
+        var outliers = new HashSet<long>();
+
+        // Statistical pass *within* the anchor subset — still catches a
+        // single mis-set camera clock even when every item in the Event
+        // nominally has "real" Exif data. Manual dates count toward the
+        // median/spread math (they're trustworthy data points) but are
+        // filtered back out below — never themselves flagged.
+        foreach (var id in FindStatisticalOutliers(anchors.Select(i => (i.Id, i.TakenAt)).ToList()))
+        {
+            if (anchors.First(a => a.Id == id).Source != TakenAtSource.Manual)
+            {
+                outliers.Add(id);
+            }
+        }
+
+        var anchorMedianDays = Median(anchors.Select(i => ToDays(i.TakenAt)).OrderBy(d => d).ToList());
+        foreach (var item in nonAnchors)
+        {
+            if (Math.Abs(ToDays(item.TakenAt) - anchorMedianDays) > UnreliableSourceDeviationDays)
+            {
+                outliers.Add(item.Id);
+            }
+        }
+
+        return outliers;
+    }
+
+    private static HashSet<long> FindStatisticalOutliers(IReadOnlyList<(long Id, DateTime TakenAt)> items)
     {
         // Fewer than 3 items means there's no real "typical" cluster to be
         // an outlier from — flagging one of only two dates as "the wrong
