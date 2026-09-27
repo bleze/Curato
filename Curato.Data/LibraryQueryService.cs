@@ -36,7 +36,7 @@ public sealed class LibraryQueryService(LibraryDatabase database)
     /// from real Exif/video metadata (not a filesystem-timestamp guess, and
     /// not a previous manual/bulk fix) — used as a sensible default anchor
     /// for the "Fix dates…" bulk action on a folder of undated scans (see
-    /// FolderTitleParser.IsPreDigitalScansFolder): "definitely before real
+    /// FolderTitleParser.IsBeforeDigitalScansFolder): "definitely before real
     /// digital photos start". Null if the library has no such item at all.
     /// </summary>
     public DateTime? GetEarliestReliableTakenAt()

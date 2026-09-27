@@ -91,9 +91,9 @@ public sealed class SettingsController(ServerDatabase database) : ControllerBase
                 var name = Path.GetFileName(dir);
                 // Only .curato itself is hidden by name — not every
                 // dot-prefixed folder, since that would also hide a
-                // deliberately-named ".Pre" (or ".pre-digital-scans", etc.)
+                // deliberately-named ".Before" (or ".before-digital-scans", etc.)
                 // folder a user organized their library with (see
-                // FolderTitleParser.IsPreDigitalScansFolder). A genuinely
+                // FolderTitleParser.IsBeforeDigitalScansFolder). A genuinely
                 // OS-hidden folder is still excluded below regardless of name.
                 if (name.Equals(".curato", StringComparison.OrdinalIgnoreCase) || IsHidden(dir))
                 {

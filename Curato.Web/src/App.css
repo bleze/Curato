@@ -423,6 +423,13 @@ button {
   border-color: var(--accent);
 }
 
+.year-jump-bar-before {
+  color: var(--text-warn);
+  border-color: var(--border-warn);
+  background: var(--surface-warn);
+  margin-right: 4px;
+}
+
 .library-scroll-wrapper {
   flex: 1;
   min-height: 0;
@@ -781,7 +788,7 @@ button {
   vertical-align: middle;
 }
 
-/* A FolderTitleParser.IsPreDigitalScansFolder Event/Trip — a nudge toward
+/* A FolderTitleParser.IsBeforeDigitalScansFolder Event/Trip — a nudge toward
    "Fix dates…", never anything auto-changed — so it gets the same warning
    color language .proposed-path already uses, distinct from the plain,
    neutral "Adopted" badge it sits next to. */

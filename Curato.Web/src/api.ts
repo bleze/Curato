@@ -26,7 +26,7 @@ export interface EventDto {
   location: string | null
   /** Non-null once this Event has been grouped into a Trip (auto or manual) — lets the UI disable re-grouping it. */
   tripGroupId: number | null
-  /** True for a folder matching the standard ".Pre" pre-digital-scans naming convention — see FolderTitleParser.IsPreDigitalScansFolder. Just a nudge (a badge), never anything auto-changed. */
+  /** True for a folder matching the standard ".Before" pre-digital-scans naming convention — see FolderTitleParser.IsBeforeDigitalScansFolder. Just a nudge (a badge), never anything auto-changed. */
   needsDateReview: boolean
   items: MediaItemDto[]
 }

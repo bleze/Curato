@@ -178,6 +178,24 @@ function blockDate(block: Block): string | null {
 // height can never have a distinct scrollbar position anyway (you're
 // already at max scroll once any of it is visible), so its heightFraction
 // is clamped to 1 rather than allowed past it.
+// Where to jump for the YearJumpBar's "Before" button — the first (in scroll
+// order) block belonging to a ".Before"-recognized Event/Trip (see
+// FolderTitleParser.IsBeforeDigitalScansFolder), i.e. undated/mis-dated scans
+// that don't have a trustworthy year of their own to put on a year button.
+function findBeforeDigitalScansFraction(blocks: Block[], rowHeight: number, scrollableRange: number): number | null {
+  let cumulativeHeight = 0
+  for (const block of blocks) {
+    const needsDateReview =
+      (block.type === 'trip-header' && block.trip.needsDateReview) ||
+      (block.type === 'event-header' && block.event.needsDateReview)
+    if (needsDateReview) {
+      return scrollableRange > 0 ? Math.min(1, cumulativeHeight / scrollableRange) : 0
+    }
+    cumulativeHeight += blockHeight(block, rowHeight)
+  }
+  return null
+}
+
 function buildDateMarkers(blocks: Block[], rowHeight: number, scrollableRange: number): DateMarker[] {
   const markers: DateMarker[] = []
   let lastMonthKey = ''
@@ -456,6 +474,10 @@ export function LibraryGrid({
     () => buildDateMarkers(blocks, rowHeight, scrollableRange),
     [blocks, rowHeight, scrollableRange],
   )
+  const beforeDigitalScansFraction = useMemo(
+    () => findBeforeDigitalScansFraction(blocks, rowHeight, scrollableRange),
+    [blocks, rowHeight, scrollableRange],
+  )
   const scrubberThumbSizeFraction =
     totalContentHeight > 0 && containerHeight !== null ? Math.min(1, containerHeight / totalContentHeight) : 1
   const scrubberTravelFraction = Math.max(0, 1 - scrubberThumbSizeFraction)
@@ -541,6 +563,7 @@ export function LibraryGrid({
     <>
       <YearJumpBar
         markers={dateMarkers}
+        beforeDigitalScansFraction={beforeDigitalScansFraction}
         onJump={(fraction) => virtualizer.scrollToOffset(fraction * scrollableRange, { align: 'start' })}
       />
       <div className="library-scroll-wrapper">

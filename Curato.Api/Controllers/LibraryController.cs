@@ -37,12 +37,12 @@ public sealed class LibraryController(LibraryOperationGate gate, ServerDatabase 
 
     /// <summary>
     /// True for an Adopted folder matching the standard "pre-digital scans"
-    /// naming convention (see FolderTitleParser.IsPreDigitalScansFolder) —
+    /// naming convention (see FolderTitleParser.IsBeforeDigitalScansFolder) —
     /// surfaced as a "Needs dates fixed" badge nudging toward the "Fix
     /// dates…" bulk action, never anything auto-changed.
     /// </summary>
     private static bool NeedsDateReview(string? folderPath) =>
-        folderPath is not null && FolderTitleParser.IsPreDigitalScansFolder(FolderGrouper.GetLeafName(folderPath));
+        folderPath is not null && FolderTitleParser.IsBeforeDigitalScansFolder(FolderGrouper.GetLeafName(folderPath));
 
     [HttpGet("library")]
     public ActionResult<LibraryDto> GetLibrary([FromQuery] string path)

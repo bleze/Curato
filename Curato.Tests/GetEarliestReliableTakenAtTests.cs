@@ -5,7 +5,7 @@ namespace Curato.Tests;
 
 /// <summary>
 /// Backs the "Fix dates…" dialog's default prefill for a
-/// FolderTitleParser.IsPreDigitalScansFolder Event — "definitely before real
+/// FolderTitleParser.IsBeforeDigitalScansFolder Event — "definitely before real
 /// digital photos start", derived from the library's own data rather than
 /// requiring a year in the folder name.
 /// </summary>
