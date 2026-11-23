@@ -133,6 +133,39 @@ public sealed class OrganizeService(LibraryDatabase database, LibraryQueryServic
         organizeRepository.RecordMove(batchId, item.Id, oldRelativePath, newRelativePath);
         organizeRepository.UpdateMediaItemPath(item.Id, newRelativePath);
         item.RelativePath = newRelativePath;
+
+        // Emptying FolderGrouper.ImportFolderName's own nested subfolders is
+        // new to this move path — a loose root-level item never left
+        // anything behind (the root isn't a folder that can go "empty"),
+        // but an import dump's own (now-pointless) subfolder structure
+        // would otherwise pile up as clutter every time this is used.
+        // Deliberately never deletes the import folder itself, just
+        // whatever it emptied out underneath it.
+        CleanUpEmptyImportFolders(libraryRoot, oldRelativePath);
+
         return MoveOutcome.Moved;
+    }
+
+    private static void CleanUpEmptyImportFolders(string libraryRoot, string movedFromRelativePath)
+    {
+        var lastSlash = movedFromRelativePath.LastIndexOf('/');
+        if (lastSlash < 0)
+        {
+            return;
+        }
+
+        var folder = movedFromRelativePath[..lastSlash];
+        while (folder.StartsWith(FolderGrouper.ImportFolderName + "/", StringComparison.OrdinalIgnoreCase))
+        {
+            var fullPath = Path.Combine(libraryRoot, folder);
+            if (!Directory.Exists(fullPath) || Directory.GetFileSystemEntries(fullPath).Length > 0)
+            {
+                break;
+            }
+
+            Directory.Delete(fullPath);
+            var parentSlash = folder.LastIndexOf('/');
+            folder = parentSlash < 0 ? "" : folder[..parentSlash];
+        }
     }
 }

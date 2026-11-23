@@ -23,6 +23,44 @@ public class RecycleBinServiceTests
     }
 
     [Fact]
+    public void A_transiently_locked_file_is_retried_instead_of_failing_the_delete()
+    {
+        // Confirmed live as a real crash: deleting a video right after
+        // watching it can hit File.Move's Win32 sharing violation, since
+        // MediaController's /raw streaming FileStream isn't always released
+        // the instant the HTTP response finishes. Simulated here with an
+        // exclusive FileStream held for a short moment on a background
+        // thread — the retry (RecycleBinService.MoveWithRetryForTransientLock)
+        // should wait it out rather than throwing immediately.
+        WithTempLibrary((root, database, repository, service) =>
+        {
+            var mediaItemId = SeedFile(root, database, "video.mp4");
+            var fullPath = Path.Combine(root, "video.mp4");
+
+            var releaseLock = new ManualResetEventSlim(false);
+            var holdingLock = new ManualResetEventSlim(false);
+            var lockTask = Task.Run(() =>
+            {
+                using var lockedStream = new FileStream(fullPath, FileMode.Open, FileAccess.Read, FileShare.None);
+                holdingLock.Set();
+                releaseLock.Wait(TimeSpan.FromSeconds(5));
+            });
+            Assert.True(holdingLock.Wait(TimeSpan.FromSeconds(5)));
+
+            // Release the lock shortly after the delete call starts
+            // retrying — well within the retry window, well after the
+            // first attempt would otherwise have already failed outright.
+            _ = Task.Delay(300).ContinueWith(_ => releaseLock.Set());
+
+            var deleted = service.DeleteMediaItem(mediaItemId, "Manual");
+
+            Assert.NotNull(deleted);
+            Assert.False(File.Exists(fullPath));
+            lockTask.Wait(TimeSpan.FromSeconds(5));
+        });
+    }
+
+    [Fact]
     public void Deleting_a_live_photos_still_frame_also_recycles_its_paired_video()
     {
         WithTempLibrary((root, database, repository, service) =>
@@ -203,6 +241,69 @@ public class RecycleBinServiceTests
             var fingerprint = Assert.Single(repository.GetAllDeletedFingerprints());
             Assert.Equal(3, fingerprint.FileSizeBytes); // SeedFile writes [1, 2, 3]
         });
+    }
+
+    [Fact]
+    public void Deleting_every_member_of_an_event_cleans_up_the_now_empty_event_and_its_trip()
+    {
+        // The bulk path behind "delete this whole Event" (selecting an
+        // Event and removing it entirely, rather than one photo at a time)
+        // — confirmed live as a real gap: the grid's Event-selection bar had
+        // no such action at all. Reuses DeleteMediaItem per member, so the
+        // same emptied-Event/Trip cleanup it already does applies here too.
+        WithTempLibrary((root, database, repository, service) =>
+        {
+            var item1 = SeedFile(root, database, "a.jpg");
+            var item2 = SeedFile(root, database, "b.jpg");
+            var libraryRepository = new LibraryRepository(database);
+            var (result, @event) = libraryRepository.CreateTripGroup(
+                [SeedStandaloneEvent(libraryRepository, item1), SeedStandaloneEvent(libraryRepository, item2)]);
+            Assert.Equal(CreateTripGroupResult.Success, result);
+
+            var deleted = service.DeleteMediaItems([item1, item2], "Manual");
+
+            Assert.Equal(2, deleted.Count);
+            var query = new LibraryQueryService(database);
+            Assert.Empty(query.GetAllEvents());
+            Assert.Empty(query.GetAllTripGroups());
+            Assert.Equal(2, service.ListPendingDeletion().Count);
+        });
+    }
+
+    [Fact]
+    public void Deleting_an_already_recycled_items_id_a_second_time_is_a_harmless_no_op()
+    {
+        // A Live Photo's paired video is already recycled recursively by its
+        // still-frame's own DeleteMediaItem call — if both halves also
+        // happen to be members of the batch being deleted, the second
+        // attempt on the same (already-gone) id must not blow up the rest
+        // of the batch.
+        WithTempLibrary((root, database, repository, service) =>
+        {
+            var photoId = SeedFile(root, database, "IMG_0001.JPG");
+            var videoId = SeedFile(root, database, "IMG_0001.MOV");
+            new LibraryRepository(database).SetLivePhotoPair(photoId, videoId);
+
+            var deleted = service.DeleteMediaItems([photoId, videoId], "Manual");
+
+            Assert.Single(deleted); // only the still-frame's own call returns a result
+            Assert.Equal(2, service.ListPendingDeletion().Count); // both ended up in the bin regardless
+        });
+    }
+
+    private static long SeedStandaloneEvent(LibraryRepository repository, long mediaItemId)
+    {
+        var @event = new Curato.Core.Event
+        {
+            StartAt = new DateTime(2026, 1, 1),
+            EndAt = new DateTime(2026, 1, 1),
+            Title = "Morning",
+            TitleIsAuto = true,
+            NamingMode = Curato.Core.NamingMode.CuratoManaged,
+            MediaItemIds = [mediaItemId],
+        };
+        repository.SaveEvents([@event]);
+        return @event.Id;
     }
 
     private static long SeedFile(string root, LibraryDatabase database, string relativePath)

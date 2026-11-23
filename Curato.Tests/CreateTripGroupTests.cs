@@ -217,6 +217,99 @@ public class CreateTripGroupTests
         });
     }
 
+    [Fact]
+    public void Adding_a_standalone_event_to_an_existing_trip_extends_its_date_range()
+    {
+        WithTempLibrary((repository, query, database) =>
+        {
+            RunScanPass(repository, query, database,
+            [
+                Item("day1.jpg", new DateTime(2026, 6, 1, 9, 0, 0)),
+                Item("day3.jpg", new DateTime(2026, 6, 3, 9, 0, 0)),
+                Item("day5.jpg", new DateTime(2026, 6, 5, 9, 0, 0)), // stays standalone
+            ]);
+            var events = query.GetAllEvents();
+            var (_, trip) = repository.CreateTripGroup([
+                events.Single(e => e.StartAt.Day == 1).Id,
+                events.Single(e => e.StartAt.Day == 3).Id,
+            ]);
+            var standaloneEvent = events.Single(e => e.StartAt.Day == 5);
+
+            var result = repository.AddEventToTripGroup(standaloneEvent.Id, trip!.Id);
+
+            Assert.Equal(AddEventToTripGroupResult.Success, result);
+            var updatedTrip = query.GetAllTripGroups().Single(t => t.Id == trip.Id);
+            Assert.Equal(3, updatedTrip.EventIds.Count);
+            Assert.Contains(standaloneEvent.Id, updatedTrip.EventIds);
+            Assert.Equal(new DateOnly(2026, 6, 1), updatedTrip.StartDate);
+            Assert.Equal(new DateOnly(2026, 6, 5), updatedTrip.EndDate); // extended to cover the newly-added Event
+        });
+    }
+
+    [Fact]
+    public void Adding_an_unknown_event_to_a_trip_returns_not_found()
+    {
+        WithTempLibrary((repository, query, database) =>
+        {
+            RunScanPass(repository, query, database,
+            [
+                Item("day1.jpg", new DateTime(2026, 6, 1, 9, 0, 0)),
+                Item("day3.jpg", new DateTime(2026, 6, 3, 9, 0, 0)),
+            ]);
+            var (_, trip) = repository.CreateTripGroup(query.GetAllEvents().Select(e => e.Id).ToList());
+
+            var result = repository.AddEventToTripGroup(999, trip!.Id);
+
+            Assert.Equal(AddEventToTripGroupResult.EventNotFound, result);
+        });
+    }
+
+    [Fact]
+    public void Adding_an_event_to_an_unknown_trip_returns_not_found_and_leaves_the_event_standalone()
+    {
+        WithTempLibrary((repository, query, database) =>
+        {
+            RunScanPass(repository, query, database, [Item("day1.jpg", new DateTime(2026, 6, 1, 9, 0, 0))]);
+            var eventId = query.GetAllEvents()[0].Id;
+
+            var result = repository.AddEventToTripGroup(eventId, 999);
+
+            Assert.Equal(AddEventToTripGroupResult.TripGroupNotFound, result);
+            Assert.Null(query.GetAllEvents()[0].TripGroupId);
+        });
+    }
+
+    [Fact]
+    public void Adding_an_event_already_in_a_trip_is_refused()
+    {
+        WithTempLibrary((repository, query, database) =>
+        {
+            RunScanPass(repository, query, database,
+            [
+                Item("day1.jpg", new DateTime(2026, 6, 1, 9, 0, 0)),
+                Item("day3.jpg", new DateTime(2026, 6, 3, 9, 0, 0)),
+                Item("day10.jpg", new DateTime(2026, 6, 10, 9, 0, 0)),
+                Item("day12.jpg", new DateTime(2026, 6, 12, 9, 0, 0)),
+            ]);
+            var events = query.GetAllEvents();
+            var (_, firstTrip) = repository.CreateTripGroup([
+                events.Single(e => e.StartAt.Day == 1).Id,
+                events.Single(e => e.StartAt.Day == 3).Id,
+            ]);
+            var (_, secondTrip) = repository.CreateTripGroup([
+                events.Single(e => e.StartAt.Day == 10).Id,
+                events.Single(e => e.StartAt.Day == 12).Id,
+            ]);
+            var alreadyGroupedEventId = events.Single(e => e.StartAt.Day == 1).Id;
+
+            var result = repository.AddEventToTripGroup(alreadyGroupedEventId, secondTrip!.Id);
+
+            Assert.Equal(AddEventToTripGroupResult.EventAlreadyInATrip, result);
+            var untouchedTrip = query.GetAllTripGroups().Single(t => t.Id == firstTrip!.Id);
+            Assert.Equal(2, untouchedTrip.EventIds.Count); // unchanged
+        });
+    }
+
     private static void RunScanPass(
         LibraryRepository repository, LibraryQueryService query, LibraryDatabase database, MediaItem[] rawItems) =>
         new ScanService(repository, query, database).ScanItems(rawItems);

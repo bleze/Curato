@@ -1,5 +1,7 @@
+using System.Globalization;
 using Curato.Core;
 using MetadataExtractor;
+using MetadataExtractor.Formats.Avi;
 using MetadataExtractor.Formats.Exif;
 using MetadataExtractor.Formats.QuickTime;
 
@@ -42,22 +44,72 @@ public sealed class MediaFileScanner
     /// <summary>
     /// Recursively scans <paramref name="rootPath"/>. Every path stored on the
     /// resulting items is relative to it, per PLAN.md §2's portability rule.
+    ///
+    /// <paramref name="previousFolderModifiedTimes"/> and
+    /// <paramref name="previouslyIndexedByRelativePath"/> together enable an
+    /// incremental re-scan: a folder whose own LastWriteTimeUtc still
+    /// matches what's recorded (a directory's own modified-time changes
+    /// whenever an entry is added, removed, or renamed inside it — but *not*
+    /// when a file's content is merely overwritten in place without
+    /// renaming, a known gap accepted for the large speedup this gives a
+    /// big, mostly-static library) is assumed unchanged, and every file
+    /// inside it is yielded straight from the already-known MediaItem rather
+    /// than re-read/re-hashed from disk. A file that's somehow missing from
+    /// that lookup anyway (shouldn't happen for a genuinely unchanged
+    /// folder, but a corrupt/stale FolderScanState row is cheap to recover
+    /// from) still gets the full real read, never silently skipped.
+    /// <paramref name="currentFolderModifiedTimes"/>, if supplied, is filled
+    /// in with every folder actually visited (unchanged or not) — the
+    /// caller persists it after a full, non-cancelled scan so the *next*
+    /// scan has something to compare against.
+    /// Every folder is still walked and every file still yielded regardless
+    /// of any of this — only the expensive per-file metadata work is ever
+    /// skipped, never the file's presence in the result, so deletion
+    /// detection (ScanService.RemoveMissingFiles) stays exact.
     /// </summary>
-    public IEnumerable<MediaItem> Scan(string rootPath)
+    public IEnumerable<MediaItem> Scan(
+        string rootPath,
+        IReadOnlyDictionary<string, DateTime>? previousFolderModifiedTimes = null,
+        IReadOnlyDictionary<string, MediaItem>? previouslyIndexedByRelativePath = null,
+        Dictionary<string, DateTime>? currentFolderModifiedTimes = null)
     {
-        foreach (var filePath in System.IO.Directory.EnumerateFiles(rootPath, "*", SearchOption.AllDirectories))
+        foreach (var item in ScanDirectory(
+                     rootPath, rootPath, previousFolderModifiedTimes, previouslyIndexedByRelativePath, currentFolderModifiedTimes))
         {
-            // .curato/ holds Curato's own data (library.db, the Recycle Bin's
-            // trashed originals, the thumbnail cache) — never real library
-            // content, and RecycleBin/thumbnail-cache both contain real
-            // .jpg files that would otherwise get indexed as new photos on
-            // every re-scan.
-            var normalized = filePath.Replace('\\', '/');
-            if (normalized.Contains("/.curato/", StringComparison.OrdinalIgnoreCase))
-            {
-                continue;
-            }
+            yield return item;
+        }
+    }
 
+    private static IEnumerable<MediaItem> ScanDirectory(
+        string rootPath, string currentDir,
+        IReadOnlyDictionary<string, DateTime>? previousFolderModifiedTimes,
+        IReadOnlyDictionary<string, MediaItem>? previouslyIndexedByRelativePath,
+        Dictionary<string, DateTime>? currentFolderModifiedTimes)
+    {
+        var relativeDir = currentDir == rootPath ? "" : Path.GetRelativePath(rootPath, currentDir).Replace('\\', '/');
+
+        // .curato/ holds Curato's own data (library.db, the Recycle Bin's
+        // trashed originals, the thumbnail cache) — never real library
+        // content, and RecycleBin/thumbnail-cache both contain real .jpg
+        // files that would otherwise get indexed as new photos on every
+        // re-scan.
+        if (relativeDir == ".curato" || relativeDir.StartsWith(".curato/", StringComparison.OrdinalIgnoreCase))
+        {
+            yield break;
+        }
+
+        var modifiedUtc = System.IO.Directory.GetLastWriteTimeUtc(currentDir);
+        if (currentFolderModifiedTimes is not null)
+        {
+            currentFolderModifiedTimes[relativeDir] = modifiedUtc;
+        }
+
+        var unchanged = previousFolderModifiedTimes is not null &&
+            previousFolderModifiedTimes.TryGetValue(relativeDir, out var previousModifiedUtc) &&
+            previousModifiedUtc == modifiedUtc;
+
+        foreach (var filePath in System.IO.Directory.EnumerateFiles(currentDir))
+        {
             var extension = Path.GetExtension(filePath);
             MediaKind kind;
             if (PhotoExtensions.Contains(extension))
@@ -73,7 +125,26 @@ public sealed class MediaFileScanner
                 continue;
             }
 
+            if (unchanged && previouslyIndexedByRelativePath is not null)
+            {
+                var relativePath = Path.GetRelativePath(rootPath, filePath).Replace('\\', '/');
+                if (previouslyIndexedByRelativePath.TryGetValue(relativePath, out var existing))
+                {
+                    yield return existing;
+                    continue;
+                }
+            }
+
             yield return BuildMediaItem(rootPath, filePath, kind);
+        }
+
+        foreach (var subDir in System.IO.Directory.EnumerateDirectories(currentDir))
+        {
+            foreach (var item in ScanDirectory(
+                         rootPath, subDir, previousFolderModifiedTimes, previouslyIndexedByRelativePath, currentFolderModifiedTimes))
+            {
+                yield return item;
+            }
         }
     }
 
@@ -187,15 +258,32 @@ public sealed class MediaFileScanner
             // fall through to the filesystem-date fallback below.
         }
 
-        return (info.LastWriteTimeUtc, TakenAtSource.FileSystem);
+        // .ToLocalTime(), not the raw Utc value: every other TakenAt source
+        // (Exif, video metadata, manual) is DateTimeKind.Unspecified and
+        // serializes with no timezone suffix at all — the frontend's
+        // `new Date(...)` treats that as plain local wall-clock time.
+        // Confirmed live as a real bug, not just a style nit: a raw
+        // DateTimeKind.Utc value here serializes with a trailing "Z",
+        // which `new Date(...)` instead treats as a genuine UTC instant —
+        // sorting/comparing a "Z"-tagged FileSystem fallback date next to
+        // any Exif/video-metadata date was silently off by exactly the
+        // server's own UTC offset, enough to visibly misorder an Event in
+        // the library timeline. .ToLocalTime() doesn't change the real
+        // instant at all, just how it round-trips through ToString("O") —
+        // DateTimeKind.Local serializes with an explicit numeric offset
+        // (e.g. "+02:00"), which both .NET and the frontend already parse
+        // correctly and consistently (same shape video metadata's own
+        // real, already-working timezone offsets use).
+        return (info.LastWriteTimeUtc.ToLocalTime(), TakenAtSource.FileSystem);
     }
 
     /// <summary>
     /// Reads the QuickTime/MP4-family creation date (covers .mov/.mp4/.m4v/
     /// .3gp — the ISO-base-media-file-format family, by far the common case
-    /// for phone-recorded video). MetadataExtractor has no reader for AVI/
-    /// Matroska/WebM/WMV creation dates, so those still fall back to the
-    /// file's filesystem date, same as before this method existed.
+    /// for phone-recorded video), or an AVI's own creation-date tag (see
+    /// <see cref="TryParseAviDateTimeOriginal"/>). MetadataExtractor has no
+    /// reader for Matroska/WebM/WMV creation dates, so those still fall back
+    /// to the file's filesystem date.
     /// </summary>
     private static (DateTime TakenAt, TakenAtSource Source) ReadVideoTakenAt(string filePath, FileInfo info)
     {
@@ -265,6 +353,18 @@ public sealed class MediaFileScanner
 
                 return (created.ToLocalTime(), TakenAtSource.VideoMetadata);
             }
+
+            // AVI's own creation-date tag, from the RIFF "IDIT" chunk —
+            // Windows Explorer surfaces this same value as "Media created"
+            // under a file's Details > Origin. Already local wall-clock
+            // time (no timezone/UTC conversion involved, unlike the
+            // QuickTime movie header above), matching what a camera would
+            // have actually written down.
+            var aviHeader = directories.OfType<AviDirectory>().FirstOrDefault();
+            if (aviHeader is not null && TryParseAviDateTimeOriginal(aviHeader, out var aviCreated))
+            {
+                return (aviCreated, TakenAtSource.VideoMetadata);
+            }
         }
         catch (ImageProcessingException)
         {
@@ -272,6 +372,51 @@ public sealed class MediaFileScanner
             // fall through to the filesystem-date fallback below.
         }
 
-        return (info.LastWriteTimeUtc, TakenAtSource.FileSystem);
+        // .ToLocalTime() — see the photo-path fallback above for why a raw
+        // DateTimeKind.Utc value here is a real timeline-ordering bug, not
+        // just a style nit.
+        return (info.LastWriteTimeUtc.ToLocalTime(), TakenAtSource.FileSystem);
+    }
+
+    /// <summary>
+    /// AVI's TagDateTimeOriginal is a raw C <c>ctime()</c>-style string (e.g.
+    /// "Fri Sep 03 13:04:24 2004") — confirmed live that MetadataExtractor's
+    /// own <c>TryGetDateTime</c> doesn't understand this format at all
+    /// (always returns false) despite <c>GetString</c> returning a perfectly
+    /// parseable value, which is why this needs its own parser rather than
+    /// reusing the pattern the QuickTime directories above use directly.
+    /// The leading day-of-week name is dropped (not validated against the
+    /// actual date) before parsing: <c>ctime()</c> space-pads a single-digit
+    /// day ("Jan  9" vs "Jan 03"), and collapsing repeated whitespace via
+    /// Split/Join handles both paddings with one format string rather than
+    /// needing two.
+    /// </summary>
+    private static bool TryParseAviDateTimeOriginal(AviDirectory directory, out DateTime dateTime)
+    {
+        dateTime = default;
+        var raw = directory.GetString(AviDirectory.TagDateTimeOriginal);
+        if (string.IsNullOrWhiteSpace(raw))
+        {
+            return false;
+        }
+
+        // The RIFF chunk's declared length sometimes includes a trailing
+        // NUL terminator as part of the string content itself (rather than
+        // it being outside the chunk's own byte count) — confirmed live
+        // this leaves one or more embedded '\0' characters stuck to the
+        // year token after Split, which silently fails the exact parse
+        // below with no indication why. Trim defensively rather than
+        // assume every encoder writes this tag identically.
+        raw = raw.TrimEnd('\0', ' ');
+
+        var parts = raw.Split(' ', StringSplitOptions.RemoveEmptyEntries);
+        if (parts.Length < 2)
+        {
+            return false;
+        }
+
+        var withoutDayName = string.Join(' ', parts.Skip(1));
+        return DateTime.TryParseExact(
+            withoutDayName, "MMM d HH:mm:ss yyyy", CultureInfo.InvariantCulture, DateTimeStyles.None, out dateTime);
     }
 }

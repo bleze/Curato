@@ -19,6 +19,8 @@ namespace Curato.Api.Controllers;
 public sealed class RecycleBinController : ControllerBase
 {
     public sealed record DeleteRequest(string Path, long MediaItemId, string Source = "Manual");
+    public sealed record DeleteEventsRequest(string Path, IReadOnlyList<long> EventIds, string Source = "Manual");
+    public sealed record DeleteItemsRequest(string Path, IReadOnlyList<long> MediaItemIds, string Source = "Manual");
     public sealed record ItemIdRequest(string Path, long DeletedItemId);
 
     private static readonly FileExtensionContentTypeProvider ContentTypeProvider = new();
@@ -62,6 +64,53 @@ public sealed class RecycleBinController : ControllerBase
 
         var result = opened.Service.DeleteMediaItem(request.MediaItemId, request.Source);
         return result is null ? NotFound($"No MediaItem with id {request.MediaItemId}") : Ok(ToDto(result));
+    }
+
+    /// <summary>
+    /// Deletes every MediaItem belonging to one or more whole Events —
+    /// confirmed live as a real gap: selecting an Event only ever offered
+    /// Merge/Group-into-Trip/Fix dates, never a way to remove the Event
+    /// entirely short of deleting each of its photos one at a time from the
+    /// grid. See RecycleBinService.DeleteMediaItems for the actual bulk
+    /// delete/cleanup logic — this just resolves the selected Events down to
+    /// their member MediaItemIds first.
+    /// </summary>
+    [HttpPost("delete-events")]
+    public ActionResult<IReadOnlyList<DeletedItemDto>> DeleteEvents([FromBody] DeleteEventsRequest request)
+    {
+        if (OpenLibrary(request.Path) is not { } opened)
+        {
+            return NotFound($"Folder not found: {request.Path}");
+        }
+
+        var query = new LibraryQueryService(opened.Database);
+        var eventIds = new HashSet<long>(request.EventIds);
+        var memberIds = query.GetAllEvents()
+            .Where(e => eventIds.Contains(e.Id))
+            .SelectMany(e => e.MediaItemIds)
+            .ToList();
+
+        var deleted = opened.Service.DeleteMediaItems(memberIds, request.Source);
+        return Ok(deleted.Select(ToDto).ToList());
+    }
+
+    /// <summary>
+    /// Deletes a batch of individually-selected MediaItems at once — the
+    /// grid's own photo-selection bar's "Move to Recycle Bin" (as opposed to
+    /// <see cref="DeleteEvents"/>, which deletes whole Events). Same
+    /// RecycleBinService.DeleteMediaItems batch path, just with ids supplied
+    /// directly rather than resolved from a set of Events first.
+    /// </summary>
+    [HttpPost("delete-items")]
+    public ActionResult<IReadOnlyList<DeletedItemDto>> DeleteItems([FromBody] DeleteItemsRequest request)
+    {
+        if (OpenLibrary(request.Path) is not { } opened)
+        {
+            return NotFound($"Folder not found: {request.Path}");
+        }
+
+        var deleted = opened.Service.DeleteMediaItems(request.MediaItemIds, request.Source);
+        return Ok(deleted.Select(ToDto).ToList());
     }
 
     [HttpPost("restore")]

@@ -31,6 +31,28 @@ public sealed class LibraryQueryService(LibraryDatabase database)
         return items;
     }
 
+    /// <summary>
+    /// Every folder's LastWriteTimeUtc as recorded at the end of the last
+    /// full (non-cancelled) Scan — see MediaFileScanner.Scan's incremental
+    /// skip logic and FolderScanState's own schema comment. Empty (not
+    /// null) when no scan has ever completed, which is itself meaningful:
+    /// MediaFileScanner correctly treats "nothing recorded for this folder"
+    /// the same as "this folder changed" and scans it in full.
+    /// </summary>
+    public IReadOnlyDictionary<string, DateTime> GetFolderModifiedTimes()
+    {
+        using var connection = database.OpenConnection();
+        var result = new Dictionary<string, DateTime>();
+        foreach (var row in connection.Query("SELECT RelativePath, LastModifiedUtc FROM FolderScanState"))
+        {
+            string relativePath = row.RelativePath;
+            string lastModifiedUtc = row.LastModifiedUtc;
+            result[relativePath] = DateTime.Parse(lastModifiedUtc, null, DateTimeStyles.RoundtripKind);
+        }
+
+        return result;
+    }
+
     /// <summary>Single-item lookup for the "Reset to Exif" action (LibraryController.ResetTakenAt) — needs just this one file's RelativePath/Kind, not the whole library.</summary>
     public MediaItem? GetMediaItem(long id)
     {

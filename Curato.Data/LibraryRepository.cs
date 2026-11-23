@@ -7,9 +7,22 @@ namespace Curato.Data;
 
 public enum MoveMediaItemResult { Success, MediaItemNotFound, TargetEventNotFound }
 
+/// <summary>
+/// <see cref="EventId"/> is the Event the item actually ended up in on
+/// success (whichever existing one was targeted, or the brand-new one when
+/// <c>targetEventId</c> was null) — null otherwise. Lets a caller tell "a
+/// new standalone Event was just created" apart from "it joined an existing
+/// one" without a second lookup, e.g. to enrich a freshly-created one's
+/// auto-title with a location the way a normal Scan's own clustering does
+/// (see LibraryController.MoveMediaItemToEvent).
+/// </summary>
+public sealed record MoveMediaItemOutcome(MoveMediaItemResult Result, long? EventId);
+
 public enum CreateTripGroupResult { Success, NoEventsGiven, EventNotFound, EventAlreadyInATrip }
 
 public enum MergeEventResult { Success, SourceEqualsTarget, SourceEventNotFound, TargetEventNotFound }
+
+public enum AddEventToTripGroupResult { Success, EventNotFound, TripGroupNotFound, EventAlreadyInATrip }
 
 /// <summary>
 /// First, minimal persistence slice for Phase 1: save a scan's MediaItems and
@@ -24,7 +37,51 @@ public sealed class LibraryRepository(LibraryDatabase database)
     {
         using var connection = database.OpenConnection();
         using var transaction = connection.BeginTransaction();
+        var saved = UpsertMediaItemsCore(connection, transaction, items);
+        transaction.Commit();
+        return saved;
+    }
 
+    /// <summary>
+    /// Flushes a scan's in-progress batch of items AND every folder that was
+    /// fully completed within that same batch, in one connection/transaction
+    /// — confirmed live as necessary, not just tidy: this repository's
+    /// database can live on a network share (SMB), and opening a brand-new
+    /// SqliteConnection per folder (this method's first design) hammered the
+    /// share with far more open/lock/close cycles than the old flat
+    /// item-count batching ever did, which is exactly the documented trigger
+    /// for SQLite's SQLITE_PROTOCOL ("locking protocol") error on a network
+    /// filesystem — reproduced live against the real library. Batching by
+    /// item count again keeps the connection cadence back down to what's
+    /// already proven safe there, while still recording every folder that
+    /// happened to finish inside this batch (not just one folder, and not
+    /// only at the very end) — a pure improvement over the original flat-200
+    /// design, which never recorded any folder's modified-time until the
+    /// entire scan finished.
+    /// </summary>
+    public IReadOnlyList<MediaItem> FlushScanProgress(
+        IReadOnlyCollection<MediaItem> items, IReadOnlyCollection<(string RelativePath, DateTime ModifiedUtc)> completedFolders)
+    {
+        using var connection = database.OpenConnection();
+        using var transaction = connection.BeginTransaction();
+
+        var saved = UpsertMediaItemsCore(connection, transaction, items);
+
+        foreach (var (relativePath, modifiedUtc) in completedFolders)
+        {
+            connection.Execute("""
+                INSERT INTO FolderScanState (RelativePath, LastModifiedUtc) VALUES (@RelativePath, @LastModifiedUtc)
+                ON CONFLICT (RelativePath) DO UPDATE SET LastModifiedUtc = excluded.LastModifiedUtc
+                """, new { RelativePath = relativePath, LastModifiedUtc = modifiedUtc.ToString("O") }, transaction);
+        }
+
+        transaction.Commit();
+        return saved;
+    }
+
+    private static List<MediaItem> UpsertMediaItemsCore(
+        IDbConnection connection, IDbTransaction transaction, IEnumerable<MediaItem> items)
+    {
         var saved = new List<MediaItem>();
         foreach (var item in items)
         {
@@ -46,8 +103,52 @@ public sealed class LibraryRepository(LibraryDatabase database)
             saved.Add(item);
         }
 
-        transaction.Commit();
         return saved;
+    }
+
+    /// <summary>
+    /// Records one folder's modified-time directly — used for the end-of-
+    /// scan case and by tests; the hot path during a scan's walk goes
+    /// through <see cref="FlushScanProgress"/> instead, to avoid a
+    /// one-connection-per-folder cost against a network-hosted database.
+    /// </summary>
+    public void UpsertFolderModifiedTime(string relativePath, DateTime modifiedUtc)
+    {
+        using var connection = database.OpenConnection();
+        connection.Execute("""
+            INSERT INTO FolderScanState (RelativePath, LastModifiedUtc) VALUES (@RelativePath, @LastModifiedUtc)
+            ON CONFLICT (RelativePath) DO UPDATE SET LastModifiedUtc = excluded.LastModifiedUtc
+            """, new { RelativePath = relativePath, LastModifiedUtc = modifiedUtc.ToString("O") });
+    }
+
+    /// <summary>
+    /// Forgets any recorded folder that isn't in <paramref name="currentRelativePaths"/>
+    /// — a folder deleted entirely since the last scan should stop being
+    /// remembered too, rather than linger as a stale entry nothing ever
+    /// looks at again. Only meaningful (and only ever called) once a scan
+    /// has walked its *entire* tree without being cancelled — a partial
+    /// walk's set of folders wouldn't actually reflect everything that
+    /// still exists, so pruning against it could wrongly forget a folder
+    /// the walk just hadn't reached yet.
+    /// </summary>
+    public void PruneFolderModifiedTimes(IEnumerable<string> currentRelativePaths)
+    {
+        using var connection = database.OpenConnection();
+        using var transaction = connection.BeginTransaction();
+
+        var current = currentRelativePaths.ToHashSet();
+        var recorded = connection.Query<string>("SELECT RelativePath FROM FolderScanState", transaction: transaction);
+        foreach (var relativePath in recorded)
+        {
+            if (!current.Contains(relativePath))
+            {
+                connection.Execute(
+                    "DELETE FROM FolderScanState WHERE RelativePath = @RelativePath",
+                    new { RelativePath = relativePath }, transaction);
+            }
+        }
+
+        transaction.Commit();
     }
 
     /// <summary>
@@ -339,7 +440,19 @@ public sealed class LibraryRepository(LibraryDatabase database)
     /// matches chronological ordering exactly, without parsing each one
     /// back into a DateTime.
     /// </summary>
-    private static void ResortEventMembership(IDbConnection connection, IDbTransaction transaction, long eventId)
+    /// <param name="useDominantRange">
+    /// Only passed true by MoveMediaItemToEvent/MoveMediaItemsToEvent —
+    /// "a specific, hand-picked item was deliberately moved somewhere else"
+    /// is exactly the situation a disconnected straggler can silently drag
+    /// the destination's displayed date around in. Every other caller
+    /// (RepairWrongEpochVideoTakenAt, RefreshLooseEventBoundaries,
+    /// MergeEventInto) is a bulk/automated correction or an intentional
+    /// whole-Event combination, where the full span across every member is
+    /// still the right answer — see EventClusterer.ComputeDominantRange's
+    /// own doc comment for the straggler problem this solves.
+    /// </param>
+    private static void ResortEventMembership(
+        IDbConnection connection, IDbTransaction transaction, long eventId, bool useDominantRange = false)
     {
         var members = new List<(long MediaItemId, string TakenAt)>();
         foreach (var row in connection.Query("""
@@ -365,14 +478,14 @@ public sealed class LibraryRepository(LibraryDatabase database)
                 """, new { SortOrder = sortOrder++, EventId = eventId, MediaItemId = member.MediaItemId }, transaction);
         }
 
+        var takenAts = members.Select(m => ParseDateTime(m.TakenAt)).ToList();
+        var (startAt, endAt) = useDominantRange
+            ? new EventClusterer().ComputeDominantRange(takenAts)
+            : (takenAts.Min(), takenAts.Max());
+
         connection.Execute("""
             UPDATE Event SET StartAt = @StartAt, EndAt = @EndAt WHERE Id = @EventId
-            """, new
-        {
-            StartAt = members.Min(m => m.TakenAt),
-            EndAt = members.Max(m => m.TakenAt),
-            EventId = eventId
-        }, transaction);
+            """, new { StartAt = startAt.ToString("O"), EndAt = endAt.ToString("O"), EventId = eventId }, transaction);
     }
 
     /// <summary>
@@ -493,7 +606,7 @@ public sealed class LibraryRepository(LibraryDatabase database)
     /// desync the database from what's actually on disk. Moving photos in or
     /// out of organized folders needs a real file move, out of scope here.
     /// </summary>
-    public MoveMediaItemResult MoveMediaItemToEvent(long mediaItemId, long? targetEventId)
+    public MoveMediaItemOutcome MoveMediaItemToEvent(long mediaItemId, long? targetEventId)
     {
         using var connection = database.OpenConnection();
         using var transaction = connection.BeginTransaction();
@@ -503,7 +616,7 @@ public sealed class LibraryRepository(LibraryDatabase database)
         if (itemRow is null)
         {
             transaction.Rollback();
-            return MoveMediaItemResult.MediaItemNotFound;
+            return new MoveMediaItemOutcome(MoveMediaItemResult.MediaItemNotFound, null);
         }
 
         var takenAtRaw = itemRow.Value.TakenAt;
@@ -523,7 +636,7 @@ public sealed class LibraryRepository(LibraryDatabase database)
             if (targetRow is null)
             {
                 transaction.Rollback();
-                return MoveMediaItemResult.TargetEventNotFound;
+                return new MoveMediaItemOutcome(MoveMediaItemResult.TargetEventNotFound, null);
             }
 
             resolvedTargetId = requestedTargetId;
@@ -583,7 +696,7 @@ public sealed class LibraryRepository(LibraryDatabase database)
         connection.Execute("""
             INSERT INTO EventMediaItem (EventId, MediaItemId, SortOrder) VALUES (@EventId, @MediaItemId, 0)
             """, new { EventId = resolvedTargetId, MediaItemId = mediaItemId }, transaction);
-        ResortEventMembership(connection, transaction, resolvedTargetId);
+        ResortEventMembership(connection, transaction, resolvedTargetId, useDominantRange: true);
 
         if (sourceEventId is { } sourceIdToCheck)
         {
@@ -597,12 +710,115 @@ public sealed class LibraryRepository(LibraryDatabase database)
             }
             else
             {
-                ResortEventMembership(connection, transaction, sourceIdToCheck);
+                ResortEventMembership(connection, transaction, sourceIdToCheck, useDominantRange: true);
             }
         }
 
         transaction.Commit();
-        return MoveMediaItemResult.Success;
+        return new MoveMediaItemOutcome(MoveMediaItemResult.Success, resolvedTargetId);
+    }
+
+    /// <summary>
+    /// Moves many individually-selected MediaItems into one existing target
+    /// Event, in a single connection/transaction — confirmed live as a real
+    /// need: selecting a whole range of individual photos (not a whole
+    /// Event) and moving them one at a time was reported as tiresome, and
+    /// looping <see cref="MoveMediaItemToEvent"/> client-side would mean one
+    /// separate SQLite connection per photo against what can be a
+    /// network-hosted database — the exact failure mode ScanService's own
+    /// flush-batching fix (FlushScanProgress) was built to avoid. Unlike the
+    /// single-item overload, this never creates a new Event for a null
+    /// target — the UI only offers this against an existing one, same as
+    /// <see cref="MergeEventInto"/>. An unknown MediaItemId is skipped
+    /// (recorded as <see cref="MoveMediaItemResult.MediaItemNotFound"/> in
+    /// the returned list) rather than failing the whole batch — the same
+    /// tolerance OrganizeService's own batch move already has for a single
+    /// stale/missing item.
+    /// </summary>
+    public IReadOnlyList<MoveMediaItemResult> MoveMediaItemsToEvent(IReadOnlyList<long> mediaItemIds, long targetEventId)
+    {
+        using var connection = database.OpenConnection();
+        using var transaction = connection.BeginTransaction();
+
+        var targetRow = connection.QuerySingleOrDefault<(string? FolderPath, bool Found)?>(
+            "SELECT FolderPath, 1 AS Found FROM Event WHERE Id = @Id", new { Id = targetEventId }, transaction);
+        if (targetRow is null)
+        {
+            transaction.Rollback();
+            return mediaItemIds.Select(_ => MoveMediaItemResult.TargetEventNotFound).ToList();
+        }
+
+        var targetFolderPath = targetRow.Value.FolderPath;
+        var libraryRoot = database.LibraryRoot;
+        var claimedPaths = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+        var results = new List<MoveMediaItemResult>();
+        var sourceEventIdsToCheck = new HashSet<long>();
+
+        foreach (var mediaItemId in mediaItemIds)
+        {
+            var currentRelativePath = connection.QuerySingleOrDefault<string>(
+                "SELECT RelativePath FROM MediaItem WHERE Id = @Id", new { Id = mediaItemId }, transaction);
+            if (currentRelativePath is null)
+            {
+                results.Add(MoveMediaItemResult.MediaItemNotFound);
+                continue;
+            }
+
+            var sourceEventId = connection.ExecuteScalar<long?>(
+                "SELECT EventId FROM EventMediaItem WHERE MediaItemId = @Id", new { Id = mediaItemId }, transaction);
+
+            if (targetFolderPath is not null)
+            {
+                var oldFullPath = Path.Combine(libraryRoot, currentRelativePath);
+                var fileName = Path.GetFileName(currentRelativePath);
+                var newRelativePath = CollisionFreePath.Resolve(libraryRoot, targetFolderPath, fileName, claimedPaths);
+                claimedPaths.Add(newRelativePath);
+                var newFullPath = Path.Combine(libraryRoot, newRelativePath);
+
+                if (!string.Equals(Path.GetFullPath(oldFullPath), Path.GetFullPath(newFullPath), StringComparison.OrdinalIgnoreCase))
+                {
+                    Directory.CreateDirectory(Path.GetDirectoryName(newFullPath)!);
+                    File.Move(oldFullPath, newFullPath);
+                    connection.Execute(
+                        "UPDATE MediaItem SET RelativePath = @Path WHERE Id = @Id",
+                        new { Path = newRelativePath, Id = mediaItemId }, transaction);
+                }
+            }
+
+            if (sourceEventId is { } sourceIdToLeave)
+            {
+                connection.Execute(
+                    "DELETE FROM EventMediaItem WHERE EventId = @EventId AND MediaItemId = @MediaItemId",
+                    new { EventId = sourceIdToLeave, MediaItemId = mediaItemId }, transaction);
+                sourceEventIdsToCheck.Add(sourceIdToLeave);
+            }
+
+            connection.Execute(
+                "INSERT INTO EventMediaItem (EventId, MediaItemId, SortOrder) VALUES (@EventId, @MediaItemId, 0)",
+                new { EventId = targetEventId, MediaItemId = mediaItemId }, transaction);
+
+            results.Add(MoveMediaItemResult.Success);
+        }
+
+        ResortEventMembership(connection, transaction, targetEventId, useDominantRange: true);
+
+        foreach (var sourceEventId in sourceEventIdsToCheck)
+        {
+            var remaining = connection.ExecuteScalar<long>(
+                "SELECT COUNT(*) FROM EventMediaItem WHERE EventId = @EventId", new { EventId = sourceEventId }, transaction);
+
+            if (remaining == 0)
+            {
+                connection.Execute("DELETE FROM Event WHERE Id = @EventId", new { EventId = sourceEventId }, transaction);
+            }
+            else
+            {
+                ResortEventMembership(connection, transaction, sourceEventId, useDominantRange: true);
+            }
+        }
+
+        transaction.Commit();
+        return results;
     }
 
     /// <summary>
@@ -722,6 +938,24 @@ public sealed class LibraryRepository(LibraryDatabase database)
         return updated > 0;
     }
 
+    /// <summary>
+    /// Unlike <see cref="SetEventTitle"/>, keeps <c>TitleIsAuto</c> as-is
+    /// (guarded via the WHERE clause to only ever touch a still-auto title)
+    /// — for a system-computed enrichment (e.g. appending a resolved
+    /// location to a freshly-split-out Event's plain auto-title, the same
+    /// way a normal Scan's own clustering already does), not a user's
+    /// manual rename. A no-op (returns false) if the title was already
+    /// manually edited in the meantime.
+    /// </summary>
+    public bool SetAutoEventTitle(long eventId, string title)
+    {
+        using var connection = database.OpenConnection();
+        var updated = connection.Execute(
+            "UPDATE Event SET Title = @Title WHERE Id = @Id AND TitleIsAuto = 1",
+            new { Id = eventId, Title = title });
+        return updated > 0;
+    }
+
     /// <summary>Manual title edit for a TripGroup — see <see cref="SetEventTitle"/>.</summary>
     public bool SetTripGroupTitle(long tripId, string title)
     {
@@ -730,6 +964,85 @@ public sealed class LibraryRepository(LibraryDatabase database)
             "UPDATE TripGroup SET Title = @Title, TitleIsAuto = 0 WHERE Id = @Id",
             new { Id = tripId, Title = title });
         return updated > 0;
+    }
+
+    /// <summary>
+    /// Folds a set of standalone Events into an *existing* TripGroup — used
+    /// by ScanService.FormGpsAwareTrips when a same-period newcomer (e.g.
+    /// content scanned in later for a Trip that already exists) should join
+    /// it instead of forming a duplicate Trip over the same dates. Extends
+    /// the TripGroup's own StartDate/EndDate to cover every member
+    /// afterward, same recompute SetTakenAtForEvents already does when an
+    /// Event's dates move underneath its Trip.
+    /// </summary>
+    public void AddEventsToTripGroup(long tripGroupId, IReadOnlyList<long> eventIds)
+    {
+        if (eventIds.Count == 0)
+        {
+            return;
+        }
+
+        using var connection = database.OpenConnection();
+        using var transaction = connection.BeginTransaction();
+
+        connection.Execute(
+            "UPDATE Event SET TripGroupId = @TripGroupId WHERE Id IN @EventIds",
+            new { TripGroupId = tripGroupId, EventIds = eventIds }, transaction);
+
+        var memberRanges = connection.Query(
+            "SELECT StartAt, EndAt FROM Event WHERE TripGroupId = @TripGroupId",
+            new { TripGroupId = tripGroupId }, transaction).ToList();
+
+        var startDate = DateOnly.FromDateTime(
+            ParseDateTime(memberRanges.Select(r => (string)r.StartAt).Min(StringComparer.Ordinal)!));
+        var endDate = DateOnly.FromDateTime(
+            ParseDateTime(memberRanges.Select(r => (string)r.EndAt).Max(StringComparer.Ordinal)!));
+
+        connection.Execute(
+            "UPDATE TripGroup SET StartDate = @StartDate, EndDate = @EndDate WHERE Id = @TripGroupId",
+            new { StartDate = startDate.ToString("O"), EndDate = endDate.ToString("O"), TripGroupId = tripGroupId },
+            transaction);
+
+        transaction.Commit();
+    }
+
+    /// <summary>
+    /// The user-facing single-Event counterpart to <see cref="AddEventsToTripGroup"/>
+    /// — confirmed live as a real missing capability: an Event that ended up
+    /// standalone (never auto-formed into a Trip — too short on its own, or
+    /// manually split out via <see cref="MoveMediaItemToEvent"/>) had no way
+    /// to join a Trip it obviously belongs with, since
+    /// <see cref="CreateTripGroup"/> only ever creates a *new* Trip and flatly
+    /// refuses any Event already in one. Same no-file-touched semantics as
+    /// <see cref="CreateTripGroup"/> — purely a TripGroupId assignment, so an
+    /// Adopted or already-Organized Event can join just as freely as a loose
+    /// one.
+    /// </summary>
+    public AddEventToTripGroupResult AddEventToTripGroup(long eventId, long tripGroupId)
+    {
+        using var connection = database.OpenConnection();
+
+        var eventRow = connection.QuerySingleOrDefault(
+            "SELECT TripGroupId FROM Event WHERE Id = @Id", new { Id = eventId });
+        if (eventRow is null)
+        {
+            return AddEventToTripGroupResult.EventNotFound;
+        }
+
+        if (eventRow.TripGroupId is not null)
+        {
+            return AddEventToTripGroupResult.EventAlreadyInATrip;
+        }
+
+        var tripExists = connection.ExecuteScalar<long>(
+            "SELECT COUNT(*) FROM TripGroup WHERE Id = @Id", new { Id = tripGroupId }) > 0;
+        if (!tripExists)
+        {
+            return AddEventToTripGroupResult.TripGroupNotFound;
+        }
+
+        AddEventsToTripGroup(tripGroupId, [eventId]);
+        return AddEventToTripGroupResult.Success;
     }
 
     /// <summary>

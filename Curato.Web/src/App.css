@@ -27,6 +27,18 @@ button {
   font-family: inherit;
 }
 
+/* Confirmed live as missing entirely — every button in the app fell back to
+   the browser's own default focus ring (visibly wrong against this app's
+   own theme, e.g. reading as a stray white halo in dark mode) rather than
+   anything styled. :focus-visible (not plain :focus) so a mouse click still
+   doesn't show a ring — only real keyboard navigation does, same
+   distinction .library-scroll's own pre-existing pair of rules already
+   made just for that one element. */
+button:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 0;
+}
+
 .tagline {
   color: var(--text-muted);
   font-size: 14px;
@@ -157,6 +169,14 @@ button {
   border-radius: 14px;
 }
 
+/* .tagline's shared -8px margin-top (tuned for tucking it under the much
+   smaller .app-header logo/title) reads as cramped here instead — .auth-
+   brand's title is the base h1's full 56px size with nothing else in the
+   layout to visually separate it from the tagline below. */
+.auth-shell .tagline {
+  margin-top: 14px;
+}
+
 /* line-height set explicitly for the same reason as .app-brand h1 — the
    base h1 rule has none of its own, so without this it inherits whatever
    ambient value happens to be in scope instead of one that's actually
@@ -268,6 +288,20 @@ button {
 .trip-select-bar button:last-child {
   background: var(--surface-muted);
   color: var(--text-muted);
+}
+
+.trip-select-bar .danger {
+  background: var(--surface);
+  border: 1px solid var(--border-danger);
+  color: var(--text-danger);
+}
+
+/* Confirmed live as missing entirely — every button in this bar looked
+   inert on hover. A uniform relative darkening reads as "pressed" against
+   each button's own background (accent, muted, or danger) without needing a
+   dedicated hover token for every one of them. */
+.trip-select-bar button:hover {
+  filter: brightness(0.92);
 }
 
 .organize-hint {
@@ -902,7 +936,12 @@ button {
   padding: 0;
   border: none;
   border-radius: 50%;
-  background: rgba(0, 0, 0, 0.55);
+  /* Red-tinted (not the plain dark neutral every other tile overlay uses)
+     to match the same action's color elsewhere — the Event-selection bar's
+     "Move to Recycle Bin" button. Still a hardcoded value, not a page
+     token: this sits on top of arbitrary photo content, not the app's own
+     surface, same reasoning as the rest of this element's styling. */
+  background: rgba(211, 47, 47, 0.7);
   color: white;
   /* An SVG X (not the &times; glyph) — every font's × glyph has its own ink
      offset within its em box, so even flex-centering the line box still
@@ -986,14 +1025,66 @@ button {
   color: #ffc93c;
 }
 
+/* This path's own bounding box is already exactly centered in its 24x24
+   viewBox (confirmed by computing its vertices directly) — the remaining
+   "off-center" look reported live is optical, not geometric: a 5-point
+   star's silhouette is bottom-heavy (two wide lobes low, one thin point
+   high), which reads as sitting low even when it technically isn't.
+   Nudged up slightly to compensate, same reasoning (and shared by) every
+   place this exact star icon appears — the grid tile, Albums/Tags, and the
+   Lightbox toolbar. */
+.star-icon {
+  transform: translateY(-1px);
+}
+
 /* Direct hover feedback on the button itself — distinct from .thumb:hover's
    opacity reveal above, which only says "these controls exist here", not
    "this one specifically is what your cursor is on". */
-.thumb-delete:hover,
 .thumb-move:hover,
 .thumb-favorite:hover {
   background: rgba(0, 0, 0, 0.85);
   transform: scale(1.15);
+}
+
+.thumb-delete:hover {
+  background: rgba(211, 47, 47, 0.95);
+  transform: scale(1.15);
+}
+
+/* Bottom-left — the same corner .live-badge already used, which shifts
+   right (below) to make room rather than this sharing its exact spot.
+   Confirmed live as a real need: moving a whole range of individual photos
+   into a different Event one at a time (each one's own .thumb-move icon)
+   was reported as tiresome — this is the multi-select affordance for the
+   bulk "Move to Event…"/"Move to Recycle Bin" bar it brings up (see
+   LibraryGrid's selectedItemIds). Shown on hover like every other tile
+   overlay, and — same reasoning as .thumb-favorite.is-set — also whenever
+   actually checked, so a selected tile's checkbox doesn't disappear the
+   moment the cursor moves on. Deliberately a real native <input
+   type="checkbox">, not another custom SVG button like its siblings: the
+   checked/unchecked state is exactly what a native checkbox already
+   communicates for free, with no extra styling needed to invent that
+   affordance from scratch. */
+.thumb-select-checkbox {
+  position: absolute;
+  bottom: 4px;
+  left: 4px;
+  width: 16px;
+  height: 16px;
+  margin: 0;
+  cursor: pointer;
+  opacity: 0;
+  transition: opacity 0.15s;
+}
+
+.thumb:hover .thumb-select-checkbox,
+.thumb-select-checkbox:checked {
+  opacity: 1;
+}
+
+.thumb.is-selected {
+  outline: 2px solid var(--accent);
+  outline-offset: -2px;
 }
 
 /* Top-center — every other corner is already taken (Move/Delete top,
@@ -1547,7 +1638,9 @@ button {
 .live-badge {
   position: absolute;
   bottom: 4px;
-  left: 4px;
+  /* Shifted from the plain 4px every other corner badge uses — .thumb-select-checkbox
+     now occupies that exact corner instead. */
+  left: 24px;
   font-size: 9px;
   font-weight: 700;
   letter-spacing: 0.03em;
@@ -1811,6 +1904,24 @@ button {
   width: min(420px, calc(100vw - 32px));
 }
 
+/* Standalone (not nested inside Settings) — rendered straight from App.tsx
+   so it can pop up over the main toolbar's "Download from iCloud" button
+   too, not just from inside Settings. */
+.icloud-2fa-dialog {
+  width: min(380px, calc(100vw - 32px));
+}
+
+.icloud-2fa-dialog .modal-body input {
+  width: 100%;
+  margin-top: 8px;
+  padding: 6px 8px;
+  font-size: 13px;
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  background: var(--surface);
+  color: var(--text);
+}
+
 .folder-browser-path {
   margin: 0 0 10px;
   font-size: 13px;
@@ -1869,6 +1980,19 @@ button {
 
 .lightbox-toolbar button:hover {
   background: rgba(255, 255, 255, 0.2);
+}
+
+/* Red-tinted, matching the same action's color everywhere else it appears
+   (the grid tile's own .thumb-delete, the Event-selection bar's "Move to
+   Recycle Bin" button) rather than this toolbar's plain translucent-white
+   default — a destructive action shouldn't look identical to Rotate/Move/
+   Favorite/Slideshow. */
+.lightbox-toolbar button.lightbox-delete-btn {
+  background: rgba(211, 47, 47, 0.3);
+}
+
+.lightbox-toolbar button.lightbox-delete-btn:hover {
+  background: rgba(211, 47, 47, 0.55);
 }
 
 .lightbox-toolbar button:disabled {

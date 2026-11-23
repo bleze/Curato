@@ -57,9 +57,48 @@ public sealed class ScanService(
     /// this, a file deleted outside Curato (Explorer, a manual `rm`, etc.)
     /// stuck around forever as a "ghost" MediaItem showing "No preview"
     /// rather than the delete actually being reflected in the library.
+    ///
+    /// Incremental under the hood (confirmed live as the dominant cost of
+    /// re-scanning a large, mostly-static library): MediaFileScanner.Scan
+    /// skips re-reading Exif/hashing every file in a folder whose own
+    /// modified-time still matches what the *previous* full scan recorded,
+    /// reusing each one's already-known MediaItem instead. Every folder and
+    /// file is still walked and still yielded either way, so this is purely
+    /// a speedup, never a change in what gets found — deletion detection
+    /// (RemoveMissingFiles below) sees the exact same complete picture it
+    /// always did. The new folder times are only persisted once this
+    /// reaches the end without being cancelled — see the catch block in the
+    /// overload below, which a cancelled run never gets past.
     /// </summary>
-    public ScanResult Scan(string libraryRoot, CancellationToken cancellationToken = default) =>
-        Scan(libraryRoot, new MediaFileScanner().Scan(libraryRoot), cancellationToken);
+    public ScanResult Scan(string libraryRoot, CancellationToken cancellationToken = default)
+    {
+        // Confirmed live as needed here too, not just before an iCloud
+        // sync (where this already ran) — an iCloud-sync placeholder stub
+        // left behind by an earlier interrupted run doesn't wait for the
+        // *next sync* to get cleaned up if an ordinary Scan reaches it
+        // first; left alone, that Scan would index it as a real (all-zero)
+        // MediaItem instead. Must run before the walk below, not after —
+        // once indexed, it's already a false "newly synced" item.
+        OrphanedStubCleanup.CleanupOrphanedStubs(libraryRoot, query);
+
+        var previousFolderModifiedTimes = query.GetFolderModifiedTimes();
+        var previouslyIndexedByRelativePath = query.GetAllMediaItems()
+            .ToDictionary(item => item.RelativePath, item => item, StringComparer.OrdinalIgnoreCase);
+        var currentFolderModifiedTimes = new Dictionary<string, DateTime>();
+
+        var scannedFiles = new MediaFileScanner().Scan(
+            libraryRoot, previousFolderModifiedTimes, previouslyIndexedByRelativePath, currentFolderModifiedTimes);
+
+        var result = Scan(libraryRoot, scannedFiles, cancellationToken, currentFolderModifiedTimes);
+
+        // Only reached once the walk finished without being cancelled (see
+        // the catch block below, which rethrows) — a folder not in this
+        // scan's set either no longer exists or was never visited, so any
+        // stale row for it is safe to drop.
+        repository.PruneFolderModifiedTimes(currentFolderModifiedTimes.Keys);
+
+        return result;
+    }
 
     /// <summary>
     /// The testable core of <see cref="Scan(string, CancellationToken)"/> —
@@ -69,7 +108,20 @@ public sealed class ScanService(
     /// <paramref name="cancellationToken"/>'s source partway through) without
     /// needing real files on disk or real timing.
     /// </summary>
-    public ScanResult Scan(string libraryRoot, IEnumerable<MediaItem> scannedFiles, CancellationToken cancellationToken = default)
+    // Chosen as "frequent enough that an unexpected interruption loses at
+    // most a few seconds of EXIF/hashing work" vs. "infrequent enough that
+    // the extra connection/transaction overhead doesn't meaningfully slow
+    // down a normal scan" — and, confirmed live, infrequent enough not to
+    // trip SQLite's network-filesystem locking fragility either (see
+    // LibraryRepository.FlushScanProgress's doc comment for the incident
+    // this was tuned against).
+    private const int BatchFlushSize = 200;
+
+    public ScanResult Scan(
+        string libraryRoot,
+        IEnumerable<MediaItem> scannedFiles,
+        CancellationToken cancellationToken = default,
+        IReadOnlyDictionary<string, DateTime>? folderModifiedTimes = null)
     {
         progressTracker?.Reset(libraryRoot);
         // Not a plain .ToList() — MediaFileScanner.Scan is a lazy `yield
@@ -80,13 +132,63 @@ public sealed class ScanService(
         // instead of a number that jumps straight to its final value — and,
         // now, is also where a Stop request actually takes effect.
         var scannedItems = new List<MediaItem>();
+        // Confirmed live as a real way to lose an entire long scan's worth
+        // of work: the *hosting process* getting killed outright (not a
+        // graceful Stop click) can't be caught by the try/catch below at
+        // all — nothing runs after that. Flushing what's been found so far
+        // every BatchFlushSize items means a hard kill only ever costs
+        // whatever's accumulated since the last flush. Each flush also
+        // carries along the modified-time of every folder that happened to
+        // finish *within* that batch (exploiting MediaFileScanner's
+        // depth-first walk, which always yields one folder's files fully
+        // before moving to the next, so "folder changed" reliably means
+        // "previous folder is done") — in one single connection/transaction
+        // together with the items (see FlushScanProgress), not one
+        // connection per folder: this repository's database can live on a
+        // network share, where a connection per folder was confirmed live
+        // to trip SQLite's own network-locking fragility on a library with
+        // many small folders. Safe to flush ahead of RemoveMissingFiles/
+        // ScanItems below: UpsertMediaItems is idempotent on RelativePath,
+        // so re-upserting the same items again as part of the normal
+        // end-of-scan pipeline is a harmless no-op, not a duplicate.
+        var pendingItems = new List<MediaItem>();
+        var pendingCompletedFolders = new List<(string RelativePath, DateTime ModifiedUtc)>();
+        string? currentFolder = null;
         try
         {
             foreach (var item in scannedFiles)
             {
                 cancellationToken.ThrowIfCancellationRequested();
+
+                var folder = GetContainingFolder(item.RelativePath);
+                if (currentFolder is not null && folder != currentFolder)
+                {
+                    MarkFolderComplete(currentFolder, pendingCompletedFolders, folderModifiedTimes);
+                }
+
+                currentFolder = folder;
                 scannedItems.Add(item);
+                pendingItems.Add(item);
                 progressTracker?.Increment(libraryRoot);
+
+                if (pendingItems.Count >= BatchFlushSize)
+                {
+                    repository.FlushScanProgress(pendingItems, pendingCompletedFolders);
+                    pendingItems.Clear();
+                    pendingCompletedFolders.Clear();
+                }
+            }
+
+            if (currentFolder is not null)
+            {
+                MarkFolderComplete(currentFolder, pendingCompletedFolders, folderModifiedTimes);
+            }
+
+            if (pendingItems.Count > 0 || pendingCompletedFolders.Count > 0)
+            {
+                repository.FlushScanProgress(pendingItems, pendingCompletedFolders);
+                pendingItems.Clear();
+                pendingCompletedFolders.Clear();
             }
         }
         catch (OperationCanceledException)
@@ -99,12 +201,33 @@ public sealed class ScanService(
             // clustering a partial cut risks an Event that gets awkwardly
             // split once the next full scan finishes the job. The next Scan
             // just picks these rows back up and clusters them normally.
+            // Any folder completed since the last actual flush is
+            // deliberately left unrecorded in FolderScanState — its items
+            // are safe (upserted below), but the next scan will revisit it
+            // to confirm that, rather than trusting an unflushed promise.
             repository.UpsertMediaItems(scannedItems);
             throw;
         }
 
         var removedMissingFileCount = RemoveMissingFiles(scannedItems);
         return ScanItems(scannedItems) with { RemovedMissingFileCount = removedMissingFileCount };
+    }
+
+    private static void MarkFolderComplete(
+        string folder,
+        List<(string RelativePath, DateTime ModifiedUtc)> pendingCompletedFolders,
+        IReadOnlyDictionary<string, DateTime>? folderModifiedTimes)
+    {
+        if (folderModifiedTimes is not null && folderModifiedTimes.TryGetValue(folder, out var modifiedUtc))
+        {
+            pendingCompletedFolders.Add((folder, modifiedUtc));
+        }
+    }
+
+    private static string GetContainingFolder(string relativePath)
+    {
+        var lastSlash = relativePath.LastIndexOf('/');
+        return lastSlash < 0 ? "" : relativePath[..lastSlash];
     }
 
     /// <summary>
@@ -306,10 +429,26 @@ public sealed class ScanService(
         var eventLocations = candidateEvents.ToDictionary(
             e => e.Id, e => GpsTripGate.RepresentativeLocation(e, itemsById));
 
+        // Confirmed live as a real gap: content re-scanned later for an
+        // already-formed Trip's own dates (e.g. imported after the fact into
+        // .Import, or any other content that lands outside an
+        // already-adopted/already-organized folder) only ever considers
+        // *other ungrouped* Events as merge candidates — an Event already
+        // belonging to an existing Trip is excluded from `candidateEvents`
+        // above, so it can never pull a same-period newcomer in with it.
+        // Without this, the newcomer's own run of days — now standing alone
+        // because its real neighbors are already spoken for — can still
+        // independently clear MinSpanDays and silently form a *second*,
+        // duplicate Trip over the same dates instead of joining the first.
+        var existingAutoTrips = query.GetAllTripGroups()
+            .Where(t => t.NamingMode == NamingMode.CuratoManaged)
+            .ToList();
+
         var clusterer = new TripClusterer();
         var qualifyingTrips = new List<TripGroup>();
+        var mergeEventIdsByExistingTripId = new Dictionary<long, List<long>>();
 
-        foreach (var candidate in clusterer.Cluster(candidateEvents))
+        foreach (var candidate in clusterer.GroupConsecutive(candidateEvents))
         {
             // TripClusterer's own time-gap chaining has no bound on how long
             // a run can grow, and a candidate qualifying because *something*
@@ -326,9 +465,40 @@ public sealed class ScanService(
             var members = trimmedIds.Select(id => candidateEventsById[id]).OrderBy(e => e.StartAt).ToList();
             var startDate = DateOnly.FromDateTime(members[0].StartAt);
             var endDate = DateOnly.FromDateTime(members[^1].EndAt);
+            var memberIds = members.Select(e => e.Id).ToList();
+
+            // Checked BEFORE the MinSpanDays filter below, deliberately —
+            // confirmed live as a real bug, not just an ordering nit: a
+            // single new day's worth of away-from-home photos scanned in
+            // for a trip already in progress (its earlier days already
+            // grouped, hence excluded from `candidateEvents` and invisible
+            // to TripClusterer here) is, on its own, far too short a span
+            // to independently qualify as a new trip — so the MinSpanDays
+            // check below was silently discarding it before ever reaching
+            // this existing-trip match, stranding it as its own standalone
+            // Event instead of extending the trip it's obviously part of.
+            // Same adjacency rule TripClusterer itself uses to decide two
+            // Events belong to the same Trip in the first place — applied
+            // here against an already-saved Trip's own date range, so a
+            // same-period newcomer joins it regardless of how short its own
+            // slice is in isolation.
+            var existingMatch = existingAutoTrips.FirstOrDefault(
+                t => IsWithinGap(t, startDate, endDate, clusterer.GapThreshold));
+
+            if (existingMatch is not null)
+            {
+                if (!mergeEventIdsByExistingTripId.TryGetValue(existingMatch.Id, out var pending))
+                {
+                    mergeEventIdsByExistingTripId[existingMatch.Id] = pending = [];
+                }
+
+                pending.AddRange(memberIds);
+                continue;
+            }
+
             if (endDate.DayNumber - startDate.DayNumber + 1 < clusterer.MinSpanDays)
             {
-                continue; // trimming collapsed it below a real multi-day trip
+                continue; // trimming collapsed it below a real multi-day trip, and no existing trip to extend either
             }
 
             qualifyingTrips.Add(new TripGroup
@@ -338,8 +508,13 @@ public sealed class ScanService(
                 Title = $"{startDate:yyyy-MM-dd} to {endDate:yyyy-MM-dd}",
                 TitleIsAuto = true,
                 NamingMode = NamingMode.CuratoManaged,
-                EventIds = members.Select(e => e.Id).ToList()
+                EventIds = memberIds
             });
+        }
+
+        foreach (var (existingTripId, eventIds) in mergeEventIdsByExistingTripId)
+        {
+            repository.AddEventsToTripGroup(existingTripId, eventIds);
         }
 
         foreach (var trip in qualifyingTrips)
@@ -357,6 +532,14 @@ public sealed class ScanService(
         return qualifyingTrips;
     }
 
+    private static bool IsWithinGap(TripGroup existingTrip, DateOnly startDate, DateOnly endDate, TimeSpan gapThreshold)
+    {
+        var bufferDays = (int)Math.Ceiling(gapThreshold.TotalDays);
+        var existingStart = existingTrip.StartDate.AddDays(-bufferDays);
+        var existingEnd = existingTrip.EndDate.AddDays(bufferDays);
+        return startDate <= existingEnd && existingStart <= endDate;
+    }
+
     /// <summary>
     /// Appends a resolved place name to each newly-clustered loose Event's
     /// plain time-of-day auto-title (e.g. "Afternoon" becomes
@@ -371,7 +554,7 @@ public sealed class ScanService(
     /// Adopted Event (its title always comes from a real folder name, not
     /// this clusterer) or an Event with no GPS-tagged members at all.
     /// </summary>
-    private void EnrichAutoTitlesWithLocation(
+    public void EnrichAutoTitlesWithLocation(
         IReadOnlyList<Event> autoEvents, IReadOnlyDictionary<long, MediaItem> itemsById, (double Lat, double Lon)? homeLocation)
     {
         foreach (var @event in autoEvents)

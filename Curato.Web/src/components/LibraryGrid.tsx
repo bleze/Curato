@@ -1,6 +1,6 @@
 import { useVirtualizer } from '@tanstack/react-virtual'
 import { useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react'
-import type { EventDto, FavoriteCategoryDto, LibraryDto, MediaItemDto, TripGroupDto } from '../api'
+import type { EventDto, FavoriteCategoryDto, LibraryDto, MediaItemDto, ResetTakenAtResult, TripGroupDto } from '../api'
 import { bumpImageVersion, rotateMediaItem, thumbnailUrl } from '../api'
 import type { DateMarker } from './DateScrubber'
 import { DateScrubber } from './DateScrubber'
@@ -234,13 +234,17 @@ export function LibraryGrid({
   favoriteCategories,
   scanning,
   onDelete,
+  onDeleteEvents,
+  onDeleteMediaItems,
   onTakenAtChanged,
   onResetTakenAt,
   onRotated,
   onRenameEvent,
   onRenameTrip,
   onMoveMediaItemToEvent,
+  onMoveMediaItemsToEvent,
   onCreateTripGroup,
+  onAddEventsToTrip,
   onUngroupTripGroup,
   onMergeEventsInto,
   onRemoveEventsFromTrip,
@@ -253,13 +257,20 @@ export function LibraryGrid({
   /** A scan is currently running against this same library — an empty grid means "not indexed yet", not "genuinely empty", so the message below needs to say that instead. */
   scanning: boolean
   onDelete: (mediaItemId: number) => void
+  onDeleteEvents: (eventIds: number[]) => void
+  /** Bulk counterpart of onDelete — the photo-selection bar's own "Move to Recycle Bin". */
+  onDeleteMediaItems: (mediaItemIds: number[]) => void
   onTakenAtChanged: (mediaItemId: number, takenAt: string) => void
-  onResetTakenAt: (mediaItemId: number) => Promise<void>
+  onResetTakenAt: (mediaItemId: number) => Promise<ResetTakenAtResult | null>
   onRotated: (mediaItemId: number) => void
   onRenameEvent: (eventId: number, title: string) => void
   onRenameTrip: (tripGroupId: number, title: string) => void
   onMoveMediaItemToEvent: (mediaItemId: number, targetEventId: number | null) => void
+  /** Bulk counterpart of onMoveMediaItemToEvent — always against an existing target (no "new standalone Event" option). */
+  onMoveMediaItemsToEvent: (mediaItemIds: number[], targetEventId: number) => void
   onCreateTripGroup: (eventIds: number[]) => void
+  /** Adds already-standalone Events into an already-existing Trip — the counterpart to onCreateTripGroup for when the Trip it belongs with already exists. */
+  onAddEventsToTrip: (eventIds: number[], tripGroupId: number) => void
   onUngroupTripGroup: (tripGroupId: number) => void
   onMergeEventsInto: (sourceEventIds: number[], targetEventId: number) => void
   onRemoveEventsFromTrip: (eventIds: number[]) => void
@@ -350,6 +361,10 @@ export function LibraryGrid({
   const [fixingDatesEventIds, setFixingDatesEventIds] = useState<number[] | null>(null)
   const [fixDateDraft, setFixDateDraft] = useState('')
   function toggleEventSelected(eventId: number) {
+    // Mutually exclusive with photo selection (below) — the bottom bar each
+    // drives shows one set of actions at a time; mixing both selections at
+    // once would mean two bars fighting for the same fixed position.
+    setSelectedItemIds(new Set())
     setSelectedEventIds((current) => {
       const next = new Set(current)
       if (next.has(eventId)) next.delete(eventId)
@@ -357,15 +372,32 @@ export function LibraryGrid({
       return next
     })
   }
-  // Backs the shared "pick an Event" popup for both a single photo's own
-  // Move icon (grid tile, item mode) and the selection bar's "Merge into
-  // another Event" action (event mode — merges every checked Event into
-  // whichever target gets picked, so it works the same whether one or
-  // several are checked; "Group into Trip" is offered alongside it once 2+
-  // are checked, since that action alone needs more than one source).
+  // Selecting individual photos across (possibly) several Events at once —
+  // confirmed live as a real need: moving a whole range of photos into a
+  // different Event one at a time (the grid tile's own Move icon) was
+  // reported as tiresome. Keyed by MediaItemId, not position, so it survives
+  // the grid reflowing under it exactly like selectedEventIds does.
+  const [selectedItemIds, setSelectedItemIds] = useState<Set<number>>(new Set())
+  function toggleItemSelected(mediaItemId: number) {
+    setSelectedEventIds(new Set())
+    setSelectedItemIds((current) => {
+      const next = new Set(current)
+      if (next.has(mediaItemId)) next.delete(mediaItemId)
+      else next.add(mediaItemId)
+      return next
+    })
+  }
+  // Backs the shared "pick an Event" popup for a single photo's own Move
+  // icon (item mode), the selection bar's "Merge into another Event" action
+  // (event mode — merges every checked Event into whichever target gets
+  // picked), and the photo-selection bar's own "Move to Event" action
+  // (items mode — moves every individually-checked photo there at once,
+  // regardless of which Event(s) they're currently in).
   const [moveTarget, setMoveTarget] = useState<
     | { kind: 'item'; item: MediaItemDto; eventId: number }
     | { kind: 'event'; eventIds: number[]; referenceStartAt: string }
+    | { kind: 'items'; mediaItemIds: number[]; referenceTakenAt: string }
+    | { kind: 'event-to-trip'; eventIds: number[]; referenceStartAt: string }
     | null
   >(null)
   const [moveSearch, setMoveSearch] = useState('')
@@ -405,6 +437,25 @@ export function LibraryGrid({
     }
     return event.startAt
   }
+
+  function isRealDateSource(source: ResetTakenAtResult['takenAtSource']): boolean {
+    return source === 'ExifDateTaken' || source === 'ExifModifyDate' || source === 'VideoMetadata'
+  }
+
+  // Confirmed live as a real gap: a file whose true date simply wasn't read
+  // yet (e.g. an AVI indexed before its metadata tag was understood) would
+  // otherwise always get the folder-guessed noon fallback above, even
+  // though its own file still has the real timestamp sitting in it. Always
+  // try re-reading the file for real first — onResetTakenAt is the same
+  // "recover true date from the file" action already used elsewhere (the
+  // Lightbox's own reset button) — and only fall back to the folder/median
+  // guess if that doesn't turn up a genuine Exif/video-metadata date.
+  async function fixOutlierDate(mediaItemId: number, event: EventDto) {
+    const result = await onResetTakenAt(mediaItemId)
+    if (!result || !isRealDateSource(result.takenAtSource)) {
+      onTakenAtChanged(mediaItemId, outlierFixTarget(event))
+    }
+  }
   // Flattened once per library load for the Lightbox's "Move to Event"
   // picker — it needs every Event's id/title/date range regardless of
   // whether it's standalone or nested under a Trip, but never the
@@ -423,6 +474,22 @@ export function LibraryGrid({
     [library],
   )
 
+  // Same shape as allEventSummaries, for the "Add to Trip…" picker — reuses
+  // EventPicker as-is (tripGroupId is unused by the picker itself) rather
+  // than building a second, near-identical component just to pick a Trip
+  // instead of an Event.
+  const allTripSummaries = useMemo(
+    () =>
+      library.trips.map((t) => ({
+        id: t.id,
+        title: t.title,
+        startAt: t.startDate,
+        endAt: t.endDate,
+        tripGroupId: null,
+      })),
+    [library],
+  )
+
   // The Lightbox's own items, looked up fresh by eventId every render — see
   // the `lightbox` state's own comment for why this isn't just a snapshot.
   const eventsById = useMemo(
@@ -430,6 +497,14 @@ export function LibraryGrid({
     [library],
   )
   const lightboxItems = lightbox ? (eventsById.get(lightbox.eventId)?.items ?? []) : []
+
+  // Backs the photo-selection bar below — needs each selected MediaItem's
+  // own takenAt (for the "pick an Event" popup's proximity sort) by id
+  // alone, since selectedItemIds doesn't carry the full MediaItemDto.
+  const allMediaItemsById = useMemo(
+    () => new Map(Array.from(eventsById.values()).flatMap((e) => e.items.map((i) => [i.id, i] as const))),
+    [eventsById],
+  )
 
   // Lets you rotate a photo by hovering its grid thumbnail and pressing
   // L/R, without opening the fullscreen viewer first — same non-destructive
@@ -450,6 +525,20 @@ export function LibraryGrid({
     window.addEventListener('keydown', onKeyDown)
     return () => window.removeEventListener('keydown', onKeyDown)
   }, [libraryPath])
+
+  // Confirmed live as a real gap: on a fresh page load, nothing has focus
+  // at all, so every keyboard shortcut this view offers (arrow-key
+  // scrolling, L/R rotate, Delete in the Lightbox, ...) silently does
+  // nothing until the user clicks the grid once first — the exact same
+  // problem jumpToFraction's own re-focus (above) was built to fix for a
+  // Year/date-scrubber jump, just not yet covered for the view's very first
+  // render. Runs once per library load (this component remounts when a
+  // library is opened, not on every data refresh), same target element
+  // arrow-key scrolling and the hover-to-rotate shortcut already expect
+  // focus to be on.
+  useEffect(() => {
+    scrollRef.current?.focus()
+  }, [])
 
   useLayoutEffect(() => {
     const el = scrollRef.current
@@ -555,6 +644,19 @@ export function LibraryGrid({
     overscan: 6,
   })
 
+  // Shared by YearJumpBar and DateScrubber's own onJump — confirmed live
+  // that clicking either left keyboard focus wherever it already was (often
+  // nowhere, or a button that's about to scroll out of view), so anyone who
+  // can't reliably re-click to refocus the grid lost keyboard interaction
+  // with it entirely after a single jump. Re-focusing the scroll container
+  // itself (already tabIndex=0, already where arrow-key scrolling and the
+  // hover-to-rotate shortcut both expect focus to land) makes a jump behave
+  // like any other way of landing on this view, not a dead end.
+  function jumpToFraction(fraction: number) {
+    virtualizer.scrollToOffset(fraction * scrollableRange, { align: 'start' })
+    scrollRef.current?.focus()
+  }
+
   // The scroll container itself must always render, at the same JSX root
   // shape, on every branch below (so React never unmounts/remounts it —
   // confirmed live: a branch that returned a differently-typed root swapped
@@ -569,7 +671,7 @@ export function LibraryGrid({
         <YearJumpBar
           markers={dateMarkers}
           beforeDigitalScansFraction={beforeDigitalScansFraction}
-          onJump={(fraction) => virtualizer.scrollToOffset(fraction * scrollableRange, { align: 'start' })}
+          onJump={jumpToFraction}
         />
         <div className="library-scroll-wrapper">
           <div
@@ -589,7 +691,7 @@ export function LibraryGrid({
         <YearJumpBar
           markers={dateMarkers}
           beforeDigitalScansFraction={beforeDigitalScansFraction}
-          onJump={(fraction) => virtualizer.scrollToOffset(fraction * scrollableRange, { align: 'start' })}
+          onJump={jumpToFraction}
         />
         <div className="library-scroll-wrapper">
           <div
@@ -614,7 +716,7 @@ export function LibraryGrid({
       <YearJumpBar
         markers={dateMarkers}
         beforeDigitalScansFraction={beforeDigitalScansFraction}
-        onJump={(fraction) => virtualizer.scrollToOffset(fraction * scrollableRange, { align: 'start' })}
+        onJump={jumpToFraction}
       />
       <div className="library-scroll-wrapper">
       <div
@@ -740,14 +842,14 @@ export function LibraryGrid({
                       onOpen={() => setLightbox({ index: block.startIndex + i, eventId: block.event.id })}
                       onDelete={onDelete}
                       onMove={() => setMoveTarget({ kind: 'item', item, eventId: block.event.id })}
+                      selected={selectedItemIds.has(item.id)}
+                      onToggleSelect={() => toggleItemSelected(item.id)}
                       onHoverChange={(hovering) => {
                         hoveredPhotoRef.current = hovering && item.kind === 'Photo' ? item : null
                       }}
                       showFavoriteButton={favoriteCategories.length > 0}
                       onFavoriteClick={() => handleStarClick(item)}
-                      onFixOutlierDate={
-                        item.isDateOutlier ? () => onTakenAtChanged(item.id, outlierFixTarget(block.event)) : undefined
-                      }
+                      onFixOutlierDate={item.isDateOutlier ? () => fixOutlierDate(item.id, block.event) : undefined}
                     />
                   ))}
                 </div>
@@ -760,7 +862,7 @@ export function LibraryGrid({
 
       <DateScrubber
         markers={dateMarkers}
-        onJump={(fraction) => virtualizer.scrollToOffset(fraction * scrollableRange, { align: 'start' })}
+        onJump={jumpToFraction}
         thumbSizeFraction={scrubberThumbSizeFraction}
         thumbRef={scrubberThumbRef}
         railRef={scrubberRailRef}
@@ -795,6 +897,23 @@ export function LibraryGrid({
                 }}
               >
                 Group into Trip
+              </button>
+            )}
+          {selectedEventIds.size >= 1 &&
+            allTripSummaries.length > 0 &&
+            [...selectedEventIds].every((id) => allEventSummaries.find((e) => e.id === id)?.tripGroupId == null) && (
+              <button
+                type="button"
+                onClick={() => {
+                  const ids = [...selectedEventIds]
+                  const earliest = ids
+                    .map((id) => allEventSummaries.find((e) => e.id === id))
+                    .filter((e): e is EventSummary => e !== undefined)
+                    .sort((a, b) => new Date(a.startAt).getTime() - new Date(b.startAt).getTime())[0]
+                  if (earliest) setMoveTarget({ kind: 'event-to-trip', eventIds: ids, referenceStartAt: earliest.startAt })
+                }}
+              >
+                Add to Trip…
               </button>
             )}
           {[...selectedEventIds].some((id) => allEventSummaries.find((e) => e.id === id)?.tripGroupId != null) && (
@@ -849,7 +968,51 @@ export function LibraryGrid({
           >
             Fix dates…
           </button>
+          <button
+            type="button"
+            className="danger"
+            title="Move every photo/video in the selected Event(s) to the Recycle Bin"
+            onClick={() => {
+              onDeleteEvents([...selectedEventIds])
+              setSelectedEventIds(new Set())
+            }}
+          >
+            Move to Recycle Bin
+          </button>
           <button type="button" onClick={() => setSelectedEventIds(new Set())}>
+            Cancel
+          </button>
+        </div>
+      )}
+
+      {selectedItemIds.size > 0 && (
+        <div className="trip-select-bar">
+          <span>{selectedItemIds.size} photo(s) selected</span>
+          <button
+            type="button"
+            onClick={() => {
+              const ids = [...selectedItemIds]
+              const earliest = ids
+                .map((id) => allMediaItemsById.get(id))
+                .filter((i): i is MediaItemDto => i !== undefined)
+                .sort((a, b) => new Date(a.takenAt).getTime() - new Date(b.takenAt).getTime())[0]
+              if (earliest) setMoveTarget({ kind: 'items', mediaItemIds: ids, referenceTakenAt: earliest.takenAt })
+            }}
+          >
+            Move to Event…
+          </button>
+          <button
+            type="button"
+            className="danger"
+            title="Move every selected photo/video to the Recycle Bin"
+            onClick={() => {
+              onDeleteMediaItems([...selectedItemIds])
+              setSelectedItemIds(new Set())
+            }}
+          >
+            Move to Recycle Bin
+          </button>
+          <button type="button" onClick={() => setSelectedItemIds(new Set())}>
             Cancel
           </button>
         </div>
@@ -858,17 +1021,31 @@ export function LibraryGrid({
       {moveTarget && (
         <div className="event-picker-overlay" onClick={closeMovePicker}>
           <EventPicker
-            allEvents={allEventSummaries}
-            referenceTakenAt={moveTarget.kind === 'item' ? moveTarget.item.takenAt : moveTarget.referenceStartAt}
-            excludeEventIds={moveTarget.kind === 'item' ? [moveTarget.eventId] : moveTarget.eventIds}
+            allEvents={moveTarget.kind === 'event-to-trip' ? allTripSummaries : allEventSummaries}
+            referenceTakenAt={
+              moveTarget.kind === 'item'
+                ? moveTarget.item.takenAt
+                : moveTarget.kind === 'items'
+                  ? moveTarget.referenceTakenAt
+                  : moveTarget.referenceStartAt
+            }
+            excludeEventIds={
+              moveTarget.kind === 'item' ? [moveTarget.eventId] : moveTarget.kind === 'event' ? moveTarget.eventIds : []
+            }
             allowNewEvent={moveTarget.kind === 'item'}
             search={moveSearch}
             onSearchChange={setMoveSearch}
             onPick={(targetEventId) => {
               if (moveTarget.kind === 'item') {
                 onMoveMediaItemToEvent(moveTarget.item.id, targetEventId)
-              } else if (targetEventId !== null) {
+              } else if (targetEventId !== null && moveTarget.kind === 'event') {
                 onMergeEventsInto(moveTarget.eventIds, targetEventId)
+                setSelectedEventIds(new Set())
+              } else if (targetEventId !== null && moveTarget.kind === 'items') {
+                onMoveMediaItemsToEvent(moveTarget.mediaItemIds, targetEventId)
+                setSelectedItemIds(new Set())
+              } else if (targetEventId !== null && moveTarget.kind === 'event-to-trip') {
+                onAddEventsToTrip(moveTarget.eventIds, targetEventId)
                 setSelectedEventIds(new Set())
               }
               closeMovePicker()
@@ -1052,6 +1229,8 @@ function ThumbTile({
   onOpen,
   onDelete,
   onMove,
+  selected,
+  onToggleSelect,
   onHoverChange,
   showFavoriteButton,
   onFavoriteClick,
@@ -1083,6 +1262,9 @@ function ThumbTile({
   onOpen: () => void
   onDelete: (mediaItemId: number) => void
   onMove: () => void
+  /** Multi-select for bulk "Move to Event…"/"Move to Recycle Bin" — see LibraryGrid's own selectedItemIds. */
+  selected: boolean
+  onToggleSelect: () => void
   onHoverChange: (hovering: boolean) => void
   /** Hidden entirely (not just disabled) when zero favorite categories exist — nothing to assign. */
   showFavoriteButton: boolean
@@ -1105,11 +1287,19 @@ function ThumbTile({
 
   return (
     <div
-      className="thumb"
+      className={`thumb ${selected ? 'is-selected' : ''}`}
       title={`${item.relativePath}\n${formatTakenAt(item.takenAt, use24Hour)}`}
       onMouseEnter={() => onHoverChange(true)}
       onMouseLeave={() => onHoverChange(false)}
     >
+      <input
+        type="checkbox"
+        className="thumb-select-checkbox"
+        title="Select for a bulk Move/Recycle Bin action"
+        checked={selected}
+        onClick={(e) => e.stopPropagation()}
+        onChange={onToggleSelect}
+      />
       {/* No <img> at all while suspended, rather than one with no src —
           an <img> with a missing/empty src still renders Chrome's own
           broken-image glyph and border, which looked far worse than the
@@ -1121,7 +1311,17 @@ function ThumbTile({
           src={thumbnailUrl(libraryPath, item.relativePath, item.id)}
           alt=""
           loading="lazy"
-          onClick={onOpen}
+          onClick={(e) => {
+            // Ctrl/Cmd-click toggles selection instead of opening the
+            // viewer — confirmed live as wanted: hitting the small
+            // bottom-left checkbox exactly, tile after tile, for a whole
+            // range was reported as tiresome in its own right.
+            if (e.ctrlKey || e.metaKey) {
+              onToggleSelect()
+            } else {
+              onOpen()
+            }
+          }}
           onError={(e) => {
             e.currentTarget.replaceWith(
               Object.assign(document.createElement('div'), {
@@ -1173,6 +1373,7 @@ function ThumbTile({
           }}
         >
           <svg
+            className="star-icon"
             viewBox="0 0 24 24"
             width="11"
             height="11"

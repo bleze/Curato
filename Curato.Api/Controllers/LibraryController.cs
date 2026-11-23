@@ -362,15 +362,66 @@ public sealed class LibraryController(LibraryOperationGate gate, ServerDatabase 
 
         var database = new LibraryDatabase(request.Path);
         database.EnsureSchema();
-        var result = new LibraryRepository(database).MoveMediaItemToEvent(request.MediaItemId, request.TargetEventId);
+        var repository = new LibraryRepository(database);
+        var outcome = repository.MoveMediaItemToEvent(request.MediaItemId, request.TargetEventId);
 
-        return result switch
+        // A brand-new standalone Event (targetEventId was null) gets the
+        // exact same "Afternoon" → "Afternoon · Lejre Kommune" location
+        // enrichment a normal Scan's own clustering already applies —
+        // confirmed live as a real inconsistency otherwise: splitting a
+        // photo out this way landed it with a plain time-of-day title even
+        // though every other auto-formed Event right next to it says where.
+        if (outcome is { Result: MoveMediaItemResult.Success, EventId: { } newEventId } && request.TargetEventId is null)
+        {
+            var query = new LibraryQueryService(database);
+            var newEvent = query.GetAllEvents().SingleOrDefault(e => e.Id == newEventId);
+            if (newEvent is not null)
+            {
+                var itemsById = query.GetAllMediaItems().ToDictionary(i => i.Id);
+                var homeLocation = GpsTripGate.DetectHomeLocation(itemsById.Values);
+                var homeLabel = new HomeLocationRepository(serverDatabase).Get();
+                new ScanService(repository, query, database, homeLabel: homeLabel)
+                    .EnrichAutoTitlesWithLocation([newEvent], itemsById, homeLocation);
+                repository.SetAutoEventTitle(newEvent.Id, newEvent.Title);
+            }
+        }
+
+        return outcome.Result switch
         {
             MoveMediaItemResult.Success => NoContent(),
             MoveMediaItemResult.MediaItemNotFound => NotFound($"No MediaItem with id {request.MediaItemId}"),
             MoveMediaItemResult.TargetEventNotFound => NotFound($"No Event with id {request.TargetEventId}"),
             _ => StatusCode(500)
         };
+    }
+
+    public sealed record MoveMediaItemsToEventRequest(string Path, IReadOnlyList<long> MediaItemIds, long TargetEventId);
+
+    /// <summary>
+    /// Bulk counterpart to <see cref="MoveMediaItemToEvent"/> — moving a
+    /// whole range of individually-selected photos one at a time was
+    /// reported as tiresome. See LibraryRepository.MoveMediaItemsToEvent:
+    /// unlike the single-item move, this never creates a new Event (the UI
+    /// only offers it against an existing target, same as merging Events).
+    /// </summary>
+    [HttpPost("media-items/move-to-event-bulk")]
+    public IActionResult MoveMediaItemsToEvent([FromBody] MoveMediaItemsToEventRequest request)
+    {
+        if (!Directory.Exists(request.Path))
+        {
+            return NotFound($"Folder not found: {request.Path}");
+        }
+
+        var database = new LibraryDatabase(request.Path);
+        database.EnsureSchema();
+        var results = new LibraryRepository(database).MoveMediaItemsToEvent(request.MediaItemIds, request.TargetEventId);
+
+        if (results.Count > 0 && results[0] == MoveMediaItemResult.TargetEventNotFound)
+        {
+            return NotFound($"No Event with id {request.TargetEventId}");
+        }
+
+        return NoContent();
     }
 
     public sealed record CreateTripGroupRequest(string Path, IReadOnlyList<long> EventIds);
@@ -398,6 +449,37 @@ public sealed class LibraryController(LibraryOperationGate gate, ServerDatabase 
             CreateTripGroupResult.NoEventsGiven => BadRequest("Select at least one Event to group into a Trip."),
             CreateTripGroupResult.EventNotFound => NotFound("One of the selected Events no longer exists."),
             CreateTripGroupResult.EventAlreadyInATrip => Conflict("One of the selected Events already belongs to a Trip — ungroup it first."),
+            _ => StatusCode(500)
+        };
+    }
+
+    public sealed record AddEventToTripGroupRequest(string Path, long EventId);
+
+    /// <summary>
+    /// Adds a standalone Event into an already-existing Trip — the
+    /// counterpart to <see cref="CreateTripGroup"/> for when the Trip it
+    /// belongs with already exists (e.g. auto-formation was too short on its
+    /// own to extend it, or it was manually split out). See
+    /// LibraryRepository.AddEventToTripGroup.
+    /// </summary>
+    [HttpPost("trips/{tripGroupId:long}/add-event")]
+    public IActionResult AddEventToTripGroup(long tripGroupId, [FromBody] AddEventToTripGroupRequest request)
+    {
+        if (!Directory.Exists(request.Path))
+        {
+            return NotFound($"Folder not found: {request.Path}");
+        }
+
+        var database = new LibraryDatabase(request.Path);
+        database.EnsureSchema();
+        var result = new LibraryRepository(database).AddEventToTripGroup(request.EventId, tripGroupId);
+
+        return result switch
+        {
+            AddEventToTripGroupResult.Success => NoContent(),
+            AddEventToTripGroupResult.EventNotFound => NotFound($"No Event with id {request.EventId}"),
+            AddEventToTripGroupResult.TripGroupNotFound => NotFound($"No TripGroup with id {tripGroupId}"),
+            AddEventToTripGroupResult.EventAlreadyInATrip => Conflict("That Event already belongs to a Trip — ungroup it first."),
             _ => StatusCode(500)
         };
     }

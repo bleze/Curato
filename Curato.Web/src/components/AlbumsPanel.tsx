@@ -1,5 +1,5 @@
 import { useEffect, useState } from 'react'
-import type { FavoriteCategoryDto, MediaItemDto, TagDto } from '../api'
+import type { FavoriteCategoryDto, MediaItemDto, ResetTakenAtResult, TagDto } from '../api'
 import { getTagItems, getTags, thumbnailUrl } from '../api'
 import { TagGrid } from './TagGrid'
 
@@ -15,7 +15,7 @@ export function AlbumsPanel({
   libraryPath: string
   onDelete: (mediaItemId: number) => void
   onTakenAtChanged: (mediaItemId: number, takenAt: string) => void
-  onResetTakenAt?: (mediaItemId: number) => Promise<void>
+  onResetTakenAt?: (mediaItemId: number) => Promise<ResetTakenAtResult | null>
   onRotated: (mediaItemId: number) => void
   favoriteCategories?: FavoriteCategoryDto[]
   onSetFavoriteCategory?: (mediaItemId: number, tagId: number | null) => void
@@ -60,12 +60,13 @@ export function AlbumsPanel({
   // re-fetching this tag's items is simpler than plumbing the resolved
   // date/source back through just to patch local state by hand.
   async function handleResetTakenAt(mediaItemId: number) {
-    await onResetTakenAt?.(mediaItemId)
+    const result = await onResetTakenAt?.(mediaItemId)
     if (selectedTag) {
       getTagItems(libraryPath, selectedTag.id)
         .then(setTagItems)
         .catch((err) => setError(err instanceof Error ? err.message : String(err)))
     }
+    return result ?? null
   }
 
   function handleSetFavoriteCategory(mediaItemId: number, tagId: number | null) {

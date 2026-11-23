@@ -256,6 +256,101 @@ public class ScanServiceTripFormationTests
     }
 
     [Fact]
+    public void Content_scanned_in_later_for_an_already_formed_trips_own_dates_joins_it_instead_of_duplicating_it()
+    {
+        // The exact bug reported live: dropping a new folder of photos into
+        // .Import (or anywhere else outside the already-organized folder)
+        // for a trip that already exists, from the same period and the same
+        // place, formed a *second*, duplicate Trip over the same dates
+        // instead of joining the real one — because FormGpsAwareTrips only
+        // ever clusters Events that aren't already in a Trip, so the
+        // newcomer's real neighbors (already spoken for) can't pull it in.
+        WithGpsAwareLibrary((repository, query, service, client) =>
+        {
+            service.ScanItems(
+            [
+                // A home-area cluster so DetectHomeLocation has a real home
+                // to compare Rome against — otherwise Rome itself becomes
+                // "home" by default and never qualifies as "away". Enough of
+                // them to still outnumber Rome's photos once more Rome
+                // content is scanned in below (DetectHomeLocation is a plain
+                // frequency count across the whole library).
+                Item("home1.jpg", new DateTime(2025, 1, 1, 9, 0, 0), HomeLat, HomeLon),
+                Item("home2.jpg", new DateTime(2025, 1, 2, 9, 0, 0), HomeLat, HomeLon),
+                Item("home3.jpg", new DateTime(2025, 1, 3, 9, 0, 0), HomeLat, HomeLon),
+                Item("home4.jpg", new DateTime(2025, 1, 4, 9, 0, 0), HomeLat, HomeLon),
+                Item("home5.jpg", new DateTime(2025, 1, 5, 9, 0, 0), HomeLat, HomeLon),
+                Item("rome1.jpg", new DateTime(2026, 2, 1, 9, 0, 0), FarAwayLat, FarAwayLon),
+                Item("rome2.jpg", new DateTime(2026, 2, 2, 9, 0, 0), FarAwayLat, FarAwayLon),
+            ]);
+            var originalTrip = Assert.Single(query.GetAllTripGroups());
+            Assert.Equal(2, originalTrip.EventIds.Count);
+
+            // Two more same-trip Rome photos scanned in later (e.g.
+            // imported after the fact) — on their own, two consecutive days
+            // already clears TripClusterer's own MinSpanDays, so without the
+            // fix this independently qualifies as a *second* Trip before
+            // ever considering the one that already covers this period.
+            service.ScanItems(
+            [
+                Item("rome3.jpg", new DateTime(2026, 2, 3, 9, 0, 0), FarAwayLat, FarAwayLon),
+                Item("rome4.jpg", new DateTime(2026, 2, 4, 9, 0, 0), FarAwayLat, FarAwayLon),
+            ]);
+
+            var trip = Assert.Single(query.GetAllTripGroups()); // still just the one Trip, not a duplicate
+            Assert.Equal(originalTrip.Id, trip.Id);
+            Assert.Equal(4, trip.EventIds.Count);
+            Assert.Equal(new DateOnly(2026, 2, 1), trip.StartDate);
+            Assert.Equal(new DateOnly(2026, 2, 4), trip.EndDate);
+        });
+    }
+
+    [Fact]
+    public void A_single_new_day_scanned_in_for_a_trip_already_in_progress_still_joins_it()
+    {
+        // The exact bug reported live: unlike the two-consecutive-days case
+        // above (which already clears MinSpanDays on its own even under the
+        // old buggy check ordering), a *single* new day's worth of
+        // away-from-home photos — e.g. one more day of an iCloud sync for an
+        // ongoing trip — has a span of just 1 day, which on its own never
+        // clears MinSpanDays=2. The old code applied that filter BEFORE ever
+        // checking whether an existing Trip already covers this period, so
+        // this single day was silently discarded as "too short to be a
+        // trip" and left stranded as its own standalone Event instead of
+        // extending the Trip it's obviously a continuation of.
+        WithGpsAwareLibrary((repository, query, service, client) =>
+        {
+            service.ScanItems(
+            [
+                Item("home1.jpg", new DateTime(2025, 1, 1, 9, 0, 0), HomeLat, HomeLon),
+                Item("home2.jpg", new DateTime(2025, 1, 2, 9, 0, 0), HomeLat, HomeLon),
+                Item("home3.jpg", new DateTime(2025, 1, 3, 9, 0, 0), HomeLat, HomeLon),
+                Item("home4.jpg", new DateTime(2025, 1, 4, 9, 0, 0), HomeLat, HomeLon),
+                Item("home5.jpg", new DateTime(2025, 1, 5, 9, 0, 0), HomeLat, HomeLon),
+                Item("rome1.jpg", new DateTime(2026, 2, 1, 9, 0, 0), FarAwayLat, FarAwayLon),
+                Item("rome2.jpg", new DateTime(2026, 2, 2, 9, 0, 0), FarAwayLat, FarAwayLon),
+            ]);
+            var originalTrip = Assert.Single(query.GetAllTripGroups());
+            Assert.Equal(2, originalTrip.EventIds.Count);
+
+            // Just one more day of the same trip, scanned in a later pass —
+            // e.g. "today's" iCloud download landing after the earlier days
+            // were already grouped.
+            service.ScanItems(
+            [
+                Item("rome3.jpg", new DateTime(2026, 2, 3, 9, 0, 0), FarAwayLat, FarAwayLon),
+            ]);
+
+            var trip = Assert.Single(query.GetAllTripGroups()); // still just the one Trip, extended — not a stranded standalone Event
+            Assert.Equal(originalTrip.Id, trip.Id);
+            Assert.Equal(3, trip.EventIds.Count);
+            Assert.Equal(new DateOnly(2026, 2, 1), trip.StartDate);
+            Assert.Equal(new DateOnly(2026, 2, 3), trip.EndDate);
+            Assert.DoesNotContain(query.GetAllEvents(), e => e.TripGroupId is null && e.StartAt.Date == new DateTime(2026, 2, 3));
+        });
+    }
+
+    [Fact]
     public void Adopted_folder_structure_still_forms_a_trip_since_thats_not_a_time_based_guess()
     {
         WithTempLibrary((repository, query, service) =>

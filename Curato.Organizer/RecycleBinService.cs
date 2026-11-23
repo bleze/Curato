@@ -58,7 +58,7 @@ public sealed class RecycleBinService(LibraryDatabase database, RecycleBinReposi
         Directory.CreateDirectory(Path.GetDirectoryName(trashFullPath)!);
         if (File.Exists(sourceFullPath))
         {
-            File.Move(sourceFullPath, trashFullPath);
+            MoveWithRetryForTransientLock(sourceFullPath, trashFullPath);
         }
 
         var emptiedEvents = repository.RemoveMediaItem(id, fileSizeBytes, quickHash);
@@ -78,6 +78,62 @@ public sealed class RecycleBinService(LibraryDatabase database, RecycleBinReposi
             relativePath, trashRelativePath, kind, deletedAt, purgeAt, source, id);
 
         return new DeletedItemDto(deletedItemId, relativePath, kind, deletedAt, purgeAt, source);
+    }
+
+    /// <summary>
+    /// Confirmed live as a real crash, not a hypothetical: deleting a video
+    /// right after watching it (e.g. the Lightbox's own Delete-and-advance
+    /// flow) can hit a Win32 sharing violation — MediaController's /raw
+    /// endpoint streams it via a FileStream (PhysicalFile,
+    /// enableRangeProcessing). The Lightbox itself now explicitly pauses and
+    /// unloads its &lt;video&gt; element before ever calling this, to abort
+    /// that connection client-side as early as possible — but confirmed live
+    /// that a short (1.5s) server-side retry window alone wasn't always
+    /// enough for the actual socket teardown and FileStream release to catch
+    /// up, especially over a network-hosted library, so this backstop is
+    /// deliberately generous (several seconds) rather than tuned to the
+    /// fastest case. A real, permanently-locked file (e.g. open in another
+    /// program) still eventually surfaces as a failure, just later.
+    /// </summary>
+    private static void MoveWithRetryForTransientLock(string sourceFullPath, string trashFullPath)
+    {
+        const int maxAttempts = 25;
+        for (var attempt = 1; ; attempt++)
+        {
+            try
+            {
+                File.Move(sourceFullPath, trashFullPath);
+                return;
+            }
+            catch (IOException) when (attempt < maxAttempts)
+            {
+                Thread.Sleep(200);
+            }
+        }
+    }
+
+    /// <summary>
+    /// Bulk form of <see cref="DeleteMediaItem"/> — used for "delete this
+    /// whole Event" (the caller resolves the Event's own MediaItemIds first,
+    /// this just reuses the already-tested single-item path per member so
+    /// Live Photo pairing and emptied-Event/Trip cleanup keep working
+    /// exactly the same way). An id with nothing left to delete (e.g. a Live
+    /// Photo's paired video, already recycled by its still-frame's own call
+    /// earlier in the same batch) is silently skipped rather than failing
+    /// the rest of the batch.
+    /// </summary>
+    public IReadOnlyList<DeletedItemDto> DeleteMediaItems(IReadOnlyList<long> mediaItemIds, string source)
+    {
+        var deleted = new List<DeletedItemDto>();
+        foreach (var mediaItemId in mediaItemIds)
+        {
+            if (DeleteMediaItem(mediaItemId, source) is { } result)
+            {
+                deleted.Add(result);
+            }
+        }
+
+        return deleted;
     }
 
     public IReadOnlyList<DeletedItemDto> ListPendingDeletion()

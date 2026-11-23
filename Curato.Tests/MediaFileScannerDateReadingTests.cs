@@ -56,6 +56,26 @@ public class MediaFileScannerDateReadingTests
     }
 
     [Fact]
+    public void Reads_creation_time_from_a_real_avi_idit_chunk()
+    {
+        // Confirmed live against a real 2004 digital-camera AVI: Windows
+        // Explorer's own Details > Origin > "Media created" reads this same
+        // value, but MetadataExtractor's TryGetDateTime doesn't understand
+        // AVI's raw ctime()-style string ("Fri Sep 03 13:04:24 2004"), so
+        // this needs ReadVideoTakenAt's own AVI-specific parser rather than
+        // the QuickTime directories' built-in date handling. The fixture is
+        // a hand-built minimal RIFF/AVI file containing just a top-level
+        // IDIT chunk with this exact string — confirmed live that's enough
+        // for MetadataExtractor's AviMetadataReader to recognize it, no
+        // hdrl/avih/strl structure needed just to read this one tag.
+        WithScannedFixture("avi-2004-09-03.avi", item =>
+        {
+            Assert.Equal(TakenAtSource.VideoMetadata, item.TakenAtSource);
+            Assert.Equal(new DateTime(2004, 9, 3, 13, 4, 24), item.TakenAt);
+        });
+    }
+
+    [Fact]
     public void Corrects_a_movie_header_creation_time_written_against_the_wrong_epoch()
     {
         // Some non-Apple encoders write a Unix-epoch (1970-based) timestamp
@@ -73,6 +93,43 @@ public class MediaFileScannerDateReadingTests
             Assert.Equal(TakenAtSource.VideoMetadata, item.TakenAtSource);
             Assert.Equal(expectedLocal, item.TakenAt);
         });
+    }
+
+    [Fact]
+    public void Falls_back_to_the_local_filesystem_write_time_with_no_real_metadata()
+    {
+        // Confirmed live as a real Event-ordering bug, not a style nit: this
+        // fallback used to return the raw DateTimeKind.Utc value from
+        // FileInfo.LastWriteTimeUtc directly. Every other TakenAt source
+        // (Exif, video metadata, manual) is DateTimeKind.Unspecified and
+        // round-trips through ToString("O") with no timezone suffix at all —
+        // the frontend's `new Date(...)` treats that as local wall-clock
+        // time. A genuine DateTimeKind.Utc value serializes with a trailing
+        // "Z" instead, which `new Date(...)` parses as a true UTC instant,
+        // silently shifting it by the server's own UTC offset relative to
+        // every other (timezone-less) TakenAt value it's sorted/compared
+        // against. .ToLocalTime() doesn't change the real instant, just how
+        // it round-trips — DateTimeKind.Local serializes with an explicit,
+        // unambiguous numeric offset instead, which both .NET and the
+        // frontend already parse correctly.
+        var tempDir = Directory.CreateTempSubdirectory("curato-datereading-fallback-test-");
+        try
+        {
+            var filePath = Path.Combine(tempDir.FullName, "no-metadata.jpg");
+            File.WriteAllBytes(filePath, [0xFF, 0xD8, 0xFF, 0xD9]); // minimal/empty JPEG, no EXIF at all
+            var expectedLocal = new DateTime(2020, 3, 10, 8, 15, 0);
+            File.SetLastWriteTime(filePath, expectedLocal);
+
+            var item = Assert.Single(new MediaFileScanner().Scan(tempDir.FullName));
+
+            Assert.Equal(TakenAtSource.FileSystem, item.TakenAtSource);
+            Assert.Equal(DateTimeKind.Local, item.TakenAt.Kind);
+            Assert.Equal(expectedLocal, item.TakenAt);
+        }
+        finally
+        {
+            Directory.Delete(tempDir.FullName, recursive: true);
+        }
     }
 
     private static void WithScannedFixture(string fixtureFileName, Action<MediaItem> assert)

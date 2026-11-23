@@ -187,6 +187,8 @@ export interface iCloudSyncStatus {
   lastSyncItemCount: number | null
   /** The most recent line icloudpd printed, live, while a sync is running — null once it's done. */
   currentActivity: string | null
+  /** A manual sync is parked waiting for a 2FA code — see iCloudVerifySyncTwoFactor. */
+  twoFactorRequired: boolean
 }
 
 export interface iCloudSyncNowResult {
@@ -194,6 +196,8 @@ export interface iCloudSyncNowResult {
   errorMessage: string | null
   itemsDownloaded: number
   newEventCount: number
+  /** Apple challenged this sync for a verification code — see iCloudVerifySyncTwoFactor. */
+  twoFactorRequired: boolean
 }
 
 export function getICloudSyncStatus(): Promise<iCloudSyncStatus> {
@@ -223,6 +227,20 @@ export function iCloudCancelLogin(): Promise<void> {
 
 export function iCloudSyncNow(): Promise<iCloudSyncNowResult> {
   return fetch('/api/icloud-sync/sync-now', { method: 'POST' }).then(asJson<iCloudSyncNowResult>)
+}
+
+/** Answers a "Sync now" that came back with twoFactorRequired, using the code the user read off their phone. */
+export function iCloudVerifySyncTwoFactor(code: string): Promise<iCloudSyncNowResult> {
+  return fetch('/api/icloud-sync/sync-verify-2fa', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ code }),
+  }).then(asJson<iCloudSyncNowResult>)
+}
+
+/** Backs out of a "Sync now" parked at the 2FA prompt (e.g. closing Settings) without completing it. */
+export function iCloudCancelSync(): Promise<void> {
+  return fetch('/api/icloud-sync/cancel-sync', { method: 'POST' }).then(expectOk)
 }
 
 export function iCloudUpdateSettings(
@@ -319,6 +337,15 @@ export function moveMediaItemToEvent(path: string, mediaItemId: number, targetEv
   }).then(expectOk)
 }
 
+/** Bulk counterpart to moveMediaItemToEvent — moving a whole range of individually-selected photos, not just one. Always against an existing target Event (no "new standalone Event" option, same as merging Events). */
+export function moveMediaItemsToEvent(path: string, mediaItemIds: number[], targetEventId: number): Promise<void> {
+  return fetch('/api/media-items/move-to-event-bulk', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ path, mediaItemIds, targetEventId }),
+  }).then(expectOk)
+}
+
 /** Manually groups a range of Events into a new Trip. Refused (409) if any Event already belongs to one. */
 export function createTripGroup(path: string, eventIds: number[]): Promise<TripGroupDto> {
   return fetch('/api/trips', {
@@ -334,6 +361,15 @@ export function ungroupTripGroup(path: string, tripGroupId: number): Promise<voi
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify({ path }),
+  }).then(expectOk)
+}
+
+/** Adds one standalone Event into an already-existing Trip — refused (409) if it already belongs to a (different) Trip. */
+export function addEventToTripGroup(path: string, eventId: number, tripGroupId: number): Promise<void> {
+  return fetch(`/api/trips/${tripGroupId}/add-event`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ path, eventId }),
   }).then(expectOk)
 }
 
@@ -411,6 +447,24 @@ export function deleteMediaItem(path: string, mediaItemId: number): Promise<Dele
 
 export function getRecycleBin(path: string): Promise<DeletedItemDto[]> {
   return fetch(`/api/recyclebin?path=${encodeURIComponent(path)}`).then(asJson<DeletedItemDto[]>)
+}
+
+/** Deletes every photo/video in one or more whole Events — see RecycleBinController.DeleteEvents. */
+export function deleteEvents(path: string, eventIds: number[]): Promise<DeletedItemDto[]> {
+  return fetch('/api/recyclebin/delete-events', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ path, eventIds }),
+  }).then(asJson<DeletedItemDto[]>)
+}
+
+/** Deletes a batch of individually-selected photos/videos at once — see RecycleBinController.DeleteItems. */
+export function deleteMediaItems(path: string, mediaItemIds: number[]): Promise<DeletedItemDto[]> {
+  return fetch('/api/recyclebin/delete-items', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ path, mediaItemIds }),
+  }).then(asJson<DeletedItemDto[]>)
 }
 
 /** Manual last-resort date fix (TakenAtSource.Manual) for a MediaItem whose Exif is missing or wrong. */

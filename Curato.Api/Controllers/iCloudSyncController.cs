@@ -53,8 +53,14 @@ public sealed class iCloudSyncController(
         // Settings panel polls this endpoint while "Sync now" is running
         // so a slow-but-working sync doesn't look identical to a stuck
         // one. Null whenever nothing is currently running.
-        string? CurrentActivity);
-    public sealed record SyncNowResponse(bool Success, string? ErrorMessage, int ItemsDownloaded, int NewEventCount);
+        string? CurrentActivity,
+        // Lets the same poll notice a sync parked at Apple's 2FA prompt even
+        // if the original "Sync now" request's own response never makes it
+        // back to the browser (a slow sync can outlast the dev proxy's own
+        // connection handling) — see iCloudSyncRunner.TwoFactorRequired.
+        bool TwoFactorRequired);
+    public sealed record SyncNowResponse(bool Success, string? ErrorMessage, int ItemsDownloaded, int NewEventCount, bool TwoFactorRequired);
+    public sealed record VerifySyncTwoFactorRequest(string Code);
 
     [HttpGet("status")]
     public ActionResult<StatusResponse> GetStatus()
@@ -75,7 +81,8 @@ public sealed class iCloudSyncController(
             LastSyncStatus: config?.LastSyncStatus,
             LastSyncMessage: config?.LastSyncMessage,
             LastSyncItemCount: config?.LastSyncItemCount,
-            CurrentActivity: syncRunner.CurrentActivity));
+            CurrentActivity: syncRunner.CurrentActivity,
+            TwoFactorRequired: syncRunner.TwoFactorRequired));
     }
 
     [HttpPost("login")]
@@ -141,16 +148,41 @@ public sealed class iCloudSyncController(
     }
 
     [HttpPost("sync-now")]
-    public async Task<ActionResult<SyncNowResponse>> SyncNow()
+    public async Task<ActionResult<SyncNowResponse>> SyncNow(CancellationToken cancellationToken)
     {
-        var result = await syncRunner.SyncIfConfiguredAsync(ignoreSchedule: true);
+        var result = await syncRunner.SyncIfConfiguredAsync(ignoreSchedule: true, cancellationToken);
         if (result is null)
         {
             return BadRequest("Connect iCloud (and set a library folder) first.");
         }
 
         return Ok(new SyncNowResponse(
-            result.Success, result.ErrorMessage, result.ItemsDownloaded, result.ScanResult?.NewAutoOrganizedEventCount ?? 0));
+            result.Success, result.ErrorMessage, result.ItemsDownloaded,
+            result.ScanResult?.NewAutoOrganizedEventCount ?? 0, result.TwoFactorRequired));
+    }
+
+    /// <summary>
+    /// Answers a "Sync now" that stopped at Apple's 2FA prompt (see
+    /// iCloudSyncRunner.TwoFactorPromptMarker's doc comment) with the code
+    /// the user just read off their phone.
+    /// </summary>
+    [HttpPost("sync-verify-2fa")]
+    public async Task<ActionResult<SyncNowResponse>> VerifySyncTwoFactor(
+        [FromBody] VerifySyncTwoFactorRequest request, CancellationToken cancellationToken)
+    {
+        var result = await syncRunner.SubmitTwoFactorCodeAsync(request.Code, cancellationToken);
+
+        return Ok(new SyncNowResponse(
+            result.Success, result.ErrorMessage, result.ItemsDownloaded,
+            result.ScanResult?.NewAutoOrganizedEventCount ?? 0, result.TwoFactorRequired));
+    }
+
+    /// <summary>Backs out of a "Sync now" parked at the 2FA prompt (e.g. the user closes Settings) without completing it.</summary>
+    [HttpPost("cancel-sync")]
+    public IActionResult CancelSync()
+    {
+        syncRunner.CancelPendingSync();
+        return Ok();
     }
 
     [HttpPut("settings")]

@@ -210,6 +210,19 @@ internal static class Schema
             ResolvedAt TEXT NOT NULL,
             PRIMARY KEY (LatBucket, LonBucket)
         );
+
+        -- One row per folder ever walked by a full (non-cancelled) Scan —
+        -- see MediaFileScanner.Scan's folder-modified-time parameters. A
+        -- folder whose own LastWriteTimeUtc still matches what's recorded
+        -- here didn't gain, lose, or rename any entry since the last scan,
+        -- so that scan can skip re-reading Exif/hashing every file inside it
+        -- and just reuse each one's already-known MediaItem row instead —
+        -- the expensive part of a large library's re-scan, confirmed live.
+        -- RelativePath is "" for the library root itself.
+        CREATE TABLE IF NOT EXISTS FolderScanState (
+            RelativePath TEXT PRIMARY KEY,
+            LastModifiedUtc TEXT NOT NULL
+        );
         """;
 
     /// <summary>

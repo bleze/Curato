@@ -1,18 +1,26 @@
 import { useEffect, useRef, useState } from 'react'
 import './App.css'
-import type { AuthStatus, FavoriteCategoryDto, LibraryDto, PicasaImportResult } from './api'
+import type { AuthStatus, FavoriteCategoryDto, iCloudSyncStatus, LibraryDto, PicasaImportResult } from './api'
 import {
+  addEventToTripGroup,
   createTripGroup,
+  deleteEvents,
   deleteMediaItem,
+  deleteMediaItems,
   fixEventDates,
   getAuthStatus,
   getFavoriteCategories,
+  getICloudSyncStatus,
   getLibrary,
   getLibraryFolder,
   getScanProgress,
+  iCloudCancelSync,
+  iCloudSyncNow,
+  iCloudVerifySyncTwoFactor,
   logout,
   mergeEventInto,
   moveMediaItemToEvent,
+  moveMediaItemsToEvent,
   organizeLibrary,
   removeEventFromTrip,
   renameEvent,
@@ -122,6 +130,19 @@ function App() {
   const [showDuplicates, setShowDuplicates] = useState(false)
   const [showSettings, setShowSettings] = useState(false)
 
+  // iCloud download — deliberately owned here (not SettingsPanel) so the
+  // toolbar button below and Settings' own status display never run two
+  // independent pollers racing to interpret the same in-flight download.
+  // Settings keeps the Connect/Disconnect/scope-editing UI; this is only
+  // "trigger one, watch it, answer its 2FA prompt if Apple asks for one."
+  const [iCloudStatus, setICloudStatus] = useState<iCloudSyncStatus | null>(null)
+  const [iCloudBusy, setICloudBusy] = useState(false)
+  const [iCloudDownloading, setICloudDownloading] = useState(false)
+  const [awaitingICloudCode, setAwaitingICloudCode] = useState(false)
+  const [iCloudCode, setICloudCode] = useState('')
+  const iCloudSyncStartedAtRef = useRef<string | null>(null)
+  const iCloudOutcomeHandledRef = useRef(false)
+
   useEffect(() => {
     getAuthStatus()
       .then(setAuthStatus)
@@ -169,7 +190,7 @@ function App() {
   // this only re-fetches when the open library actually changes, not on
   // every library mutation — Settings calls onFavoriteCategoriesChanged
   // directly after an add/delete instead, the same pattern
-  // refreshLibraryIfCurrentlyOpen below uses for Settings-triggered syncs.
+  // refreshLibraryIfCurrentlyOpen below uses for an iCloud download.
   useEffect(() => {
     if (!loadedPath) {
       setFavoriteCategories([])
@@ -196,12 +217,12 @@ function App() {
   }
 
   // Silently re-fetches the currently-open library if it's the one that
-  // just changed — for after a Settings-triggered "Sync now" completes.
-  // Confirmed live this was needed: a sync run from Settings updates the
-  // library folder's database, but the main grid (if already loaded before
-  // the sync started) has no way to know that happened on its own, so new
-  // content stayed invisible until a manual hard refresh. Deliberately a
-  // no-op if a different library is currently open — never surprise-swap
+  // just changed — for after the toolbar's "Download from iCloud" completes.
+  // Confirmed live this was needed: a download updates the library folder's
+  // database, but the main grid (if already loaded before it started) has
+  // no way to know that happened on its own, so new content stayed
+  // invisible until a manual hard refresh. Deliberately a no-op if a
+  // different library is currently open — never surprise-swap
   // what's on screen out from under whatever you're actually looking at.
   function refreshLibraryIfCurrentlyOpen(path: string) {
     if (!loadedPath || loadedPath.toLowerCase() !== path.toLowerCase()) {
@@ -410,6 +431,30 @@ function App() {
     }
   }
 
+  async function handleDeleteEvents(eventIds: number[]) {
+    if (!loadedPath) return
+    setError(null)
+    try {
+      await deleteEvents(loadedPath, eventIds)
+      const lib = await getLibrary(loadedPath)
+      setLibrary(lib)
+    } catch (err) {
+      setError(err instanceof Error ? err.message : String(err))
+    }
+  }
+
+  async function handleDeleteMediaItems(mediaItemIds: number[]) {
+    if (!loadedPath) return
+    setError(null)
+    try {
+      await deleteMediaItems(loadedPath, mediaItemIds)
+      const lib = await getLibrary(loadedPath)
+      setLibrary(lib)
+    } catch (err) {
+      setError(err instanceof Error ? err.message : String(err))
+    }
+  }
+
   async function handleTakenAtChanged(mediaItemId: number, takenAt: string) {
     if (!loadedPath) return
     setError(null)
@@ -423,14 +468,16 @@ function App() {
   }
 
   async function handleResetTakenAt(mediaItemId: number) {
-    if (!loadedPath) return
+    if (!loadedPath) return null
     setError(null)
     try {
-      await resetTakenAt(loadedPath, mediaItemId)
+      const result = await resetTakenAt(loadedPath, mediaItemId)
       const lib = await getLibrary(loadedPath)
       setLibrary(lib)
+      return result
     } catch (err) {
       setError(err instanceof Error ? err.message : String(err))
+      return null
     }
   }
 
@@ -472,6 +519,18 @@ function App() {
     setError(null)
     try {
       await moveMediaItemToEvent(loadedPath, mediaItemId, targetEventId)
+      const lib = await getLibrary(loadedPath)
+      setLibrary(lib)
+    } catch (err) {
+      setError(err instanceof Error ? err.message : String(err))
+    }
+  }
+
+  async function handleMoveMediaItemsToEvent(mediaItemIds: number[], targetEventId: number) {
+    if (!loadedPath) return
+    setError(null)
+    try {
+      await moveMediaItemsToEvent(loadedPath, mediaItemIds, targetEventId)
       const lib = await getLibrary(loadedPath)
       setLibrary(lib)
     } catch (err) {
@@ -560,6 +619,148 @@ function App() {
     }
   }
 
+  // Sequential, same reasoning as handleMergeEventsInto above — the backend
+  // only ever adds one Event to a Trip per call.
+  async function handleAddEventsToTrip(eventIds: number[], tripGroupId: number) {
+    if (!loadedPath) return
+    setError(null)
+    try {
+      for (const eventId of eventIds) {
+        await addEventToTripGroup(loadedPath, eventId, tripGroupId)
+      }
+      const lib = await getLibrary(loadedPath)
+      setLibrary(lib)
+    } catch (err) {
+      setError(err instanceof Error ? err.message : String(err))
+    }
+  }
+
+  // Refreshes just the small connected/last-download summary shown both by
+  // the toolbar button's title and Settings' iCloud tab — Settings fetches
+  // its own copy for the fuller connect/scope-editing UI, but this is the
+  // one that drives whether the toolbar button appears at all.
+  function refreshICloudStatus() {
+    getICloudSyncStatus()
+      .then(setICloudStatus)
+      .catch(() => {
+        // Not logged in yet / no library open yet — the toolbar button
+        // just stays hidden until a later poll succeeds.
+      })
+  }
+
+  useEffect(() => {
+    if (authStatus?.isAuthenticated) refreshICloudStatus()
+  }, [authStatus?.isAuthenticated])
+
+  // Marks a download attempt as done, however that was actually noticed —
+  // see the polling effect below for why both this request's own response
+  // AND an independent poll can each legitimately be the one to notice.
+  function finishICloudDownload(outcome: { success: boolean; errorMessage?: string | null }) {
+    if (iCloudOutcomeHandledRef.current) return
+    iCloudOutcomeHandledRef.current = true
+
+    setICloudDownloading(false)
+    setAwaitingICloudCode(false)
+    setICloudCode('')
+    setICloudBusy(false)
+    if (!outcome.success) {
+      setError(outcome.errorMessage ?? 'Download failed.')
+    } else {
+      setError(null)
+      if (loadedPath) refreshLibraryIfCurrentlyOpen(loadedPath)
+    }
+    refreshICloudStatus()
+  }
+
+  // Downloading from iCloud (and verifying a 2FA code) are single
+  // long-running requests with no progress in their own response — poll the
+  // status endpoint on the side while one's in flight. Also the ONLY
+  // reliable way to notice either a download parked at Apple's 2FA prompt,
+  // or one that's actually finished: confirmed live that a download slow
+  // enough to reach that prompt (or slow enough to finish afterward) can
+  // also be slow enough for the dev proxy to drop that one long-lived
+  // connection along the way, in which case the triggering request's own
+  // promise never resolves — this poll catches both regardless, using the
+  // server's own LastSyncAt advancing as proof it actually finished.
+  useEffect(() => {
+    if (!iCloudDownloading) return
+    const interval = setInterval(() => {
+      getICloudSyncStatus()
+        .then((s) => {
+          setICloudStatus(s)
+          if (s.twoFactorRequired) {
+            setAwaitingICloudCode(true)
+            setICloudDownloading(false)
+          } else if (s.lastSyncAt && s.lastSyncAt !== iCloudSyncStartedAtRef.current) {
+            finishICloudDownload({ success: s.lastSyncStatus === 'Success', errorMessage: s.lastSyncMessage })
+          }
+        })
+        .catch(() => {
+          // Transient poll failure — the main call's own error handling
+          // covers real failures, so this is safe to ignore.
+        })
+    }, 1500)
+    return () => clearInterval(interval)
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [iCloudDownloading])
+
+  useEffect(() => {
+    if (!awaitingICloudCode) return
+    function onKeyDown(e: KeyboardEvent) {
+      if (e.key === 'Escape') handleICloudCancelCode()
+    }
+    window.addEventListener('keydown', onKeyDown)
+    return () => window.removeEventListener('keydown', onKeyDown)
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [awaitingICloudCode])
+
+  // Deliberately not a try/catch-await — every completion path (success,
+  // failure, or the request itself erroring) funnels through
+  // finishICloudDownload instead, which is guarded against running twice,
+  // so the poll above can safely race against this request's own response.
+  function handleICloudDownloadNow() {
+    iCloudOutcomeHandledRef.current = false
+    iCloudSyncStartedAtRef.current = iCloudStatus?.lastSyncAt ?? null
+    setICloudDownloading(true)
+    setICloudBusy(true)
+    setError(null)
+    iCloudSyncNow()
+      .then((result) => {
+        if (result.twoFactorRequired) {
+          // icloudpd is parked waiting on this exact process's stdin —
+          // handleICloudVerifyCode below answers it, not a fresh attempt.
+          setAwaitingICloudCode(true)
+          setICloudDownloading(false)
+          setICloudBusy(false)
+        } else {
+          finishICloudDownload({ success: result.success, errorMessage: result.errorMessage })
+        }
+      })
+      .catch((err) => finishICloudDownload({ success: false, errorMessage: err instanceof Error ? err.message : String(err) }))
+  }
+
+  function handleICloudVerifyCode() {
+    iCloudOutcomeHandledRef.current = false
+    iCloudSyncStartedAtRef.current = iCloudStatus?.lastSyncAt ?? null
+    setICloudDownloading(true)
+    setICloudBusy(true)
+    setError(null)
+    iCloudVerifySyncTwoFactor(iCloudCode)
+      .then((result) => finishICloudDownload({ success: result.success, errorMessage: result.errorMessage }))
+      .catch((err) => finishICloudDownload({ success: false, errorMessage: err instanceof Error ? err.message : String(err) }))
+  }
+
+  function handleICloudCancelCode() {
+    setICloudBusy(true)
+    iCloudCancelSync()
+      .then(() => {
+        setAwaitingICloudCode(false)
+        setICloudCode('')
+      })
+      .catch((err) => setError(err instanceof Error ? err.message : String(err)))
+      .finally(() => setICloudBusy(false))
+  }
+
   async function handleLogout() {
     await logout()
     setLibrary(null)
@@ -644,6 +845,16 @@ function App() {
               />
             </label>
           )}
+          {iCloudStatus?.connected && (
+            <button
+              type="button"
+              onClick={handleICloudDownloadNow}
+              disabled={iCloudBusy || awaitingICloudCode}
+              title="Download any new photos/videos from iCloud"
+            >
+              {iCloudDownloading ? 'Downloading…' : 'Download from iCloud'}
+            </button>
+          )}
           <button
             type="button"
             onClick={handleScan}
@@ -702,9 +913,44 @@ function App() {
         <SettingsPanel
           onClose={() => setShowSettings(false)}
           onOpenLibrary={handleOpenLibrary}
-          onLibraryContentChanged={refreshLibraryIfCurrentlyOpen}
           onFavoriteCategoriesChanged={refreshFavoriteCategoriesIfCurrentlyOpen}
         />
+      )}
+
+      {awaitingICloudCode && (
+        <div className="modal-overlay" onClick={handleICloudCancelCode}>
+          <div className="modal-dialog icloud-2fa-dialog" onClick={(e) => e.stopPropagation()}>
+            <div className="modal-header">
+              <h2>Verify iCloud</h2>
+            </div>
+            <div className="modal-body">
+              <p className="settings-meta">
+                Apple sent a verification code to one of your devices — enter it to continue this download.
+              </p>
+              <input
+                type="text"
+                inputMode="numeric"
+                autoComplete="one-time-code"
+                value={iCloudCode}
+                onChange={(e) => setICloudCode(e.target.value)}
+                autoFocus
+              />
+            </div>
+            <div className="modal-footer">
+              <button type="button" className="modal-footer-cancel" onClick={handleICloudCancelCode} disabled={iCloudBusy}>
+                Cancel
+              </button>
+              <button
+                type="button"
+                className="modal-footer-save"
+                onClick={handleICloudVerifyCode}
+                disabled={iCloudBusy || !iCloudCode.trim()}
+              >
+                {iCloudBusy ? 'Verifying…' : 'Verify'}
+              </button>
+            </div>
+          </div>
+        </div>
       )}
 
       {loadedPath && activeView === 'recycleBin' && (
@@ -757,13 +1003,17 @@ function App() {
             favoriteCategories={favoriteCategories}
             scanning={scanning}
             onDelete={handleDelete}
+            onDeleteEvents={handleDeleteEvents}
+            onDeleteMediaItems={handleDeleteMediaItems}
             onTakenAtChanged={handleTakenAtChanged}
             onResetTakenAt={handleResetTakenAt}
             onRotated={handleRotated}
             onRenameEvent={handleRenameEvent}
             onRenameTrip={handleRenameTrip}
             onMoveMediaItemToEvent={handleMoveMediaItemToEvent}
+            onMoveMediaItemsToEvent={handleMoveMediaItemsToEvent}
             onCreateTripGroup={handleCreateTripGroup}
+            onAddEventsToTrip={handleAddEventsToTrip}
             onUngroupTripGroup={handleUngroupTripGroup}
             onMergeEventsInto={handleMergeEventsInto}
             onRemoveEventsFromTrip={handleRemoveEventsFromTrip}

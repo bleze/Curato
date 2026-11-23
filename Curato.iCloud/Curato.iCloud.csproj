@@ -11,6 +11,15 @@
     <PackageReference Include="Microsoft.Extensions.Logging.Abstractions" Version="10.0.0" />
   </ItemGroup>
 
+  <ItemGroup>
+    <!-- Lets Curato.Tests exercise the stub seed/cleanup logic directly —
+         it shells out to an external icloudpd process, so RunAsync itself
+         isn't practically unit-testable, but the file-level helpers around
+         it are and are exactly what a past regression (orphaned stub files
+         from an interrupted sync) lived in. -->
+    <InternalsVisibleTo Include="Curato.Tests" />
+  </ItemGroup>
+
   <PropertyGroup>
     <TargetFramework>net10.0</TargetFramework>
     <ImplicitUsings>enable</ImplicitUsings>

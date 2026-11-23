@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useRef, useState } from 'react'
-import type { FavoriteCategoryDto, MediaItemDto } from '../api'
+import type { FavoriteCategoryDto, MediaItemDto, ResetTakenAtResult } from '../api'
 import { bumpImageVersion, fullImageUrl, rawFileUrl, rotateMediaItem } from '../api'
 import type { EventSummary } from './EventPicker'
 import { EventPicker } from './EventPicker'
@@ -39,7 +39,7 @@ export function Lightbox({
   onNavigate: (index: number) => void
   onTakenAtChanged: (mediaItemId: number, takenAt: string) => void
   /** Re-reads the real Exif/video date straight off the file and uses that instead — the recovery path for a bad manual edit, since the file itself is never touched and always has the ground truth. Omit to hide the button (e.g. wherever the caller hasn't wired it up yet). */
-  onResetTakenAt?: (mediaItemId: number) => Promise<void>
+  onResetTakenAt?: (mediaItemId: number) => Promise<ResetTakenAtResult | null>
   onRotated: (mediaItemId: number) => void
   onMoveToEvent?: (mediaItemId: number, targetEventId: number | null) => void
   /** Starts a fullscreen Slideshow over these same items, from the photo/video currently open — closes this Lightbox first (see Slideshow.tsx). */
@@ -75,6 +75,20 @@ export function Lightbox({
   // back to it.
   const [, forceRerender] = useState(0)
   const dragStart = useRef<{ x: number; y: number; panX: number; panY: number; moved: boolean } | null>(null)
+  // See handleConfirmDelete/the [items]-watching effect below: the
+  // optimistic navigation right after confirming a delete uses the current,
+  // still-pre-delete `items` array — correct immediately, but one item
+  // short of where the real post-delete array will put that same photo
+  // once the parent's data actually refreshes (everything after the
+  // deleted item shifts down by one index). This remembers which photo
+  // (by id, not index) to re-settle on once that happens.
+  const pendingAdvanceRef = useRef<{ id: number; countBeforeDelete: number } | null>(null)
+  // Shared by both <video> branches below (the current item's own video, and
+  // a Live Photo's paired motion clip) — they're mutually exclusive, never
+  // both rendered at once, so one ref covers whichever is actually mounted.
+  const videoRef = useRef<HTMLVideoElement>(null)
+  const cancelDeleteButtonRef = useRef<HTMLButtonElement>(null)
+  const confirmDeleteButtonRef = useRef<HTMLButtonElement>(null)
 
   useEffect(() => {
     setPlayingLive(false)
@@ -116,16 +130,77 @@ export function Lightbox({
   }
 
   function handleConfirmDelete() {
+    // Confirmed live as a real crash, not just a hypothetical: the server's
+    // delete can race this video's own still-open streaming connection
+    // (RecycleBinService's File.Move hit a Windows sharing violation even
+    // after a short server-side retry, meaning the lock genuinely outlived
+    // that window rather than just trailing off instantly) — changing
+    // `src` via the optimistic navigate below doesn't necessarily make the
+    // browser abort the in-flight request for the OLD one immediately.
+    // Explicitly pausing and clearing the element first forces that abort
+    // synchronously, before the delete request is even sent.
+    if (videoRef.current) {
+      videoRef.current.pause()
+      videoRef.current.removeAttribute('src')
+      videoRef.current.load()
+    }
+
+    // Progresses to the next photo/video instead of closing the viewer —
+    // confirmed live as the wanted behavior: reviewing and culling a batch
+    // shouldn't mean re-opening the grid and re-picking the next item after
+    // every single delete. Falls back to the previous item if this was the
+    // last one, and only closes outright if it was the only item left.
+    const nextIndex = index < items.length - 1 ? index + 1 : index > 0 ? index - 1 : null
+    if (nextIndex !== null) {
+      pendingAdvanceRef.current = { id: items[nextIndex].id, countBeforeDelete: items.length }
+      onNavigate(nextIndex)
+    } else {
+      onClose()
+    }
     onDelete(item.id)
     setConfirmingDelete(false)
-    onClose()
   }
+
+  // Corrects the optimistic index above once the parent's `items` prop
+  // actually reflects the deletion (recognized by its length having
+  // dropped below what it was when Delete was confirmed, not just a new
+  // array reference with the same still-pre-delete content) — re-finds the
+  // intended photo by id, since removing an earlier item shifts every
+  // later one down by one index.
+  useEffect(() => {
+    const pending = pendingAdvanceRef.current
+    if (!pending || items.length >= pending.countBeforeDelete) return
+    pendingAdvanceRef.current = null
+    const freshIndex = items.findIndex((i) => i.id === pending.id)
+    if (freshIndex >= 0 && freshIndex !== index) {
+      onNavigate(freshIndex)
+    }
+  }, [items, index, onNavigate])
 
   useEffect(() => {
     function onKeyDown(e: KeyboardEvent) {
       // Don't hijack L/R (or anything else) while a text field has focus —
       // the date-edit input is the one place that's reachable from here.
       if (e.target instanceof HTMLInputElement || e.target instanceof HTMLTextAreaElement) return
+
+      if (confirmingDelete) {
+        // Confirmed live as a real bug: without this, Left/Right kept
+        // navigating the photo *underneath* the dialog instead of moving
+        // between its own two buttons, and Escape closed the whole viewer
+        // instead of just dismissing the confirm step. The dialog owns the
+        // keyboard entirely while it's open.
+        if (e.key === 'Escape') setConfirmingDelete(false)
+        if (e.key === 'ArrowLeft') {
+          e.preventDefault()
+          cancelDeleteButtonRef.current?.focus()
+        }
+        if (e.key === 'ArrowRight') {
+          e.preventDefault()
+          confirmDeleteButtonRef.current?.focus()
+        }
+        return
+      }
+
       if (e.key === 'Escape') onClose()
       if (e.key === 'ArrowRight' && index < items.length - 1) onNavigate(index + 1)
       if (e.key === 'ArrowLeft' && index > 0) onNavigate(index - 1)
@@ -142,7 +217,7 @@ export function Lightbox({
     // render, while still always being the version that closes over the
     // current `rotating` value — omitting it would let this effect call a
     // stale closure whose in-flight guard never saw a real rotate happen.
-  }, [index, items.length, onClose, onNavigate, item.kind, handleRotate])
+  }, [index, items.length, onClose, onNavigate, item.kind, handleRotate, confirmingDelete])
 
   if (!item) return null
 
@@ -282,6 +357,7 @@ export function Lightbox({
               aria-label="Favorite category"
             >
               <svg
+                className="star-icon"
                 viewBox="0 0 24 24"
                 width="16"
                 height="16"
@@ -318,6 +394,7 @@ export function Lightbox({
         </button>
         <button
           type="button"
+          className="lightbox-delete-btn"
           onClick={() => setConfirmingDelete(true)}
           title="Move to Recycle Bin (Delete key)"
           aria-label="Delete"
@@ -366,9 +443,9 @@ export function Lightbox({
         onMouseLeave={endDrag}
       >
         {item.kind === 'Video' ? (
-          <video src={rawFileUrl(libraryPath, item.relativePath)} controls autoPlay />
+          <video ref={videoRef} src={rawFileUrl(libraryPath, item.relativePath)} controls autoPlay />
         ) : item.liveVideoRelativePath && playingLive ? (
-          <video src={rawFileUrl(libraryPath, item.liveVideoRelativePath)} autoPlay loop muted playsInline />
+          <video ref={videoRef} src={rawFileUrl(libraryPath, item.liveVideoRelativePath)} autoPlay loop muted playsInline />
         ) : (
           <img
             src={fullImageUrl(libraryPath, item.relativePath, item.id)}
@@ -491,10 +568,21 @@ export function Lightbox({
           <div className="confirm-dialog">
             <p>Move this {item.kind === 'Video' ? 'video' : 'photo'} to the Recycle Bin?</p>
             <div className="confirm-dialog-actions">
-              <button type="button" className="modal-footer-cancel" onClick={() => setConfirmingDelete(false)}>
+              <button
+                type="button"
+                className="modal-footer-cancel"
+                ref={cancelDeleteButtonRef}
+                onClick={() => setConfirmingDelete(false)}
+              >
                 Cancel
               </button>
-              <button type="button" className="danger" onClick={handleConfirmDelete}>
+              <button
+                type="button"
+                className="danger"
+                ref={confirmDeleteButtonRef}
+                autoFocus
+                onClick={handleConfirmDelete}
+              >
                 Delete
               </button>
             </div>

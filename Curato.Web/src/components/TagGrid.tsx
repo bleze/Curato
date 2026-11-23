@@ -1,6 +1,6 @@
 import { useVirtualizer } from '@tanstack/react-virtual'
 import { useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react'
-import type { FavoriteCategoryDto, MediaItemDto } from '../api'
+import type { FavoriteCategoryDto, MediaItemDto, ResetTakenAtResult } from '../api'
 import { bumpImageVersion, rotateMediaItem, thumbnailUrl } from '../api'
 import { FavoriteCategoryMenu } from './FavoriteCategoryMenu'
 import { formatTakenAt } from '../format'
@@ -29,7 +29,7 @@ export function TagGrid({
   libraryPath: string
   onDelete: (mediaItemId: number) => void
   onTakenAtChanged: (mediaItemId: number, takenAt: string) => void
-  onResetTakenAt?: (mediaItemId: number) => Promise<void>
+  onResetTakenAt?: (mediaItemId: number) => Promise<ResetTakenAtResult | null>
   onRotated: (mediaItemId: number) => void
   /** All favorite categories, for the star button's picker. Omit (along with onSetFavoriteCategory) to hide the star entirely — matches Lightbox's identical optional pattern. */
   favoriteCategories?: FavoriteCategoryDto[]
@@ -220,6 +220,7 @@ export function TagGrid({
                         }}
                       >
                         <svg
+                          className="star-icon"
                           viewBox="0 0 24 24"
                           width="11"
                           height="11"

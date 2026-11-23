@@ -10,7 +10,6 @@ import {
   iCloudCancelLogin,
   iCloudDisconnect,
   iCloudLogin,
-  iCloudSyncNow,
   iCloudUpdateSettings,
   iCloudVerifyTwoFactor,
   setHomeLocation,
@@ -25,12 +24,10 @@ import { setTheme, useTheme } from '../theme'
 export function SettingsPanel({
   onClose,
   onOpenLibrary,
-  onLibraryContentChanged,
   onFavoriteCategoriesChanged,
 }: {
   onClose: () => void
   onOpenLibrary: (path: string) => void
-  onLibraryContentChanged: (path: string) => void
   onFavoriteCategoriesChanged: (path: string) => void
 }) {
   const [activeTab, setActiveTab] = useState<'library' | 'home' | 'icloud' | 'display' | 'favorites'>('library')
@@ -54,7 +51,6 @@ export function SettingsPanel({
   const [lookbackInput, setLookbackInput] = useState('')
   const [sinceDateInput, setSinceDateInput] = useState('')
   const [recentCapInput, setRecentCapInput] = useState('')
-  const [syncing, setSyncing] = useState(false)
 
   const [favoriteCategories, setFavoriteCategoriesValue] = useState<FavoriteCategoryDto[]>([])
   const [newCategoryName, setNewCategoryName] = useState('')
@@ -101,23 +97,6 @@ export function SettingsPanel({
     window.addEventListener('keydown', onKeyDown)
     return () => window.removeEventListener('keydown', onKeyDown)
   }, [onClose])
-
-  // "Sync now" is a single long-running request with no progress in its
-  // own response — poll the status endpoint on the side while it's in
-  // flight so CurrentActivity (icloudpd's latest output line) shows up
-  // live instead of the UI looking identical whether it's working or stuck.
-  useEffect(() => {
-    if (!syncing) return
-    const interval = setInterval(() => {
-      getICloudSyncStatus()
-        .then(setStatus)
-        .catch(() => {
-          // Transient poll failure — the main sync-now call's own error
-          // handling covers real failures, so this is safe to ignore.
-        })
-    }, 1500)
-    return () => clearInterval(interval)
-  }, [syncing])
 
   async function runBusy(action: () => Promise<void>) {
     setBusy(true)
@@ -166,23 +145,6 @@ export function SettingsPanel({
       setUsername('')
       setPassword('')
       setCode('')
-    })
-  }
-
-  function handleSyncNow() {
-    setSyncing(true)
-    return runBusy(async () => {
-      try {
-        const result = await iCloudSyncNow()
-        if (!result.success) {
-          setError(result.errorMessage ?? 'Sync failed.')
-        } else if (libraryFolder) {
-          onLibraryContentChanged(libraryFolder)
-        }
-      } finally {
-        setSyncing(false)
-      }
-      refresh()
     })
   }
 
@@ -261,7 +223,7 @@ export function SettingsPanel({
 
         const cap = Number.parseInt(recentCapInput, 10)
         if (!Number.isFinite(cap) || cap <= 0) {
-          throw new Error('Enter a positive number for the max files per sync.')
+          throw new Error('Enter a positive number for the max files per download.')
         }
 
         if (days !== status.lookbackDays || sinceDateInput !== (status.sinceDate ?? '') || cap !== status.recentItemCap) {
@@ -390,27 +352,24 @@ export function SettingsPanel({
                       </p>
                       <p className="settings-meta">
                         {status.lastSyncAt
-                          ? `Last synced ${formatTakenAt(status.lastSyncAt, use24Hour)} — ${status.lastSyncItemCount ?? 0} item(s)`
-                          : 'Never synced yet — the first sync may take a while.'}
+                          ? `Last downloaded ${formatTakenAt(status.lastSyncAt, use24Hour)} — ${status.lastSyncItemCount ?? 0} item(s)`
+                          : 'Never downloaded yet — the first download may take a while.'}
                       </p>
                     </div>
                     <div className="icloud-header-actions">
                       <button type="button" className="modal-footer-cancel" onClick={handleDisconnect} disabled={busy}>
                         Disconnect
                       </button>
-                      <button type="button" className="modal-footer-cancel" onClick={handleSyncNow} disabled={busy}>
-                        {busy ? 'Syncing…' : 'Sync now'}
-                      </button>
                     </div>
                   </div>
 
+                  {/* Triggering/watching a download now lives in the main toolbar's
+                      "Download from iCloud" button (and its own popup for a 2FA
+                      code) — see App.tsx — so it works from anywhere, not just
+                      from inside this dialog. This still shows the last known
+                      result since that's useful context while configuring scope. */}
                   {status.lastSyncStatus === 'Error' && status.lastSyncMessage && (
                     <p className="error">{status.lastSyncMessage}</p>
-                  )}
-                  {syncing && (
-                    <p className="settings-meta" title="icloudpd's most recent output line, updating live">
-                      {status.currentActivity ? `Working: ${status.currentActivity}` : 'Starting…'}
-                    </p>
                   )}
 
                   <label className="settings-checkbox-row icloud-autosync-row">
@@ -420,14 +379,14 @@ export function SettingsPanel({
                       onChange={handleToggleEnabled}
                       disabled={busy}
                     />
-                    Auto-sync every {Math.round((status.intervalMinutes ?? 360) / 60)}h
+                    Auto-download every {Math.round((status.intervalMinutes ?? 360) / 60)}h
                   </label>
 
                   <div className="settings-subsection">
-                    <h3 className="settings-subheading">Sync scope</h3>
+                    <h3 className="settings-subheading">Download scope</h3>
 
                     <div className="settings-field">
-                      <label htmlFor="icloud-lookback-days">Sync from the last</label>
+                      <label htmlFor="icloud-lookback-days">Download from the last</label>
                       <div className="settings-field-control">
                         <input
                           id="icloud-lookback-days"
@@ -465,7 +424,7 @@ export function SettingsPanel({
                     </div>
 
                     <div className="settings-field">
-                      <label htmlFor="icloud-max-files">Max files per sync</label>
+                      <label htmlFor="icloud-max-files">Max files per download</label>
                       <div className="settings-field-control">
                         <input
                           id="icloud-max-files"
@@ -480,7 +439,7 @@ export function SettingsPanel({
 
                     <p className="settings-meta">
                       The specific date wins over "last N days" when both are set. "Max files" caps how many
-                      recently-added items are even considered per sync.
+                      recently-added items are even considered per download.
                     </p>
                   </div>
                 </>

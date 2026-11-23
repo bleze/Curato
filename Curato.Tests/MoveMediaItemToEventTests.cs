@@ -35,7 +35,7 @@ public class MoveMediaItemToEventTests
             var bId = query.GetAllMediaItems().Single(m => m.RelativePath == "b.jpg").Id;
             var result = repository.MoveMediaItemToEvent(bId, targetEventId: null);
 
-            Assert.Equal(MoveMediaItemResult.Success, result);
+            Assert.Equal(MoveMediaItemResult.Success, result.Result);
 
             var events = query.GetAllEvents();
             Assert.Equal(2, events.Count);
@@ -48,6 +48,12 @@ public class MoveMediaItemToEventTests
             Assert.Equal(new DateTime(2026, 1, 1, 9, 5, 0), newEvent.StartAt);
             Assert.Equal(new DateTime(2026, 1, 1, 9, 5, 0), newEvent.EndAt);
             Assert.True(newEvent.TitleIsAuto);
+            // Reported directly on success so a caller (LibraryController)
+            // can tell "a brand-new standalone Event was just created" apart
+            // from "it joined an existing one" without a second lookup —
+            // e.g. to enrich the new Event's title with a location the same
+            // way a normal Scan's own clustering already does.
+            Assert.Equal(newEvent.Id, result.EventId);
         });
     }
 
@@ -61,9 +67,48 @@ public class MoveMediaItemToEventTests
 
             var result = repository.MoveMediaItemToEvent(soloId, targetEventId: null);
 
-            Assert.Equal(MoveMediaItemResult.Success, result);
+            Assert.Equal(MoveMediaItemResult.Success, result.Result);
             var newEvent = Assert.Single(query.GetAllEvents()); // old (now-empty) one is gone, only the new one remains
             Assert.Single(newEvent.MediaItemIds);
+        });
+    }
+
+    [Fact]
+    public void Moving_in_a_single_straggler_does_not_drag_the_majoritys_displayed_date_back()
+    {
+        // The exact bug reported live: moving one photo from the night
+        // before into an event that otherwise overwhelmingly belongs to the
+        // next day dragged the whole event's displayed date back a full day
+        // — even though 10 of its 11 members still clustered normally.
+        WithTempLibrary((repository, query, database) =>
+        {
+            RunScanPass(repository, query, database,
+            [
+                Item("night-before.jpg", new DateTime(2026, 3, 9, 23, 50, 0)), // >4h gap, own Event
+                Item("day1.jpg", new DateTime(2026, 3, 10, 14, 0, 0)),
+                Item("day2.jpg", new DateTime(2026, 3, 10, 14, 1, 0)),
+                Item("day3.jpg", new DateTime(2026, 3, 10, 14, 2, 0)),
+                Item("day4.jpg", new DateTime(2026, 3, 10, 14, 3, 0)),
+                Item("day5.jpg", new DateTime(2026, 3, 10, 14, 4, 0)),
+                Item("day6.jpg", new DateTime(2026, 3, 10, 14, 5, 0)),
+                Item("day7.jpg", new DateTime(2026, 3, 10, 14, 6, 0)),
+                Item("day8.jpg", new DateTime(2026, 3, 10, 14, 7, 0)),
+                Item("day9.jpg", new DateTime(2026, 3, 10, 14, 8, 0)),
+                Item("day10.jpg", new DateTime(2026, 3, 10, 14, 9, 0)),
+            ]);
+
+            var strayId = query.GetAllMediaItems().Single(m => m.RelativePath == "night-before.jpg").Id;
+            var targetEvent = query.GetAllEvents().Single(e => e.MediaItemIds.Count == 10);
+
+            var result = repository.MoveMediaItemToEvent(strayId, targetEventId: targetEvent.Id);
+
+            Assert.Equal(MoveMediaItemResult.Success, result.Result);
+            var merged = query.GetAllEvents().Single(e => e.Id == targetEvent.Id);
+            Assert.Equal(11, merged.MediaItemIds.Count); // the straggler is still a member...
+            Assert.Contains(strayId, merged.MediaItemIds);
+            // ...but doesn't get to redefine what day this Event is "really" on.
+            Assert.Equal(new DateTime(2026, 3, 10, 14, 0, 0), merged.StartAt);
+            Assert.Equal(new DateTime(2026, 3, 10, 14, 9, 0), merged.EndAt);
         });
     }
 
@@ -86,7 +131,7 @@ public class MoveMediaItemToEventTests
 
             var result = repository.MoveMediaItemToEvent(farAwayId, targetEventId: targetEvent.Id);
 
-            Assert.Equal(MoveMediaItemResult.Success, result);
+            Assert.Equal(MoveMediaItemResult.Success, result.Result);
             var remainingEvent = Assert.Single(query.GetAllEvents()); // the old far-away Event is now empty and gone
             Assert.Equal(2, remainingEvent.MediaItemIds.Count);
             Assert.Equal(new DateTime(2026, 1, 1, 9, 0, 0), remainingEvent.StartAt);
@@ -99,7 +144,7 @@ public class MoveMediaItemToEventTests
     {
         WithTempLibrary((repository, _, _) =>
         {
-            Assert.Equal(MoveMediaItemResult.MediaItemNotFound, repository.MoveMediaItemToEvent(999, null));
+            Assert.Equal(MoveMediaItemResult.MediaItemNotFound, repository.MoveMediaItemToEvent(999, null).Result);
         });
     }
 
@@ -111,7 +156,7 @@ public class MoveMediaItemToEventTests
             RunScanPass(repository, query, database, [Item("a.jpg", new DateTime(2026, 1, 1, 9, 0, 0))]);
             var id = query.GetAllMediaItems().Single().Id;
 
-            Assert.Equal(MoveMediaItemResult.TargetEventNotFound, repository.MoveMediaItemToEvent(id, targetEventId: 999));
+            Assert.Equal(MoveMediaItemResult.TargetEventNotFound, repository.MoveMediaItemToEvent(id, targetEventId: 999).Result);
         });
     }
 
@@ -127,7 +172,7 @@ public class MoveMediaItemToEventTests
             var id = query.GetAllMediaItems().Single().Id;
             var result = repository.MoveMediaItemToEvent(id, targetEventId: null);
 
-            Assert.Equal(MoveMediaItemResult.Success, result);
+            Assert.Equal(MoveMediaItemResult.Success, result.Result);
             // The new standalone Event has no real folder yet, so nothing
             // physically moves — the file stays exactly where it is (even
             // though that's still inside the old organized folder) until
@@ -158,7 +203,7 @@ public class MoveMediaItemToEventTests
 
             var result = repository.MoveMediaItemToEvent(looseId, targetEventId: organizedEvent.Id);
 
-            Assert.Equal(MoveMediaItemResult.Success, result);
+            Assert.Equal(MoveMediaItemResult.Success, result.Result);
             Assert.False(File.Exists(oldFullPath));
             var moved = query.GetAllMediaItems().Single(m => m.Id == looseId);
             Assert.Equal("2026-01-01 Morning/loose.jpg", moved.RelativePath);
@@ -191,7 +236,7 @@ public class MoveMediaItemToEventTests
 
             var result = repository.MoveMediaItemToEvent(looseId, targetEventId: organizedEvent.Id);
 
-            Assert.Equal(MoveMediaItemResult.Success, result);
+            Assert.Equal(MoveMediaItemResult.Success, result.Result);
             var moved = query.GetAllMediaItems().Single(m => m.Id == looseId);
             Assert.Equal("2026-01-01 Morning/loose (1).jpg", moved.RelativePath);
             Assert.True(File.Exists(Path.Combine(libraryRoot, moved.RelativePath)));
@@ -247,6 +292,122 @@ public class MoveMediaItemToEventTests
 
             var untouchedEvent = Assert.Single(query.GetAllEvents());
             Assert.Equal(new DateTime(2026, 1, 1, 9, 0, 0), untouchedEvent.StartAt); // unchanged — organized Events are skipped
+        });
+    }
+
+    [Fact]
+    public void Moving_several_items_at_once_relocates_them_all_into_an_organized_target_and_removes_the_emptied_source()
+    {
+        WithTempLibrary((repository, query, database) =>
+        {
+            RunScanPass(repository, query, database,
+            [
+                Item("organized.jpg", new DateTime(2026, 1, 1, 9, 0, 0)),
+                Item("loose1.jpg", new DateTime(2026, 1, 5, 9, 0, 0)),
+                Item("loose2.jpg", new DateTime(2026, 1, 5, 9, 5, 0)),
+            ]);
+
+            var organizedEvent = query.GetAllEvents().Single(e => e.StartAt == new DateTime(2026, 1, 1, 9, 0, 0));
+            MarkOrganized(database, organizedEvent.Id, "2026-01-01 Morning");
+
+            var libraryRoot = database.LibraryRoot;
+            File.WriteAllText(Path.Combine(libraryRoot, "loose1.jpg"), "a");
+            File.WriteAllText(Path.Combine(libraryRoot, "loose2.jpg"), "b");
+
+            var sourceEvent = query.GetAllEvents().Single(e => e.Id != organizedEvent.Id);
+            var looseIds = sourceEvent.MediaItemIds;
+
+            var results = repository.MoveMediaItemsToEvent(looseIds, organizedEvent.Id);
+
+            Assert.All(results, r => Assert.Equal(MoveMediaItemResult.Success, r));
+            var movedItems = query.GetAllMediaItems().Where(m => looseIds.Contains(m.Id)).ToList();
+            Assert.All(movedItems, m => Assert.StartsWith("2026-01-01 Morning/", m.RelativePath));
+            Assert.All(movedItems, m => Assert.True(File.Exists(Path.Combine(libraryRoot, m.RelativePath))));
+
+            // Collision-free against each other, not just against what was
+            // already on disk beforehand — both moved into the same target
+            // folder in the same batch.
+            Assert.Equal(2, movedItems.Select(m => m.RelativePath).Distinct().Count());
+
+            // The now-emptied source Event is gone, same as the single-item move.
+            Assert.DoesNotContain(query.GetAllEvents(), e => e.Id == sourceEvent.Id);
+
+            var target = query.GetAllEvents().Single(e => e.Id == organizedEvent.Id);
+            Assert.Equal(3, target.MediaItemIds.Count);
+        });
+    }
+
+    [Fact]
+    public void Moving_items_to_an_unknown_target_event_reports_failure_for_every_item_and_changes_nothing()
+    {
+        WithTempLibrary((repository, query, database) =>
+        {
+            RunScanPass(repository, query, database, [Item("a.jpg", new DateTime(2026, 1, 1, 9, 0, 0))]);
+            var id = query.GetAllMediaItems().Single().Id;
+
+            var results = repository.MoveMediaItemsToEvent([id], targetEventId: 999_999);
+
+            Assert.All(results, r => Assert.Equal(MoveMediaItemResult.TargetEventNotFound, r));
+            Assert.Single(query.GetAllEvents()); // unchanged, not deleted/merged
+        });
+    }
+
+    [Fact]
+    public void An_unknown_media_item_id_in_the_batch_is_skipped_without_failing_the_rest()
+    {
+        WithTempLibrary((repository, query, database) =>
+        {
+            RunScanPass(repository, query, database,
+            [
+                Item("target.jpg", new DateTime(2026, 1, 1, 9, 0, 0)),
+                Item("real.jpg", new DateTime(2026, 1, 5, 9, 0, 0)),
+            ]);
+            var targetEvent = query.GetAllEvents().Single(e => e.StartAt == new DateTime(2026, 1, 1, 9, 0, 0));
+            var realId = query.GetAllMediaItems().Single(m => m.RelativePath == "real.jpg").Id;
+
+            var results = repository.MoveMediaItemsToEvent([999_999, realId], targetEvent.Id);
+
+            Assert.Equal([MoveMediaItemResult.MediaItemNotFound, MoveMediaItemResult.Success], results);
+            var target = query.GetAllEvents().Single(e => e.Id == targetEvent.Id);
+            Assert.Equal(2, target.MediaItemIds.Count);
+        });
+    }
+
+    [Fact]
+    public void SetAutoEventTitle_enriches_a_still_auto_titled_event()
+    {
+        WithTempLibrary((repository, query, database) =>
+        {
+            RunScanPass(repository, query, database, [Item("a.jpg", new DateTime(2026, 1, 1, 9, 0, 0))]);
+            var @event = Assert.Single(query.GetAllEvents());
+            Assert.True(@event.TitleIsAuto);
+
+            var updated = repository.SetAutoEventTitle(@event.Id, "Morning · Lejre Kommune");
+
+            Assert.True(updated);
+            var enriched = query.GetAllEvents().Single(e => e.Id == @event.Id);
+            Assert.Equal("Morning · Lejre Kommune", enriched.Title);
+            // Unlike SetEventTitle (a user's manual rename), this doesn't
+            // flip TitleIsAuto off — it's still a system-computed title,
+            // just enriched with a resolved location.
+            Assert.True(enriched.TitleIsAuto);
+        });
+    }
+
+    [Fact]
+    public void SetAutoEventTitle_never_overwrites_a_title_the_user_already_manually_renamed()
+    {
+        WithTempLibrary((repository, query, database) =>
+        {
+            RunScanPass(repository, query, database, [Item("a.jpg", new DateTime(2026, 1, 1, 9, 0, 0))]);
+            var @event = Assert.Single(query.GetAllEvents());
+            repository.SetEventTitle(@event.Id, "My custom title");
+
+            var updated = repository.SetAutoEventTitle(@event.Id, "Morning · Lejre Kommune");
+
+            Assert.False(updated);
+            var unchanged = query.GetAllEvents().Single(e => e.Id == @event.Id);
+            Assert.Equal("My custom title", unchanged.Title);
         });
     }
 
