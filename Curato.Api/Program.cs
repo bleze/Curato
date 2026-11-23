@@ -19,9 +19,23 @@ var builder = WebApplication.CreateBuilder(args);
 // `dotnet run`/`dotnet Curato.Api.dll` happens to be invoked from.
 var dataDirectory = builder.Configuration["Curato:DataDirectory"]
     ?? Path.Combine(builder.Environment.ContentRootPath, "data");
+EnsureWritable(dataDirectory, "settings folder");
 var serverDatabase = new ServerDatabase(dataDirectory);
 serverDatabase.EnsureSchema();
 builder.Services.AddSingleton(serverDatabase);
+
+// In Docker the library is whatever the compose file mounts at /photos (the
+// image sets Curato__LibraryFolder), so there's nothing for the user to
+// choose: store it as the Library Folder on every start, and Settings shows
+// it read-only. Unset (running outside Docker), the Settings field decides.
+var fixedLibraryFolder = builder.Configuration["Curato:LibraryFolder"];
+if (!string.IsNullOrWhiteSpace(fixedLibraryFolder))
+{
+    fixedLibraryFolder = Path.GetFullPath(fixedLibraryFolder);
+    EnsureWritable(fixedLibraryFolder, "photo library", mustExist: true);
+    new LibraryFolderRepository(serverDatabase).Set(fixedLibraryFolder);
+}
+builder.Services.AddSingleton(new FixedLibraryFolder(string.IsNullOrWhiteSpace(fixedLibraryFolder) ? null : fixedLibraryFolder));
 
 // Serializes ScanService/OrganizeService calls against the same library
 // root (PLAN.md §4) — needed now that the iCloud background sync below can
@@ -169,3 +183,61 @@ app.UseDefaultFiles();
 app.UseStaticFiles();
 
 app.Run();
+
+// Fails startup with a message that says what to fix, instead of SQLite's
+// "Error 14: unable to open database file" stack trace. On a NAS this is
+// almost always a mapped folder owned by root (Docker creates a missing
+// bind-mount folder as root) while the container runs as the compose
+// file's `user:`.
+static void EnsureWritable(string directory, string description, bool mustExist = false)
+{
+    // The library must be mounted, not created: an empty folder inside the
+    // container would look like an empty library and vanish on recreate.
+    if (mustExist && !Directory.Exists(directory))
+    {
+        Console.Error.WriteLine($"""
+
+            Curato's {description} ({directory}) does not exist: nothing is mounted there.
+            In Docker, map your photo folder to it under `volumes:` in the compose file, e.g.
+                - /volume1/photo:{directory}
+            then restart.
+
+            """);
+        Environment.Exit(1);
+    }
+
+    try
+    {
+        Directory.CreateDirectory(directory);
+        var probe = Path.Combine(directory, $".curato-write-test-{Environment.ProcessId}");
+        File.WriteAllText(probe, "");
+        File.Delete(probe);
+    }
+    catch (Exception ex) when (ex is UnauthorizedAccessException or IOException)
+    {
+        var user = OperatingSystem.IsWindows() ? Environment.UserName : $"uid {GetUnixId("-u")}, gid {GetUnixId("-g")}";
+        Console.Error.WriteLine($"""
+
+            Curato cannot write to its {description}: {directory}
+            It runs as {user}, which has no write access there ({ex.Message}).
+            In Docker, give that user write access to the NAS folder mapped to {directory} in the
+            compose file, e.g. over SSH: sudo chown -R {GetUnixId("-u")}:{GetUnixId("-g")} <that NAS folder>
+            (or set the compose file's `user:` to the NAS user that owns it), then restart.
+
+            """);
+        Environment.Exit(1);
+    }
+}
+
+static string GetUnixId(string flag)
+{
+    try
+    {
+        using var process = System.Diagnostics.Process.Start(new System.Diagnostics.ProcessStartInfo("id", flag) { RedirectStandardOutput = true });
+        return process!.StandardOutput.ReadToEnd().Trim();
+    }
+    catch
+    {
+        return "?";
+    }
+}

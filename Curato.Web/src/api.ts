@@ -117,10 +117,18 @@ export function logout(): Promise<void> {
   return fetch('/api/auth/logout', { method: 'POST' }).then(expectOk)
 }
 
+/** isFixed: set by the deployment (Docker's /photos mount), not editable in Settings. */
+export interface LibraryFolderInfo {
+  path: string | null
+  isFixed: boolean
+}
+
+export function getLibraryFolderInfo(): Promise<LibraryFolderInfo> {
+  return fetch('/api/settings/library-folder').then(asJson<LibraryFolderInfo>)
+}
+
 export function getLibraryFolder(): Promise<string | null> {
-  return fetch('/api/settings/library-folder')
-    .then(asJson<{ path: string | null }>)
-    .then((r) => r.path)
+  return getLibraryFolderInfo().then((r) => r.path)
 }
 
 export function setLibraryFolder(path: string): Promise<void> {

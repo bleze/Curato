@@ -63,7 +63,10 @@ COPY --from=web-build /src/Curato.Web/dist ./wwwroot
 # (e.g. /photos), and their .curato/ folder lives inside the library itself.
 # HOME points at /data too: the container may run as any UID (compose
 # `user:`), which has no home directory, and icloudpd/Python write dotfiles.
+# Curato__LibraryFolder: the library is always the compose file's /photos
+# mount, so Settings shows it read-only instead of asking for a path.
 ENV Curato__DataDirectory=/data \
+    Curato__LibraryFolder=/photos \
     HOME=/data \
     ASPNETCORE_HTTP_PORTS=8080 \
     DOTNET_CLI_TELEMETRY_OPTOUT=1

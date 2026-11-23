@@ -15,18 +15,24 @@ namespace Curato.Api.Controllers;
 /// </summary>
 [ApiController]
 [Route("api/settings")]
-public sealed class SettingsController(ServerDatabase database) : ControllerBase
+public sealed class SettingsController(ServerDatabase database, FixedLibraryFolder fixedLibraryFolder) : ControllerBase
 {
-    public sealed record LibraryFolderResponse(string? Path);
+    // IsFixed: set by the deployment (Docker's /photos mount), not editable here.
+    public sealed record LibraryFolderResponse(string? Path, bool IsFixed);
     public sealed record SetLibraryFolderRequest(string Path);
 
     [HttpGet("library-folder")]
     public ActionResult<LibraryFolderResponse> GetLibraryFolder() =>
-        Ok(new LibraryFolderResponse(new LibraryFolderRepository(database).Get()));
+        Ok(new LibraryFolderResponse(new LibraryFolderRepository(database).Get(), fixedLibraryFolder.Path is not null));
 
     [HttpPut("library-folder")]
     public IActionResult SetLibraryFolder([FromBody] SetLibraryFolderRequest request)
     {
+        if (fixedLibraryFolder.Path is not null)
+        {
+            return Conflict("The library folder is set by the Docker setup (the compose file's photo mount).");
+        }
+
         if (string.IsNullOrWhiteSpace(request.Path))
         {
             return BadRequest("Path is required.");

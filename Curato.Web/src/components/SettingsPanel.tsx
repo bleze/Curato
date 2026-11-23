@@ -6,7 +6,7 @@ import {
   getFavoriteCategories,
   getHomeLocation,
   getICloudSyncStatus,
-  getLibraryFolder,
+  getLibraryFolderInfo,
   iCloudCancelLogin,
   iCloudDisconnect,
   iCloudLogin,
@@ -39,6 +39,7 @@ export function SettingsPanel({
   const theme = useTheme()
   const [libraryFolder, setLibraryFolderValue] = useState<string | null>(null)
   const [libraryFolderInput, setLibraryFolderInput] = useState('')
+  const [libraryFolderIsFixed, setLibraryFolderIsFixed] = useState(false)
   const [browsingFolder, setBrowsingFolder] = useState(false)
   const [homeLocation, setHomeLocationValue] = useState<string | null>(null)
   const [homeLocationInput, setHomeLocationInput] = useState('')
@@ -65,8 +66,9 @@ export function SettingsPanel({
   }
 
   function refresh() {
-    getLibraryFolder().then((path) => {
+    getLibraryFolderInfo().then(({ path, isFixed }) => {
       setLibraryFolderValue(path)
+      setLibraryFolderIsFixed(isFixed)
       setLibraryFolderInput((current) => current || path || '')
       if (path) refreshFavoriteCategories(path)
     })
@@ -241,7 +243,7 @@ export function SettingsPanel({
     return runBusy(async () => {
       let opened = false
 
-      if (libraryFolderInput.trim() && libraryFolderInput !== (libraryFolder ?? '')) {
+      if (!libraryFolderIsFixed && libraryFolderInput.trim() && libraryFolderInput !== (libraryFolder ?? '')) {
         await setLibraryFolder(libraryFolderInput)
         onOpenLibrary(libraryFolderInput) // also closes the panel
         opened = true
@@ -331,17 +333,29 @@ export function SettingsPanel({
                 The destination iCloud sync (and any future external source) copies content into. Separate from
                 scanning/organizing a folder you point Curato at directly.
               </p>
-              <div className="settings-row">
-                <input
-                  type="text"
-                  placeholder="D:/Photos or /volume1/Photos"
-                  value={libraryFolderInput}
-                  onChange={(e) => setLibraryFolderInput(e.target.value)}
-                />
-                <button type="button" className="modal-footer-cancel" onClick={() => setBrowsingFolder(true)}>
-                  Browse…
-                </button>
-              </div>
+              {libraryFolderIsFixed ? (
+                <>
+                  <div className="settings-row">
+                    <input type="text" value={libraryFolder ?? ''} readOnly />
+                  </div>
+                  <p className="recyclebin-hint">
+                    Set by the Docker setup: this is the photo folder mounted at {libraryFolder} in the compose file.
+                    To use a different folder, change that mount and restart the container.
+                  </p>
+                </>
+              ) : (
+                <div className="settings-row">
+                  <input
+                    type="text"
+                    placeholder="D:/Photos or /volume1/Photos"
+                    value={libraryFolderInput}
+                    onChange={(e) => setLibraryFolderInput(e.target.value)}
+                  />
+                  <button type="button" className="modal-footer-cancel" onClick={() => setBrowsingFolder(true)}>
+                    Browse…
+                  </button>
+                </div>
+              )}
             </section>
           )}
 

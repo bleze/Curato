@@ -5,8 +5,8 @@
 # 2. Set `user:` below to the DSM user that owns your photos (see the comment there).
 #    That user needs write access to /volume1/docker/curato and to every photo folder.
 # 3. Under `volumes:`, map each photo folder you want Curato to manage.
-# 4. Start this project; the web UI is at http://<nas-ip>:8081. Create the admin account,
-#    then add a library using the path INSIDE the container, e.g. /photos.
+# 4. Start this project; the web UI is at http://<nas-ip>:8081. Create the admin account;
+#    the library opens by itself (it's whatever you mapped to /photos below).
 services:
   curato:
     image: ghcr.io/bleze/curato:latest
@@ -25,8 +25,7 @@ services:
       # YOUR PHOTOS - edit this line. Left side: the photo folder on the NAS; it must
       # already exist, or the project fails with "bind mount failed". Find it in
       # File Station -> right-click the shared folder -> Properties -> Location.
-      # Right side: the path you enter in Curato. Add one line per library, e.g.
-      #   - /volume1/family/Pictures:/family
+      # Keep the right side as /photos: that's where Curato looks for the library.
       - /volume1/photo:/photos
     environment:
       - TZ=Europe/Copenhagen
