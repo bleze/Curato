@@ -7,9 +7,9 @@ namespace Curato.Media;
 /// <summary>
 /// Decodes HEIC/HEIF files via libheif (LibHeifSharp) — plain SkiaSharp has
 /// no built-in HEIF codec at all, confirmed live: every synced iPhone photo
-/// showed "No preview" until this existed. Native libheif binaries come
-/// from the LibHeif.Native.Runtime package (Curato.Media.csproj) rather
-/// than requiring a separately-installed system library.
+/// showed "No preview" until this existed. On Windows the native libheif
+/// comes from the LibHeif.Native.Runtime package (Curato.Media.csproj); on
+/// Linux it's the system package (see the static constructor).
 ///
 /// Deliberately does NOT apply any EXIF orientation correction afterward —
 /// unlike JPEG, the HEIF spec treats the EXIF orientation tag as purely
@@ -22,6 +22,33 @@ namespace Curato.Media;
 /// </summary>
 internal static class HeicDecoder
 {
+    /// <summary>
+    /// On Linux, load the distro's own libheif (apt: libheif1 +
+    /// libheif-plugin-libde265, installed by the Dockerfile and CI) instead of
+    /// LibHeif.Native.Runtime's bundled libheif.so: that one is built against
+    /// an older distro and needs libdav1d.so.5, which Ubuntu 24.04 (the .NET 10
+    /// runtime image and the CI runner) doesn't have — it fails to load with
+    /// DllNotFoundException. Windows keeps using the bundled DLL. Falls back to
+    /// the default lookup when no system libheif is installed.
+    /// </summary>
+    static HeicDecoder()
+    {
+        if (!OperatingSystem.IsLinux())
+        {
+            return;
+        }
+
+        try
+        {
+            NativeLibrary.SetDllImportResolver(typeof(HeifContext).Assembly, (name, _, _) =>
+                name == "libheif" && NativeLibrary.TryLoad("libheif.so.1", out var handle) ? handle : IntPtr.Zero);
+        }
+        catch (InvalidOperationException)
+        {
+            // A resolver is already registered for LibHeifSharp; keep that one.
+        }
+    }
+
     /// <summary>
     /// Decodes a HEIC/HEIF file. <paramref name="maxDimension"/> and
     /// <paramref name="allowEmbeddedThumbnail"/> let a caller that only

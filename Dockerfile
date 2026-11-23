@@ -37,11 +37,12 @@ RUN dotnet publish Curato.Api/Curato.Api.csproj -c Release -o /app/publish --no-
 FROM mcr.microsoft.com/dotnet/aspnet:10.0 AS final
 WORKDIR /app
 
-# ffmpeg: video thumbnails. libheif1: system fallback for HEIC (Curato.Media
-# normally uses LibHeif.Native.Runtime's bundled binary). python3-venv:
-# icloudpd, which Curato.iCloud runs as an external process. curl: HEALTHCHECK.
+# ffmpeg: video thumbnails. libheif1 + its HEVC plugin: HEIC decoding (on
+# Linux HeicDecoder loads the system libheif; the NuGet-bundled one needs
+# libraries this distro doesn't have). python3-venv: icloudpd, which
+# Curato.iCloud runs as an external process. curl: HEALTHCHECK.
 RUN apt-get update \
-    && apt-get install -y --no-install-recommends ffmpeg libheif1 python3 python3-venv curl \
+    && apt-get install -y --no-install-recommends ffmpeg libheif1 libheif-plugin-libde265 python3 python3-venv curl \
     && rm -rf /var/lib/apt/lists/*
 
 # icloudpd in its own venv, on PATH (iCloudProcessOptions calls plain `icloudpd`).
