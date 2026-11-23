@@ -34,6 +34,30 @@ public sealed class MediaFileScanner
         ".mp4", ".mov", ".avi", ".mkv", ".m4v", ".3gp", ".wmv", ".webm", ".flv", ".mts", ".m2ts"
     };
 
+    /// <summary>
+    /// Folders a NAS or OS keeps for itself inside shared folders — never
+    /// library content. On a Synology, every photo folder has an @eaDir with
+    /// Synology Photos' own SYNOPHOTO_THUMB_*.jpg previews: invisible over
+    /// SMB, but plain folders to a scan running on the NAS (Docker), which
+    /// indexed ~53,000 of them as photos before this existed.
+    /// </summary>
+    private static readonly HashSet<string> SystemFolderNames = new(StringComparer.OrdinalIgnoreCase)
+    {
+        "@eaDir", "#recycle", "#snapshot", "@tmp", "@sharebin",          // Synology
+        "@Recycle", "@Recently-Snapshot", ".@__thumb", "@__thumb",      // QNAP
+        ".AppleDouble", ".AppleDB", "$RECYCLE.BIN", "System Volume Information",
+    };
+
+    /// <summary>Whether a folder with this name is a NAS/OS system folder the scan never enters.</summary>
+    public static bool IsSystemFolderName(string folderName) => SystemFolderNames.Contains(folderName);
+
+    /// <summary>Whether a library-relative file path ('/'-separated) lies inside a system folder.</summary>
+    public static bool IsInSystemFolder(string relativePath)
+    {
+        var segments = relativePath.Split('/');
+        return segments.Take(segments.Length - 1).Any(IsSystemFolderName);
+    }
+
     /// <summary>Whether <paramref name="extension"/> (with leading dot) is a recognized photo/video type.</summary>
     public static bool IsSupportedExtension(string extension) =>
         PhotoExtensions.Contains(extension) || VideoExtensions.Contains(extension);
@@ -140,6 +164,11 @@ public sealed class MediaFileScanner
 
         foreach (var subDir in System.IO.Directory.EnumerateDirectories(currentDir))
         {
+            if (IsSystemFolderName(Path.GetFileName(subDir)))
+            {
+                continue;
+            }
+
             foreach (var item in ScanDirectory(
                          rootPath, subDir, previousFolderModifiedTimes, previouslyIndexedByRelativePath, currentFolderModifiedTimes))
             {

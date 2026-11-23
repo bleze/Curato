@@ -81,6 +81,16 @@ public sealed class ScanService(
         // once indexed, it's already a false "newly synced" item.
         OrphanedStubCleanup.CleanupOrphanedStubs(libraryRoot, query);
 
+        // Rows indexed from a NAS system folder (Synology's @eaDir thumbnails,
+        // before the scanner skipped them) are dropped from the database
+        // directly. Left to RemoveMissingFiles instead, they'd count as
+        // "missing" — and the Recycle Bin would *move* those still-present
+        // files out of the NAS's own folders.
+        repository.ForgetMediaItems(query.GetAllMediaItems()
+            .Where(item => MediaFileScanner.IsInSystemFolder(item.RelativePath))
+            .Select(item => item.Id)
+            .ToList());
+
         var previousFolderModifiedTimes = query.GetFolderModifiedTimes();
         var previouslyIndexedByRelativePath = query.GetAllMediaItems()
             .ToDictionary(item => item.RelativePath, item => item, StringComparer.OrdinalIgnoreCase);
@@ -258,7 +268,13 @@ public sealed class ScanService(
 
         var currentRelativePaths = new HashSet<string>(
             currentlyOnDisk.Select(i => i.RelativePath), StringComparer.OrdinalIgnoreCase);
-        var missing = allIndexed.Where(i => !currentRelativePaths.Contains(i.RelativePath)).ToList();
+        // Never "recycle" a file that's actually still there: the Recycle Bin
+        // moves it, so anything the walk merely didn't report (a folder it
+        // skips, a path spelled differently) would be pulled out of place.
+        var missing = allIndexed
+            .Where(i => !currentRelativePaths.Contains(i.RelativePath))
+            .Where(i => !File.Exists(Path.Combine(database.LibraryRoot, i.RelativePath)))
+            .ToList();
         if (missing.Count == 0)
         {
             return 0;

@@ -131,6 +131,38 @@ public sealed class LibraryRepository(LibraryDatabase database)
     /// still exists, so pruning against it could wrongly forget a folder
     /// the walk just hadn't reached yet.
     /// </summary>
+    /// <summary>
+    /// Drops MediaItem rows (and every row hanging off them) without going
+    /// through the Recycle Bin: no file is moved, no DeletedMediaFingerprint
+    /// is recorded. Only for rows that should never have been indexed at all
+    /// — files inside a NAS's own system folders (see
+    /// MediaFileScanner.IsInSystemFolder) — where recycling would *move*
+    /// the NAS's files into .curato/RecycleBin, since they still exist.
+    /// </summary>
+    public void ForgetMediaItems(IReadOnlyCollection<long> mediaItemIds)
+    {
+        if (mediaItemIds.Count == 0)
+        {
+            return;
+        }
+
+        using var connection = database.OpenConnection();
+        using var transaction = connection.BeginTransaction();
+        foreach (var chunk in mediaItemIds.Chunk(500))
+        {
+            var ids = new { Ids = chunk };
+            connection.Execute("UPDATE MediaItem SET LivePhotoVideoItemId = NULL WHERE LivePhotoVideoItemId IN @Ids", ids, transaction);
+            foreach (var table in new[] { "EventMediaItem", "MediaItemTag", "Edit", "Face", "PicasaImportedMediaItem", "OrganizeMove" })
+            {
+                connection.Execute($"DELETE FROM {table} WHERE MediaItemId IN @Ids", ids, transaction);
+            }
+
+            connection.Execute("DELETE FROM MediaItem WHERE Id IN @Ids", ids, transaction);
+        }
+
+        transaction.Commit();
+    }
+
     public void PruneFolderModifiedTimes(IEnumerable<string> currentRelativePaths)
     {
         using var connection = database.OpenConnection();
