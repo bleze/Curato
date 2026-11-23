@@ -20,7 +20,10 @@ COPY Curato.Picasa/Curato.Picasa.csproj Curato.Picasa/
 COPY Curato.Organizer/Curato.Organizer.csproj Curato.Organizer/
 COPY Curato.Vision/Curato.Vision.csproj Curato.Vision/
 COPY Curato.Api/Curato.Api.csproj Curato.Api/
-RUN dotnet restore Curato.Api/Curato.Api.csproj
+# linux-x64 only: without a runtime identifier the publish output carries every
+# platform's native libraries (SkiaSharp, libheif for Windows/macOS/ARM...),
+# which roughly doubled the app layer every update has to download.
+RUN dotnet restore Curato.Api/Curato.Api.csproj -r linux-x64
 COPY Curato.Core/ Curato.Core/
 COPY Curato.Data/ Curato.Data/
 COPY Curato.iCloud/ Curato.iCloud/
@@ -31,7 +34,7 @@ COPY Curato.Vision/ Curato.Vision/
 COPY Curato.Api/ Curato.Api/
 # Curato.Api.csproj links tools/icloud-sync into its output, so it must exist here.
 COPY tools/ tools/
-RUN dotnet publish Curato.Api/Curato.Api.csproj -c Release -o /app/publish --no-restore
+RUN dotnet publish Curato.Api/Curato.Api.csproj -c Release -r linux-x64 --self-contained false -o /app/publish --no-restore
 
 # --- Final runtime image ------------------------------------------------------
 FROM mcr.microsoft.com/dotnet/aspnet:10.0 AS final

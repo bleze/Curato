@@ -22,8 +22,10 @@ services:
       - "8081:8080"
     volumes:
       - /volume1/docker/curato:/data
-      # Your photos: change the left side to your photo folder. The right side is the
-      # path you enter in Curato. Add one line per library, e.g.
+      # YOUR PHOTOS - edit this line. Left side: the photo folder on the NAS; it must
+      # already exist, or the project fails with "bind mount failed". Find it in
+      # File Station -> right-click the shared folder -> Properties -> Location.
+      # Right side: the path you enter in Curato. Add one line per library, e.g.
       #   - /volume1/family/Pictures:/family
       - /volume1/photo:/photos
     environment:
