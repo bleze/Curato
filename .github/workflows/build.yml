@@ -37,8 +37,16 @@ jobs:
       - name: Build
         run: dotnet build Curato.slnx --no-restore -c Release -p:Platform="Any CPU"
 
+      # Failed tests also become annotations (one per test, first 10), which show on the
+      # run's page and in the public checks API without digging through the log.
       - name: Test
-        run: dotnet test Curato.slnx --no-build -c Release -p:Platform="Any CPU"
+        run: |
+          set -o pipefail
+          dotnet test Curato.slnx --no-build -c Release -p:Platform="Any CPU" 2>&1 | tee test.log && exit 0
+          awk '/^[[:space:]]+Failed [A-Za-z]/ { if (msg) print msg; n++; msg = "::error title=" $2 "::"; lines = 0; next }
+               msg && lines < 6 { gsub(/^[[:space:]]+/, ""); msg = msg $0 " | "; lines++ }
+               END { if (msg) print msg }' test.log | head -10
+          exit 1
 
       - name: Install web dependencies
         working-directory: Curato.Web
