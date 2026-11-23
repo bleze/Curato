@@ -167,6 +167,23 @@ if (app.Environment.IsDevelopment())
 // proxy-to-container hop instead of the client's real connection.
 app.UseForwardedHeaders();
 
+// A folder Curato may not read or write (on a NAS: a subfolder whose
+// permissions don't include the container's user) aborts a scan by design —
+// skipping it would make every file inside look deleted to ScanService. Say
+// which folder and what to do, instead of a bare "500 Internal Server Error";
+// the web UI shows a failed request's text as its error.
+app.UseExceptionHandler(handler => handler.Run(async context =>
+{
+    var error = context.Features.Get<Microsoft.AspNetCore.Diagnostics.IExceptionHandlerFeature>()?.Error;
+    context.Response.StatusCode = StatusCodes.Status500InternalServerError;
+    context.Response.ContentType = "text/plain; charset=utf-8";
+    await context.Response.WriteAsync(error is UnauthorizedAccessException
+        ? $"Curato has no access: {error.Message} Nothing was changed. Give the user Curato runs as "
+          + "Read/Write on that folder (on a Synology: File Station -> right-click it -> Properties -> "
+          + "Permission, applied to sub-folders and files), then try again."
+        : "Unexpected server error; the container log has the details.");
+}));
+
 // Serves Curato.Web's built static output (one deployable artifact per
 // PLAN.md §1 — no separate frontend server/CORS setup). Before
 // authentication on purpose: the fallback policy below requires a session
