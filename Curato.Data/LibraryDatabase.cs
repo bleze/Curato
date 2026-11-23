@@ -79,6 +79,9 @@ public sealed class LibraryDatabase
             }
         }
 
+        // After the column migrations, since one indexes a migrated column.
+        connection.Execute(Schema.ForeignKeyIndexes);
+
         return true;
     }
 

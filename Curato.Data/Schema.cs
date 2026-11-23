@@ -232,6 +232,23 @@ internal static class Schema
     /// `ALTER TABLE ... ADD COLUMN IF NOT EXISTS`) — the closest thing this
     /// project has to a migration list until a real one exists.
     /// </summary>
+    /// <summary>
+    /// An index on every column that references MediaItem. SQLite enforces
+    /// a foreign key on delete by looking up the referencing rows, and
+    /// without an index that's a full scan of the child table per deleted
+    /// MediaItem: forgetting ~53,000 Synology @eaDir rows from a ~107,000-row
+    /// library (ScanService) ran for over 10 minutes without finishing, all
+    /// spent scanning MediaItem's own LivePhotoVideoItemId self-reference.
+    /// </summary>
+    public const string ForeignKeyIndexes = """
+        CREATE INDEX IF NOT EXISTS IX_MediaItem_LivePhotoVideoItemId ON MediaItem (LivePhotoVideoItemId);
+        CREATE INDEX IF NOT EXISTS IX_EventMediaItem_MediaItemId ON EventMediaItem (MediaItemId);
+        CREATE INDEX IF NOT EXISTS IX_OrganizeMove_MediaItemId ON OrganizeMove (MediaItemId);
+        CREATE INDEX IF NOT EXISTS IX_MediaItemTag_MediaItemId ON MediaItemTag (MediaItemId);
+        CREATE INDEX IF NOT EXISTS IX_Edit_MediaItemId ON Edit (MediaItemId);
+        CREATE INDEX IF NOT EXISTS IX_Face_MediaItemId ON Face (MediaItemId);
+        """;
+
     public static readonly IReadOnlyList<(string Table, string Column, string Definition)> ColumnMigrations =
     [
         // SET NULL, not CASCADE: this is MediaItem's own self-reference (a
