@@ -21,9 +21,10 @@ paused (`PLAN.md` §1) and not part of this flow yet.
    git tag v0.2.0
    git push origin v0.2.0
    ```
-4. CI builds and pushes a multi-arch (`linux/amd64` + `linux/arm64`) Docker image to
-   `ghcr.io/bleze/curato`, tagged both `0.2.0` and `latest`, then publishes a GitHub
-   Release with auto-generated notes.
+4. CI builds and pushes a `linux/amd64` Docker image to `ghcr.io/bleze/curato`, tagged
+   `0.2.0` and `sha-…`, then publishes a GitHub Release with auto-generated notes.
+   (`latest` is published on every push to `main`, independent of releases — that's
+   what the NAS's `deploy/update.sh` pulls.)
 5. Sanity-check: pull the new image on a test NAS/machine and confirm it starts and
    serves the UI before considering the release done.
 

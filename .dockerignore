@@ -8,3 +8,8 @@
 docs/
 PLAN.md
 README.md
+.claude/
+.github/
+# Local dev server data (admin account, iCloud session) - never bake into the image.
+Curato.Api/data/
+Curato.Tests/

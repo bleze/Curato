@@ -1,0 +1,31 @@
+# Curato on a Synology NAS (Container Manager -> Project -> Create, paste this file).
+#
+# 1. Create the folder /volume1/docker/curato on the NAS (File Station). Leave it empty:
+#    it holds Curato's own settings (admin account, iCloud login).
+# 2. Set `user:` below to the DSM user that owns your photos (see the comment there).
+#    That user needs write access to /volume1/docker/curato and to every photo folder.
+# 3. Under `volumes:`, map each photo folder you want Curato to manage.
+# 4. Start this project; the web UI is at http://<nas-ip>:8081. Create the admin account,
+#    then add a library using the path INSIDE the container, e.g. /photos.
+services:
+  curato:
+    image: ghcr.io/bleze/curato:latest
+    container_name: curato
+    restart: unless-stopped
+    # Curato never runs as root. Files it creates or moves in your photo folders
+    # belong to this user, exactly as if you had copied them over SMB.
+    # Find your numbers over SSH with `id <your-dsm-user>`:
+    #   uid=1026(you) gid=100(users)  ->  "1026:100"
+    user: "1026:100"
+    ports:
+      # NAS port : container port. If 8081 is taken on the NAS, change only the first number.
+      - "8081:8080"
+    volumes:
+      - /volume1/docker/curato:/data
+      # Your photos: change the left side to your photo folder. The right side is the
+      # path you enter in Curato. Add one line per library, e.g.
+      #   - /volume1/family/Pictures:/family
+      - /volume1/photo:/photos
+    environment:
+      - TZ=Europe/Copenhagen
+    stop_grace_period: 60s  # lets a running scan or iCloud sync stop cleanly

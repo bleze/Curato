@@ -29,9 +29,7 @@ COPY Curato.Picasa/ Curato.Picasa/
 COPY Curato.Organizer/ Curato.Organizer/
 COPY Curato.Vision/ Curato.Vision/
 COPY Curato.Api/ Curato.Api/
-# requirements.txt for the icloudpd install below — needs to exist at this
-# relative path before `dotnet publish` runs (Curato.Api.csproj also has a
-# Content item copying it into the build/publish output, for local dev).
+# Curato.Api.csproj links tools/icloud-sync into its output, so it must exist here.
 COPY tools/ tools/
 RUN dotnet publish Curato.Api/Curato.Api.csproj -c Release -o /app/publish --no-restore
 
@@ -39,33 +37,41 @@ RUN dotnet publish Curato.Api/Curato.Api.csproj -c Release -o /app/publish --no-
 FROM mcr.microsoft.com/dotnet/aspnet:10.0 AS final
 WORKDIR /app
 
-# ffmpeg for video metadata/thumbnails (PLAN.md §1); libheif1 as a system
-# fallback for HEIC decode (Curato.Media's actual HEIC decoding — see
-# HeicDecoder — depends on LibHeif.Native.Runtime's own bundled NuGet
-# native binary instead, copied straight to the app's output directory, so
-# this apt package is likely redundant now, but left in as a harmless
-# safety net rather than removed without a real Docker build to verify
-# against); python3/pip for direct iCloud integration (§4 — icloudpd,
-# MIT-licensed, invoked directly as an external process by Curato.iCloud
-# rather than ported into C#; python3/pip are needed both to install it
-# and to run it, since the icloudpd executable is itself a Python program).
+# ffmpeg: video thumbnails. libheif1: system fallback for HEIC (Curato.Media
+# normally uses LibHeif.Native.Runtime's bundled binary). python3-venv:
+# icloudpd, which Curato.iCloud runs as an external process. curl: HEALTHCHECK.
 RUN apt-get update \
-    && apt-get install -y --no-install-recommends ffmpeg libheif1 python3 python3-pip \
+    && apt-get install -y --no-install-recommends ffmpeg libheif1 python3 python3-venv curl \
     && rm -rf /var/lib/apt/lists/*
 
-COPY --from=api-build /app/publish ./
+# icloudpd in its own venv, on PATH (iCloudProcessOptions calls plain `icloudpd`).
+COPY tools/icloud-sync/requirements.txt /tmp/icloud-requirements.txt
+RUN python3 -m venv /opt/icloudpd \
+    && /opt/icloudpd/bin/pip install --no-cache-dir -r /tmp/icloud-requirements.txt \
+    && rm /tmp/icloud-requirements.txt
+ENV PATH="/opt/icloudpd/bin:${PATH}"
 
-# --break-system-packages: Debian's system pip refuses a bare global install
-# (PEP 668) — acceptable here since the whole container is already a single-
-# purpose, isolated environment, not a shared system Python. requirements.txt
-# was already copied into the publish output above (Curato.Api.csproj's
-# Content item), so it's picked up from there rather than needing its own COPY.
-RUN pip install --no-cache-dir --break-system-packages -r ./tools/icloud-sync/requirements.txt
+COPY --from=api-build /app/publish ./
 COPY --from=web-build /src/Curato.Web/dist ./wwwroot
 
-# The library (photos + .curato/) is expected to be bind-mounted, not baked in.
+# /data: Curato's own settings (admin account, iCloud session). Photo
+# libraries are mounted separately, wherever the compose file puts them
+# (e.g. /photos), and their .curato/ folder lives inside the library itself.
+# HOME points at /data too: the container may run as any UID (compose
+# `user:`), which has no home directory, and icloudpd/Python write dotfiles.
+ENV Curato__DataDirectory=/data \
+    HOME=/data \
+    ASPNETCORE_HTTP_PORTS=8080 \
+    DOTNET_CLI_TELEMETRY_OPTOUT=1
+RUN mkdir -p /data && chown app:app /data
 VOLUME ["/data"]
 
+# Never root: Curato writes into the photo share, and files it creates should
+# belong to a normal user. `app` is the .NET image's built-in non-root user;
+# compose overrides it with `user:` to match the NAS user owning the photos.
+USER app
+
 EXPOSE 8080
-ENV ASPNETCORE_URLS=http://+:8080
+HEALTHCHECK --interval=30s --timeout=5s --start-period=20s --retries=3 \
+    CMD curl -fsS http://localhost:8080/health || exit 1
 ENTRYPOINT ["dotnet", "Curato.Api.dll"]
