@@ -3,7 +3,10 @@
 # 1. Create the folder /volume1/docker/curato on the NAS (File Station). Leave it empty:
 #    it holds Curato's own settings (admin account, iCloud login).
 # 2. Set `user:` below to the DSM user that owns your photos (see the comment there).
-#    That user needs write access to /volume1/docker/curato and to every photo folder.
+#    That user needs Read/Write on /volume1/docker/curato and the photo folder, granted to
+#    the user itself, not only via a group like administrators (the container gets only
+#    the group in `user:`): File Station -> right-click the folder -> Properties ->
+#    Permission -> Create -> your user, Read + Write, this folder, sub-folders and files.
 # 3. Under `volumes:`, map each photo folder you want Curato to manage.
 # 4. Start this project; the web UI is at http://<nas-ip>:8081. Create the admin account;
 #    the library opens by itself (it's whatever you mapped to /photos below).

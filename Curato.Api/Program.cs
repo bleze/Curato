@@ -221,8 +221,12 @@ static void EnsureWritable(string directory, string description, bool mustExist 
             Curato cannot write to its {description}: {directory}
             It runs as {user}, which has no write access there ({ex.Message}).
             In Docker, give that user write access to the NAS folder mapped to {directory} in the
-            compose file, e.g. over SSH: sudo chown -R {GetUnixId("-u")}:{GetUnixId("-g")} <that NAS folder>
-            (or set the compose file's `user:` to the NAS user that owns it), then restart.
+            compose file, then restart.
+            On Synology, shared folders use ACLs, so chown is often not enough, and the container
+            does not get the user's other groups (e.g. administrators): in File Station, right-click
+            the folder -> Properties -> Permission -> Create -> your user, Read + Write, applied to
+            this folder, sub-folders and files.
+            Elsewhere, over SSH: sudo chown -R {GetUnixId("-u")}:{GetUnixId("-g")} <that NAS folder>
 
             """);
         Environment.Exit(1);
