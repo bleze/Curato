@@ -167,6 +167,14 @@ if (app.Environment.IsDevelopment())
 // proxy-to-container hop instead of the client's real connection.
 app.UseForwardedHeaders();
 
+// Serves Curato.Web's built static output (one deployable artifact per
+// PLAN.md §1 — no separate frontend server/CORS setup). Before
+// authentication on purpose: the fallback policy below requires a session
+// for everything that runs after it, which would 401 the page that shows
+// the login form. The UI files are public; every /api route stays protected.
+app.UseDefaultFiles();
+app.UseStaticFiles();
+
 app.UseRateLimiter();
 app.UseAuthentication();
 app.UseAuthorization();
@@ -177,10 +185,6 @@ app.MapControllers();
 // health check are the only routes that don't require a session).
 app.MapGet("/health", () => Results.Ok(new { status = "ok" })).AllowAnonymous();
 
-// Serves Curato.Web's built static output once it's produced (one deployable
-// artifact per PLAN.md §1 — no separate frontend server/CORS setup).
-app.UseDefaultFiles();
-app.UseStaticFiles();
 
 app.Run();
 
